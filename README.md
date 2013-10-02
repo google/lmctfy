@@ -4,15 +4,15 @@ lmctfy (pronounced *lem-kut-fee*) is the open source version of [Google](http://
 
 The project aims to provide the container abstraction through a high-level API built around user intent. The containers created are themselves container-aware within the hierarchy and can be delegated to be managed by other user agents.
 
-lmctfy was designed and implemented with specific use-cases and configurations in mind and may not work out of the box for all use-cases and configurations. We do aim to support more use-cases and configurations so please feel free to [contribute](#contributing) patches or send e-mail to the [mailing list](#-mailing-list) so that we may incorporate these into the [roadmap](#roadmap).
+lmctfy was designed and implemented with specific use-cases and configurations in mind and may not work out of the box for all use-cases and configurations. We do aim to support more use-cases and configurations so please feel free to [contribute](#contributing) patches or send e-mail to the [mailing list](#mailing-list) so that we may incorporate these into the [roadmap](#roadmap).
 
 lmctfy is released as both a C++ library and a CLI.
 
 ## Current Status
-lmctfy is beta software under heavy development and may change as it evolves. The latest release is version is `0.1`. It currently only provides CPU and memory isolation. Take a look at our [roadmap](#-roadmap) for areas of development and possible [contributions](#contributing).
+lmctfy is beta software under heavy development and may change as it evolves. The latest release is version is `0.1`. It currently only provides CPU and memory isolation. Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
 
 ## Getting Started
-This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#-cli-commands) section provides some examples of CLI operations and [C++ Library](#-cpp-library) describes the use of the underlying library.
+This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#cli-commands) section provides some examples of CLI operations and [C++ Library](#c-library) describes the use of the underlying library.
 ### Dependencies
 lmctfy depends on the following libraries and expects them to be available on the system:
 * [Protocol Buffers](https://code.google.com/p/protobuf/)
@@ -93,16 +93,14 @@ An absolute path is one that is defined from the root (`/`) container (i.e.: `/s
    .           : the current container
    ./          : the current container
    ..          : the parent of the current container
-   sub         : the "sub" subcontainer (child container) of the current
-                 container
-   ./sub       : the "sub" subcontainer (child container) of the current
-                 container
+   sub         : the "sub" subcontainer (child container) of the current container
+   ./sub       : the "sub" subcontainer (child container) of the current container
    /sub        : the "sub" top level container
    ../sibling  : the "sibling" child container of the parent container
 ```
 
 
-## CLI Operations
+## CLI Commands
 ### Create
 To create a container run:
 
@@ -192,7 +190,7 @@ Some of the relevant kernel patches:
 
 ## Contributing
 
-Interested in contributing to the project? Feel free to send a patch or take a look at our [roadmap](#-roadmap) for ideas on areas of contribution. Follow [Getting Started](#-getting-started) above and it should get you up and running. If not, let us know so we can help and improve the instructions. 
+Interested in contributing to the project? Feel free to send a patch or take a look at our [roadmap](#roadmap) for ideas on areas of contribution. Follow [Getting Started](#getting-started) above and it should get you up and running. If not, let us know so we can help and improve the instructions. 
 
 ## Mailing List
 
