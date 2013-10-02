@@ -83,6 +83,7 @@ Allowable characters for container names are:
 * Underscores (`_`)
 * Dashes (`-`)
 * Periods (`.`)
+
 An absolute path is one that is defined from the root (`/`) container (i.e.: `/sys/subcont`). Container names can also be relative (i.e.: `subcont`). In general and unless otherwise specified, regular filesystem path rules apply.
 
 ### Examples:
