@@ -1,0 +1,368 @@
+// Copyright 2013 Google Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto2";
+
+package containers.lmctfy;
+
+// Specifies what resources to isolate (and how they should be isolated) on a
+// container. Used for container creation and updates.
+message ContainerSpec {
+  // UID of the requested container owner. If this field is missing it is
+  // assumed to be the same as the caller at creation time.
+  optional int64 owner = 1;
+
+  // The GID of the requested owner's group. If this field is missing it is
+  // assumed to be the same as the caller at creation time.
+  optional int64 owner_group = 8;
+
+  // Commonly used resources
+  optional CpuSpec cpu = 2;
+  optional MemorySpec memory = 3;
+  optional DiskIoSpec diskio = 4;
+  optional NetworkSpec network = 5;
+
+  optional MonitoringSpec monitoring = 6;
+  optional GlobalSpec global = 7;
+
+  // Next ID: 9
+}
+
+// Specification for supported notification events.
+message EventSpec {
+  // Event triggered when the specified container runs out of memory.
+  message Oom {
+  }
+  optional Oom oom = 1;
+
+  // Event triggered when the specified container crossed the specified memory
+  // usage threshold.
+  message MemoryThreshold {
+    // The threshold in bytes.
+    optional uint64 usage = 1;
+  }
+  optional MemoryThreshold memory_threshold = 2;
+
+  // UNIMPLEMENTED.
+  // Event triggered when the specified container is empty (it has no processes
+  // or threads). This may occur due to movement of threads or exiting of
+  // processes.
+  message ContainerEmpty {
+  }
+  optional ContainerEmpty container_empty = 3;
+}
+
+// Basic information about a container.
+message ContainerInfo {
+  // The UID of the owner.
+  optional int64 uid = 1;
+
+  // The GID of the owner.
+  optional int64 gid = 2;
+
+  // UNIX timestamp at creation time.
+  // Units: seconds.
+  optional int64 create_time = 3;
+
+  // UNIX timestamp at the time of the last update.
+  // Units: seconds
+  optional int64 update_time = 4;
+}
+
+enum SchedulingLatency {
+  // No latency guarantee.
+  BEST_EFFORT = 1;
+
+  // Default latency guarantee.
+  NORMAL = 2;
+
+  // Low-latency access for latency-sensitive loads.
+  PRIORITY = 3;
+
+  // Extremely low-latency access for latency-critical loads.
+  PREMIER = 4;
+}
+
+message CpuSpec {
+  // CPU scheduling latency guarantee to provide for the container. Default
+  // scheduling latency is NORMAL. Note that scheduling latency cannot be
+  // updated.
+  optional SchedulingLatency scheduling_latency = 1;
+
+  // The amount of CPU requested.
+  // Units: CPU milliseconds per second.
+  optional uint64 limit = 2;
+
+  // The amount of CPU after which the container's usage will be throttled.
+  // Units: CPU milliseconds per second.
+  optional uint64 max_limit = 3;
+
+  // TODO(vmarmol): Use a repeated uint64 field for cpu_set_t.
+  // Mask of CPU cores which can be used by this container. If not specified,
+  // inherits the parent's mask.
+  optional uint64 mask = 4;
+}
+
+message MemorySpec {
+  // UNIMPLEMENTED
+  // TODO(vmarmol): Make more concrete.
+  optional int64 eviction_priority = 1;
+
+  // The amount of memory requested. Required at container creation time if
+  // memory isolation is specified.
+  // Units: bytes.
+  optional uint64 limit = 2;
+
+  // UNIMPLEMENTED
+  // The hard limit on the amount of memory that can be used. Going over "limit"
+  // may decrease the priority of memory requests, going over "max_limit" OOMs
+  // the container. When it is not specified, defaults to "limit".
+  // Units: bytes.
+  optional uint64 max_limit = 3;
+
+  // The amount of guaranteed memory.
+  // Units: bytes.
+  optional uint64 reservation = 4;
+
+  // UNIMPLEMENTED
+  // Absolute path.
+  optional string hugetlbfs_path = 5;
+
+  // UNIMPLEMENTED
+  // Absolute path.
+  repeated string tmpfs_path = 6;
+
+  // UNIMPLEMENTED
+  // Units: bytes.
+  optional uint64 swap_size = 7;
+}
+
+message DiskIoSpec {
+  message DiskConfig {
+    // Logical name used as identifier by kernel (eg. sda)
+    optional string logical_disk_name = 1;
+    // Requested fraction of disk time [Range: 0 to 100].
+    optional int32 disk_time_fraction = 2;
+    // Portion of disk time fraction reserved for high-priority I/O.
+    // Should be less than disk_time_fraction [ Range: 0 to disk_time_fraction].
+    optional int32 priority_disk_time_fraction = 3;
+    // Maximum fraction of disk time that can be used. Going over this limit
+    // would throttle IO. [ Range: 0 to 100]. Total disk time used (priority +
+    // normal) is counted. There is no maximum limit by default.
+    optional int32 max_disk_time_fraction = 4;
+  }
+
+  // UNIMPLEMENTED
+  repeated DiskConfig diskio_spec = 1;
+
+  enum Priority {
+    // Only use shared disk time. Not allowed to reserve any time slices.
+    DEFAULT = 1;
+    // Can reserve time slices. Not allowed to use front-of-line pass.
+    // Time slice reservations can vary per disk.
+    PRODUCTION = 2;
+    // Allowed to use reserved time slices and front-of-line pass.
+    // Reservations and priority can vary per disk.
+    PRIORITY = 3;
+  }
+
+  // UNIMPLEMENTED
+  optional Priority priority = 2;
+}
+
+message NetworkSpec {
+  }
+
+message MonitoringSpec {
+  // UNIMPLEMENTED
+  optional bool enable_perf_counters = 1;
+}
+
+message GlobalSpec {
+  // UNIMPLEMENTED
+  optional uint64 fd_limit = 1;
+}
+
+// TODO(vmarmol): Design and narrow this spec down.
+// Machine-wide configurations that are not specific to any container.
+message MachineSpec {
+}
+
+// Known and supported cgroup hierarchies.
+enum CgroupHierarchy {
+  CGROUP_UNKNOWN = 0;
+  CGROUP_CPU = 1;
+  CGROUP_CPUACCT = 2;
+  CGROUP_CPUSET = 3;
+  CGROUP_FREEZER = 4;
+  CGROUP_IO = 5;
+  CGROUP_JOB = 6;
+  CGROUP_MEMORY = 7;
+  CGROUP_NET = 8;
+  CGROUP_PERF_EVENT = 9;
+  CGROUP_RLIMIT = 10;
+}
+
+// A mount point for a set of cgroup subsystems.
+message CgroupMount {
+  // The full path to where the cgroups should be mounted.
+  optional string mount_path = 1;
+
+  // Type of the cgroup subsystems to be mounted at this point.
+  repeated CgroupHierarchy hierarchy = 2;
+}
+
+// Describes how to setup lmctfy at machine boot.
+message InitSpec {
+  optional CpuInitSpec cpu = 1;
+  optional MemoryInitSpec memory = 2;
+  optional DiskIoInitSpec diskio = 3;
+  optional NetworkInitSpec network = 4;
+
+  optional MonitoringInitSpec monitoring = 5;
+  optional GlobalInitSpec global = 6;
+
+  // The mount locations of the cgroup hierarchies.
+  repeated CgroupMount cgroup_mount = 7;
+}
+
+message CpuInitSpec {
+}
+
+message MemoryInitSpec {
+}
+
+message DiskIoInitSpec {
+}
+
+message NetworkInitSpec {
+}
+
+message MonitoringInitSpec {
+}
+
+message GlobalInitSpec {
+}
+
+// Statistics for a Container and its resource usage.
+message ContainerStats {
+  // Commonly used resources
+  optional CpuStats cpu = 1;
+  optional MemoryStats memory = 2;
+  optional DiskIoStats diskio = 3;
+  optional NetworkStats network = 4;
+
+  optional MonitoringStats monitoring = 5;
+  optional GlobalStats global = 6;
+}
+
+// Type of scheduling histograms exported by kernel.
+enum CpuHistogramType {
+  // Total amount of time a task is runnable.
+  SERVE = 1;
+
+  // Amount of time a task is scheduled on a cpu in a single stretch.
+  ONCPU = 2;
+
+  // Amount of time a task is sleeping or blocking.
+  SLEEP = 3;
+
+  // Amount of time waiting in runnable state behind a task from the same
+  // cgroup.
+  QUEUE_SELF = 4;
+
+  // Amount of time waiting in runnable state behind a task from a different
+  // cgroup.
+  QUEUE_OTHER = 5;
+};
+
+message HistogramMap {
+  message Bucket {
+    required int32 bucket = 1;
+    required int64 value = 2;
+  }
+
+  required CpuHistogramType type = 1;
+  repeated Bucket stat = 2;
+}
+
+message ThrottlingData {
+  // Number of periods with throttling active.
+  optional int64 periods = 1;
+
+  // Number of periods when the container hit its throttling limit.
+  optional int64 throttled_periods = 2;
+
+  // Aggregate time the container was throttled for.
+  // Units: nanoseconds.
+  optional int64 throttled_time = 3;
+}
+
+message CpuStats {
+  // CPU usage.
+  // Units: nanoseconds.
+  optional uint64 usage = 1;
+
+  // CPU load, average number of runnable threads.
+  optional int32 load = 2;
+
+  // CPU throttling stats.
+  optional ThrottlingData throttling_data = 3;
+
+  // CPU scheduling histograms.
+  repeated HistogramMap histograms = 4;
+}
+
+message MemoryStats {
+  // Memory limit, equivalent to "limit" in MemorySpec.
+  // Units: Bytes.
+  optional uint64 limit = 1;
+
+  // Effective memory limit, this may be different from "limit" above if the
+  // parent has less than "limit" memory available.
+  // Units: Bytes.
+  optional uint64 effective_limit = 2;
+
+  // Reserved memory.
+  // Units: Bytes.
+  optional uint64 reservation = 3;
+
+  // Usage statistics.
+
+  // Current memory usage, this includes all memory regardless of when it was
+  // accessed.
+  // Units: Bytes.
+  optional uint64 usage = 4;
+
+  // Max memory usage iobserved in container's lifetime.
+  // Units: Bytes.
+  optional uint64 max_usage = 5;
+
+  // The amount of working set memory, this includes recently accessed memory,
+  // dirty memory, and kernel memmory. Working set is <= "usage".
+  // Units: Bytes.
+  optional uint64 working_set = 6;
+}
+
+message DiskIoStats {
+}
+
+message NetworkStats {
+  }
+
+message MonitoringStats {
+}
+
+message GlobalStats {
+}
