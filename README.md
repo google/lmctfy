@@ -9,19 +9,19 @@ lmctfy was designed and implemented with specific use-cases and configurations i
 lmctfy is released as both a C++ library and a CLI.
 
 ## Current Status
-lmctfy is beta software under heavy development and may change as it evolves. The latest release is version is `0.1`. It currently only provides CPU and memory isolation. Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
+lmctfy is beta software under heavy development and may change as it evolves. The latest release version is `0.1`. It currently only provides CPU and memory isolation. Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
 
 ## Getting Started
 This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#cli-commands) section provides some examples of CLI operations and [C++ Library](#c-library) describes the use of the underlying library.
 ### Dependencies
+The build system is targeted for use with `make` and `g++-4.7`. lmctfy makes use of `C++11` and as such needs a compiler that supports it. We've tested the setup on **Ubuntu 12.04+**. We are happy to accept patches that add support for other setups.
+
 lmctfy depends on the following libraries and expects them to be available on the system:
 * [Protocol Buffers](https://code.google.com/p/protobuf/)
 * [gflags](https://code.google.com/p/gflags/)
 * [RE2](https://code.google.com/p/re2/)
 
 ### Building the CLI
-The build system was targeted for **Ubuntu 12.04+** and expects `make` and `g++-4.7` to be available. We are happy to accept patches that add support for other setups.
-
 To build the `lmctfy` CLI:
 
 ```bash
@@ -51,7 +51,7 @@ lmctfy has been tested on **Ubuntu 12.04+** and on the **Ubuntu 3.3** and **3.8*
 In order to run lmctfy we must first initialize the machine. This only needs to happen once and is typically done when the machine first boots. If the cgroup hierarchies are already mounted, then an empty config is enough and lmctfy will auto-detect the existing mounts:
 
 ```bash
-lmctfy init “”
+lmctfy init ""
 ```
 
 If the cgroup hierarchies are not mounted, those must be specified so that lmctfy can mount them. The current version of lmctfy needs the following cgroup hierarchies: `cpu`, `cpuset`, `cpuacct`, `memory`, and `freezer`. `cpu` and `cpuacct` are the only hierarchies that can be co-mounted, all other must be mounted individually. For details on configuration specifications take a look at `InitSpec` in [lmctfy.proto](/include/lmctfy.proto). An example configuration mounting all of the hierarchies in `/dev/cgroup`:
@@ -114,7 +114,7 @@ Please see [lmctfy.proto](/include/lmctfy.proto) for the full `ContainerSpec`.
 Example (create a memory-only container with `100MB` limit):
 
 ```bash
-lmctfy create memory_only “memory:{limit:100000000}”
+lmctfy create memory_only "memory:{limit:100000000}"
 ```
 
 ### Destroy
@@ -147,9 +147,9 @@ lmctfy run <name> <command>
 Examples:
 
 ```bash
-lmctfy run test “echo hello world”
+lmctfy run test "echo hello world"
 lmctfy run /test/sub bash
-lmctfy run -n /test “echo hello from a daemon”
+lmctfy run -n /test "echo hello from a daemon"
 ```
 
 ### Other
