@@ -96,7 +96,8 @@ void RegisterInitCommand() {
           "config file using the -c flag. The spec can be an ASCII or binary "
           "proto in either case.",
           "<spec proto in ASCII or binary mode>  | -c <config file>",
-          CMD_TYPE_INIT, 0, 1, &InitContainers));
+          CMD_TYPE_INIT, 1 /* min arguments */, 1 /* max arguments */,
+          &InitContainers));
 }
 
 }  // namespace cli
