@@ -51,7 +51,7 @@ lmctfy has been tested on **Ubuntu 12.04+** and on the **Ubuntu 3.3** and **3.8*
 In order to run lmctfy we must first initialize the machine. This only needs to happen once and is typically done when the machine first boots. If the cgroup hierarchies are already mounted, then an empty config is enough and lmctfy will auto-detect the existing mounts:
 
 ```bash
-lmctfy init “”
+lmctfy init ""
 ```
 
 If the cgroup hierarchies are not mounted, those must be specified so that lmctfy can mount them. The current version of lmctfy needs the following cgroup hierarchies: `cpu`, `cpuset`, `cpuacct`, `memory`, and `freezer`. `cpu` and `cpuacct` are the only hierarchies that can be co-mounted, all other must be mounted individually. For details on configuration specifications take a look at `InitSpec` in [lmctfy.proto](/include/lmctfy.proto). An example configuration mounting all of the hierarchies in `/dev/cgroup`:
@@ -114,7 +114,7 @@ Please see [lmctfy.proto](/include/lmctfy.proto) for the full `ContainerSpec`.
 Example (create a memory-only container with `100MB` limit):
 
 ```bash
-lmctfy create memory_only “memory:{limit:100000000}”
+lmctfy create memory_only "memory:{limit:100000000}"
 ```
 
 ### Destroy
@@ -147,9 +147,9 @@ lmctfy run <name> <command>
 Examples:
 
 ```bash
-lmctfy run test “echo hello world”
+lmctfy run test "echo hello world"
 lmctfy run /test/sub bash
-lmctfy run -n /test “echo hello from a daemon”
+lmctfy run -n /test "echo hello from a daemon"
 ```
 
 ### Other
