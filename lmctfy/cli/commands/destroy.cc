@@ -44,7 +44,10 @@ namespace cli {
 Status DestroyContainer(const vector<string> &argv, const ContainerApi *lmctfy,
                         vector<OutputMap> *output) {
   // Args: destroy <container name>
-  CHECK_EQ(argv.size(), 2);
+  if (argv.size() != 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
   const string container_name = argv[1];
 
   // Ensure the container exists.

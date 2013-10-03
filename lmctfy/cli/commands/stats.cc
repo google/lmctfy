@@ -47,8 +47,10 @@ static Status StatsContainer(const vector<string> &argv,
                              vector<OutputMap> *output,
                              Container::StatsType stats_type) {
   // Args: full|summary [<container name>]
-  CHECK_GE(argv.size(), 1);
-  CHECK_LE(argv.size(), 2);
+  if (argv.size() < 1 || argv.size() > 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
 
   // Get container name.
   string container_name;

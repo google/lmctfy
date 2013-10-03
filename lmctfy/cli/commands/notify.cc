@@ -80,7 +80,10 @@ static Status RegisterNotification(const EventSpec &spec,
 Status MemoryOomHandler(const vector<string> &argv, const ContainerApi *lmctfy,
                         vector<OutputMap> *output) {
   // Args: oom <container name>
-  CHECK_EQ(2, argv.size());
+  if (argv.size() != 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
   const string container_name = argv[1];
 
   EventSpec spec;
@@ -93,7 +96,10 @@ Status MemoryThresholdHandler(const vector<string> &argv,
                               const ContainerApi *lmctfy,
                               vector<OutputMap> *output) {
   // Args: threshold <container name> <threshold in bytes>
-  CHECK_EQ(3, argv.size());
+  if (argv.size() != 3) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
   const string container_name = argv[1];
   uint64 threshold;
   if (!SimpleAtoi(argv[2], &threshold)) {

@@ -46,7 +46,10 @@ namespace cli {
 Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
                       vector<OutputMap> *output) {
   // Args: run <container name> <command>
-  CHECK_EQ(argv.size(), 3);
+  if (argv.size() != 3) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
   const string container_name = argv[1];
   const string command = argv[2];
 

@@ -43,8 +43,10 @@ namespace cli {
 Status DetectContainer(const vector<string> &argv, const ContainerApi *lmctfy,
                        vector<OutputMap> *output) {
   // Args: detect [<PID/TID>]
-  CHECK_GE(argv.size(), 1);
-  CHECK_LE(argv.size(), 2);
+  if (argv.size() < 1 || argv.size() > 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
 
   // Assume parent's PID if no PID/TID was specified.
   pid_t pid;

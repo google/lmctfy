@@ -43,15 +43,16 @@ namespace cli {
 
 // TODO(vmarmol): Pull out common components into a command_common.h
 
-// Command to initialize containers. We ignore the provided lmctfy.
+// Command to initialize containers.
 Status InitContainers(const vector<string> &argv, const ContainerApi *lmctfy,
                       vector<OutputMap> *output) {
   // Args: init <container spec>
-  CHECK_GE(argv.size(), 2);
-  CHECK_LE(argv.size(), 2);
+  if (argv.size() != 2) {
+    return Status(::util::error::INVALID_ARGUMENT, "See help for options.");
+  }
 
-  // Ensure that a config file or a ASCII/binary proto was specified (not either
-  // or both).
+  // Ensure that a config file or a ASCII/binary proto was specified
+  // (not both).
   if (FLAGS_lmctfy_config.empty() && argv.size() == 1) {
     return Status(
         ::util::error::INVALID_ARGUMENT,
@@ -67,7 +68,7 @@ Status InitContainers(const vector<string> &argv, const ContainerApi *lmctfy,
   InitSpec spec;
   string config;
 
-  // Read from file or from the command line.
+  // Read from file or command line.
   if (!FLAGS_lmctfy_config.empty()) {
     RETURN_IF_ERROR(::file::GetContents(FLAGS_lmctfy_config, &config,
                                         ::file::Defaults()));

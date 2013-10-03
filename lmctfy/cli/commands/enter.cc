@@ -54,7 +54,10 @@ namespace cli {
 Status EnterContainer(const vector<string> &argv, const ContainerApi *lmctfy,
                       vector<OutputMap> *output) {
   // Args: enter <container> [<TIDs in a space-separated list>]
-  CHECK_GE(argv.size(), 2);
+  if (argv.size() < 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
   const string container_name = argv[1];
 
   vector<pid_t> tids;

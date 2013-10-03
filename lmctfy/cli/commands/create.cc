@@ -47,8 +47,10 @@ namespace cli {
 Status CreateContainer(const vector<string> &argv, const ContainerApi *lmctfy,
                        vector<OutputMap> *output) {
   // Args: create <container name> [<container spec>]
-  CHECK_GE(argv.size(), 2);
-  CHECK_LE(argv.size(), 3);
+  if (argv.size() < 2 || argv.size() > 3) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
   const string container_name = argv[1];
 
   // Ensure that a config file or a ASCII/binary proto was specified (not either

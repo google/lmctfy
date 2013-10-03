@@ -37,7 +37,10 @@ namespace cli {
 // Command to kill all PIDs/TIDs a container.
 Status KillAllInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
                           vector<OutputMap> *output) {
-  CHECK_EQ(argv.size(), 2);
+  if (argv.size() != 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
   const string container_name = argv[1];
 
   // Ensure the container exists.

@@ -57,8 +57,10 @@ static StatusOr<string> ContainerNameOrSelf(const vector<string> & argv,
 Status ListContainers(const vector<string> &argv, const ContainerApi *lmctfy,
                       vector<OutputMap> *output) {
   // Args: containers [<container name>]
-  CHECK_GE(argv.size(), 1);
-  CHECK_LE(argv.size(), 2);
+  if (argv.size() < 1 || argv.size() > 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
 
   // Get the container name.
   string container_name;
@@ -96,8 +98,10 @@ static Status ListPidsOrTids(const vector<string> &argv,
                              vector<OutputMap> *output,
                              ListType list_type) {
   // Args: pids|tids [container name]
-  CHECK_GE(argv.size(), 1);
-  CHECK_LE(argv.size(), 2);
+  if (argv.size() < 1 || argv.size() > 2) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "See help for supported options.");
+  }
 
   // Get the container name.
   StatusOr<string> statusor = ContainerNameOrSelf(argv, lmctfy);
