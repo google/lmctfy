@@ -195,4 +195,4 @@ Interested in contributing to the project? Feel free to send a patch or take a l
 
 ## Mailing List
 
-The project mailing list is <lmctfy@googlegroups.com>. The list will be used for announcements, discussions, and general support.
+The project mailing list is <lmctfy@googlegroups.com>. The list will be used for announcements, discussions, and general support. You can [subscribe via groups.google.com](https://groups.google.com/forum/#!forum/lmctfy).
