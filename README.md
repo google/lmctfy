@@ -191,7 +191,7 @@ Some of the relevant kernel patches:
 
 ## Contributing
 
-Interested in contributing to the project? Feel free to send a patch or take a look at our [roadmap](#roadmap) for ideas on areas of contribution. Follow [Getting Started](#getting-started) above and it should get you up and running. If not, let us know so we can help and improve the instructions. 
+Interested in contributing to the project? Feel free to send a patch or take a look at our [roadmap](#roadmap) for ideas on areas of contribution. Follow [Getting Started](#getting-started) above and it should get you up and running. If not, let us know so we can help and improve the instructions. There is some documentation on the structure of lmctfy in the [primer](/PRIMER.md).
 
 ## Mailing List
 
