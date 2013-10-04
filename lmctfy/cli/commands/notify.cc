@@ -131,7 +131,7 @@ void RegisterNotifyCommands() {
                 "notification. "
                 "The notification is triggered when the memory usage goes "
                 "above the specified threshold.",
-                "<container name> <threshold in bytes>", CMD_TYPE_SETTER, 1, 1,
+                "<container name> <threshold in bytes>", CMD_TYPE_SETTER, 2, 2,
                 &MemoryThresholdHandler)})}));
 }
 
