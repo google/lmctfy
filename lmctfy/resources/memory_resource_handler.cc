@@ -112,12 +112,12 @@ Status MemoryResourceHandler::Update(const ContainerSpec &spec,
   // - If no limit specified, default to MAX_INT64.
   // - If no reservation specified, default to 0.
 
-  // Set the limit. The default is MAX_INT64 if it was not specified during a
-  // replace.
+  // Set the limit. The default is -1 if it was not specified during a replace.
+  // The kernel interprets it as the maximum permissible value.
   if (memory_spec.has_limit()) {
     RETURN_IF_ERROR(memory_controller_->SetLimit(Bytes(memory_spec.limit())));
   } else if (policy == Container::UPDATE_REPLACE) {
-    RETURN_IF_ERROR(memory_controller_->SetLimit(Bytes(kint64max)));
+    RETURN_IF_ERROR(memory_controller_->SetLimit(Bytes(-1)));
   }
 
   // Set the reservation if it was specified. The default is 0 if it was not
