@@ -399,7 +399,7 @@ TEST_F(MemoryResourceHandlerTest, UpdateDiffWithReservationFails) {
 TEST_F(MemoryResourceHandlerTest, UpdateReplaceEmpty) {
   ContainerSpec spec;
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(kint64max)))
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(-1)))
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
       .WillOnce(Return(Status::OK));
