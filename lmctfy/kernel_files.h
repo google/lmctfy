@@ -84,6 +84,8 @@ struct KernelFiles {
     static const char kStepSizeInBytes[];
     static const char kSwapfile[];
     static const char kUsageInBytes[];
+    static const char kForceEmpty[];
+    static const char kTryToFreePages[];
 
     // Fields in kIdlePageStats file.
     struct IdlePageStats {

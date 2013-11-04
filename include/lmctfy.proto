@@ -50,7 +50,7 @@ message EventSpec {
   // usage threshold.
   message MemoryThreshold {
     // The threshold in bytes.
-    optional uint64 usage = 1;
+    optional int64 usage = 1;
   }
   optional MemoryThreshold memory_threshold = 2;
 
@@ -61,23 +61,6 @@ message EventSpec {
   message ContainerEmpty {
   }
   optional ContainerEmpty container_empty = 3;
-}
-
-// Basic information about a container.
-message ContainerInfo {
-  // The UID of the owner.
-  optional int64 uid = 1;
-
-  // The GID of the owner.
-  optional int64 gid = 2;
-
-  // UNIX timestamp at creation time.
-  // Units: seconds.
-  optional int64 create_time = 3;
-
-  // UNIX timestamp at the time of the last update.
-  // Units: seconds
-  optional int64 update_time = 4;
 }
 
 enum SchedulingLatency {
@@ -119,21 +102,20 @@ message MemorySpec {
   // TODO(vmarmol): Make more concrete.
   optional int64 eviction_priority = 1;
 
-  // The amount of memory requested. Required at container creation time if
-  // memory isolation is specified.
+  // The amount of memory requested. Default is "unlimited".
   // Units: bytes.
-  optional uint64 limit = 2;
+  optional int64 limit = 2;
 
   // UNIMPLEMENTED
   // The hard limit on the amount of memory that can be used. Going over "limit"
   // may decrease the priority of memory requests, going over "max_limit" OOMs
   // the container. When it is not specified, defaults to "limit".
   // Units: bytes.
-  optional uint64 max_limit = 3;
+  optional int64 max_limit = 3;
 
-  // The amount of guaranteed memory.
+  // The amount of guaranteed memory.  Default is 0.
   // Units: bytes.
-  optional uint64 reservation = 4;
+  optional int64 reservation = 4;
 
   // UNIMPLEMENTED
   // Absolute path.
@@ -145,7 +127,7 @@ message MemorySpec {
 
   // UNIMPLEMENTED
   // Units: bytes.
-  optional uint64 swap_size = 7;
+  optional int64 swap_size = 7;
 }
 
 message DiskIoSpec {
@@ -327,32 +309,32 @@ message CpuStats {
 message MemoryStats {
   // Memory limit, equivalent to "limit" in MemorySpec.
   // Units: Bytes.
-  optional uint64 limit = 1;
+  optional int64 limit = 1;
 
   // Effective memory limit, this may be different from "limit" above if the
   // parent has less than "limit" memory available.
   // Units: Bytes.
-  optional uint64 effective_limit = 2;
+  optional int64 effective_limit = 2;
 
   // Reserved memory.
   // Units: Bytes.
-  optional uint64 reservation = 3;
+  optional int64 reservation = 3;
 
   // Usage statistics.
 
   // Current memory usage, this includes all memory regardless of when it was
   // accessed.
   // Units: Bytes.
-  optional uint64 usage = 4;
+  optional int64 usage = 4;
 
   // Max memory usage iobserved in container's lifetime.
   // Units: Bytes.
-  optional uint64 max_usage = 5;
+  optional int64 max_usage = 5;
 
   // The amount of working set memory, this includes recently accessed memory,
   // dirty memory, and kernel memmory. Working set is <= "usage".
   // Units: Bytes.
-  optional uint64 working_set = 6;
+  optional int64 working_set = 6;
 }
 
 message DiskIoStats {

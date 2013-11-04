@@ -77,13 +77,15 @@ class Container;
 // Containers exist on the whole machine and thus can be accessed from multiple
 // processes and multiple threads in each process. At any given time, there may
 // be Container objects for container /foo in different processes, and in
-// different threads of the same process. All of these instances are
-// synchronized such that mutable container operations are atomic.
+// different threads of the same process. Administrative operations on a single
+// container must be synchronized. This synchronizations is typically done by
+// the "container owner". Administrative operations are: Create(), Update(),
+// Destroy(), KillAll(), Pause(), and Resume().
 //
 // Note that since there are multiple Container objects in multiple processes, a
 // container may be "deleted under you." Once a container is deleted, all of the
 // operations on all Container objects that reference it will fail with
-// NOT_FOUND. Calls to Info() will return not found as well.
+// NOT_FOUND.
 //
 // Tourist Threads:
 // There may exist threads that are inside a container, but their thread-group
@@ -181,7 +183,10 @@ class ContainerApi {
 // Allows direct interactions with the container and its properties. Containers
 // are created and destroyed by the lmctfy library above.
 //
-// Class is thread-safe.
+// TODO(vmarmol): Make this thread-safe for calls on the same container object.
+// Class is thread-compatible. It is not inherently thread-safe, but can be made
+// as such by synchronizing non-const invocations. It is safe to call const
+// methods without synchronization.
 class Container {
  public:
   // Destructor does not destroy the underlying container. For that, use
@@ -198,15 +203,16 @@ class Container {
     UPDATE_REPLACE
   };
 
-  // Updates the container according to the specification.
+  // Updates the container according to the specification. The set of resource
+  // types being isolated cannot change during an Update. This means that an
+  // UPDATE_REPLACE must specify all the resources being isolated and an
+  // UPDATE_DIFF cannot specify any resource that is not already being isolated.
   //
   // Arguments:
   //   spec: The specification of the desired updates.
   //   policy: If UPDATE_REPLACE updates the container to EXACTLY match the
-  //       specification; if the isolated resources change, the respective
-  //       resources are added or removed as specified. If UPDATE_DIFF, only
-  //       makes the specified changes. i.e.: if only memory limit is specified,
-  //       only that is updated.
+  //       specification. If UPDATE_DIFF, only makes the specified changes.
+  //       i.e.: if only memory limit is specified, only that is updated.
   // Return:
   //   Status: Status of the operation. OK iff successful.
   virtual ::util::Status Update(const ContainerSpec &spec,
@@ -243,24 +249,36 @@ class Container {
   // Arguments:
   //   command: The shell command to execute. It is executed using "/bin/sh -c".
   //   policy: If FDS_INHERITED, the command will run with all file descriptors
-  //   shared with the parent process.  If FDS_DETACHED, the command will
-  //   run with all file descriptors closed and STDIN/STDOUT redirected to
-  //   /dev/null.
+  //       left open. If FDS_DETACHED, all file descriptors will be closed
+  //       (STDIN/STDOUT/STDERR will be redirected to /dev/null) prior to
+  //       running the command.
   // Return:
   //   StatusOr: Status of the operation. OK iff successful. On success, the
   //       PID of the command is returned.
   virtual ::util::StatusOr<pid_t> Run(StringPiece command, FdPolicy policy) = 0;
 
-  // Returns basic information about the container with the specified name (if
-  // it exists). The basic information returned is specified in the
-  // ContainerInfo proto.
+  // Returns the resource isolation specification (ContainerSpec) of this
+  // container.
+  //
+  // Return:
+  //   StatusOr: Status of the operation. OK iff successfull. On success, the
+  //       ContainerSpec is populated.
+  virtual ::util::StatusOr<ContainerSpec> Spec() const = 0;
+
+  // Execute the specified command inside the container.  This replaces the
+  // current process image with the specified command.  The PATH environment
+  // variable is used, and the existing environment is passed to the new
+  // process image unchanged.
   //
   // Arguments:
-  //   StatusOr: Status of the operation. On success we populate the container
-  //       information.
+  //   command: The program to execute, with one argument per element.  The
+  //       first argument must be the command to run, findable either by
+  //       standard resolution from the current directory (e.g. /dir/prog or
+  //       ./dir/prog or dir/prog), or by the PATH environment variable.
   // Return:
-  //   ContainerInfo: The populated container information.
-  virtual ::util::StatusOr<ContainerInfo> Info() const = 0;
+  //   Status: Status of the operation, iff failure. If this call succeeds,
+  //       it never returns.
+  virtual ::util::Status Exec(const ::std::vector<string> &command) = 0;
 
   // Policies on listing output
   enum ListPolicy {

@@ -27,7 +27,7 @@ class MockJobControllerFactory : public JobControllerFactory {
   // The mock won't use the additional parameters so it is okay to fake them.
   explicit MockJobControllerFactory(const CgroupFactory *cgroup_factory)
       : JobControllerFactory(
-            cgroup_factory, false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD1(

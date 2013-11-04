@@ -57,4 +57,20 @@ string JoinPath(StringPiece p1, StringPiece p2, StringPiece p3) {
   return result;
 }
 
+StringPiece Basename(StringPiece path) {
+  stringpiece_ssize_type pos = path.find_last_of('/');
+
+  // Handle the case with no '/' in 'path'.
+  if (pos == StringPiece::npos) {
+    return path;
+  }
+
+  // Handle the case with a single leading '/' in 'path'.
+  if (pos == 0) {
+    return StringPiece(path, 1);
+  }
+
+  return StringPiece(path, pos + 1);
+}
+
 }  // namespace file

@@ -27,7 +27,7 @@ class MockFreezerControllerFactory : public FreezerControllerFactory {
   // The mock won't use the additional parameters so it is okay to fake them.
   explicit MockFreezerControllerFactory(const CgroupFactory *cgroup_factory)
       : FreezerControllerFactory(
-            cgroup_factory, false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD1(
@@ -46,8 +46,9 @@ class MockFreezerController : public FreezerController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockFreezerController()
-      : FreezerController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-                      reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
+      : FreezerController(
+            "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_METHOD0(Destroy, ::util::Status());
   MOCK_METHOD1(Enter, ::util::Status(pid_t tid));

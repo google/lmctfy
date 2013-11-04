@@ -546,10 +546,6 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateSetLatencyNotFound) {
 
   EXPECT_CALL(*mock_cpu_controller_, GetLatency())
       .WillRepeatedly(Return(PRIORITY));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-      .WillOnce(Return(Status::OK));
 
   // We ignore SetLatency() when it is NOT_FOUND.
   StatusOr<ResourceHandler *> statusor = CallCreate(kContainerName, spec);
@@ -665,10 +661,14 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineSuccess) {
       .WillOnce(Return(mock_cpu_controller_.get()));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
       .WillOnce(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
+      .WillOnce(Return(mock_cpuset_controller_.get()));
 
   EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
       .WillOnce(Return(Status::OK));
 
   EXPECT_OK(CallInitMachine(spec));
@@ -676,6 +676,7 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineSuccess) {
   // Controllers are owned by the caller of Create().
   mock_cpu_controller_.release();
   mock_cpuacct_controller_.release();
+  mock_cpuset_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineCpuCreateFails) {
@@ -704,6 +705,28 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineCpuAcctCreateFails) {
   mock_cpu_controller_.release();
 }
 
+TEST_F(CpuResourceHandlerFactoryTest, InitMachineCpusetGetFails) {
+  InitSpec spec;
+
+  EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
+      .WillOnce(Return(mock_cpu_controller_.get()));
+  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
+      .WillOnce(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
+      .WillOnce(Return(Status::CANCELLED));
+
+  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_EQ(Status::CANCELLED, CallInitMachine(spec));
+
+  // Controllers are owned by the caller of Create().
+  mock_cpu_controller_.release();
+  mock_cpuacct_controller_.release();
+}
+
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineAlreadyInitializedSuccess) {
   InitSpec spec;
 
@@ -715,10 +738,14 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineAlreadyInitializedSuccess) {
       .WillRepeatedly(Return(Status(::util::error::ALREADY_EXISTS, "")));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get("/batch"))
       .WillOnce(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
+      .WillOnce(Return(mock_cpuset_controller_.get()));
 
   EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
       .WillOnce(Return(Status::OK));
 
   EXPECT_OK(CallInitMachine(spec));
@@ -726,6 +753,7 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineAlreadyInitializedSuccess) {
   // Controllers are owned by the caller of Create().
   mock_cpu_controller_.release();
   mock_cpuacct_controller_.release();
+  mock_cpuset_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -809,11 +837,15 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineSetupHistogramsNotFound) {
       .WillOnce(Return(mock_cpu_controller_.get()));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
       .WillOnce(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
+      .WillOnce(Return(mock_cpuset_controller_.get()));
 
   EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
       .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
+  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
+      .WillOnce(Return(Status::OK));
 
   // SetupHistogram() is allowed to be NOT_FOUND.
   EXPECT_OK(CallInitMachine(spec));
@@ -821,6 +853,32 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineSetupHistogramsNotFound) {
   // Controllers are owned by the caller of Create().
   mock_cpu_controller_.release();
   mock_cpuacct_controller_.release();
+  mock_cpuset_controller_.release();
+}
+
+TEST_F(CpuResourceHandlerFactoryTest, InitMachineEnableCloneChildrenFails) {
+  InitSpec spec;
+
+  EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
+      .WillOnce(Return(mock_cpu_controller_.get()));
+  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
+      .WillOnce(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
+      .WillOnce(Return(mock_cpuset_controller_.get()));
+
+  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
+      .WillOnce(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED, CallInitMachine(spec));
+
+  // Controllers are owned by the caller of Create().
+  mock_cpu_controller_.release();
+  mock_cpuacct_controller_.release();
+  mock_cpuset_controller_.release();
 }
 
 class CpuResourceHandlerTest : public ::testing::Test {
@@ -1028,13 +1086,6 @@ TEST_F(CpuResourceHandlerTest, UpdateThroughputSucceeds) {
     EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(42))
         .WillOnce(Return(Status::OK));
 
-    if (policy == Container::UPDATE_REPLACE) {
-      EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-          .WillOnce(Return(Status::OK));
-      EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-          .WillOnce(Return(Status::OK));
-    }
-
     EXPECT_OK(handler_->Update(spec, policy));
   }
 }
@@ -1048,13 +1099,6 @@ TEST_F(CpuResourceHandlerTest, UpdateThroughputFails) {
         .WillOnce(Return(NORMAL));
     EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(42))
         .WillRepeatedly(Return(Status::CANCELLED));
-
-    if (policy == Container::UPDATE_REPLACE) {
-      EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-          .WillRepeatedly(Return(Status::OK));
-      EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-          .WillRepeatedly(Return(Status::OK));
-    }
 
     EXPECT_NOT_OK(handler_->Update(spec, policy));
   }
@@ -1070,13 +1114,6 @@ TEST_F(CpuResourceHandlerTest, UpdateMaxThroughputSucceeds) {
     EXPECT_CALL(*mock_cpu_controller_, SetMaxMilliCpus(42))
         .WillOnce(Return(Status::OK));
 
-    if (policy == Container::UPDATE_REPLACE) {
-      EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-          .WillOnce(Return(Status::OK));
-      EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-          .WillOnce(Return(Status::OK));
-    }
-
     EXPECT_OK(handler_->Update(spec, policy));
   }
 }
@@ -1090,13 +1127,6 @@ TEST_F(CpuResourceHandlerTest, UpdateMaxThroughputFails) {
         .WillOnce(Return(NORMAL));
     EXPECT_CALL(*mock_cpu_controller_, SetMaxMilliCpus(42))
         .WillRepeatedly(Return(Status::CANCELLED));
-
-    if (policy == Container::UPDATE_REPLACE) {
-      EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-          .WillRepeatedly(Return(Status::OK));
-      EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-          .WillRepeatedly(Return(Status::OK));
-    }
 
     EXPECT_NOT_OK(handler_->Update(spec, policy));
   }
@@ -1114,11 +1144,6 @@ TEST_F(CpuResourceHandlerTest, UpdateMaskSucceeds) {
     EXPECT_CALL(*mock_cpuset_controller_, SetCpuMask(testing::_))
          .WillOnce(Return(Status::OK));
 
-    if (policy == Container::UPDATE_REPLACE) {
-      EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-          .WillOnce(Return(Status::OK));
-    }
-
     EXPECT_OK(handler_->Update(spec, policy));
   }
 }
@@ -1132,11 +1157,6 @@ TEST_F(CpuResourceHandlerTest, UpdateMaskFails) {
         .WillOnce(Return(NORMAL));
     EXPECT_CALL(*mock_cpuset_controller_, SetCpuMask(testing::_))
         .WillRepeatedly(Return(Status::CANCELLED));
-
-    if (policy == Container::UPDATE_REPLACE) {
-      EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-          .WillRepeatedly(Return(Status::OK));
-    }
 
     EXPECT_NOT_OK(handler_->Update(spec, policy));
   }
@@ -1154,10 +1174,6 @@ TEST_F(CpuResourceHandlerTest, UpdateReplaceEmptyWithDefaultLatency) {
 
   EXPECT_CALL(*mock_cpu_controller_, GetLatency())
       .WillOnce(Return(NORMAL));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-      .WillOnce(Return(Status::OK));
 
   // Staying with default Latency is ok.
   EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
@@ -1171,10 +1187,6 @@ TEST_F(CpuResourceHandlerTest, UpdateReplaceEmptyWithNonDefaultLatency) {
   // default.
   EXPECT_CALL(*mock_cpu_controller_, GetLatency())
       .WillOnce(Return(PREMIER));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-      .WillRepeatedly(Return(Status::OK));
 
   // changing latency is not allowed.
   EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
@@ -1184,10 +1196,6 @@ TEST_F(CpuResourceHandlerTest, UpdateReplaceSwitchingLatencyFails) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PREMIER);
   EXPECT_CALL(*mock_cpu_controller_, GetLatency()).WillOnce(Return(NORMAL));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-      .WillRepeatedly(Return(Status::OK));
 
   // Trying to update latency to PREMIER should fail.
   EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
@@ -1202,13 +1210,6 @@ TEST_F(CpuResourceHandlerTest, UpdateLatencyNotFoundAndNotSet) {
         .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
     EXPECT_CALL(*mock_cpu_controller_, SetMaxMilliCpus(42))
         .WillRepeatedly(Return(Status::OK));
-
-    if (policy == Container::UPDATE_REPLACE) {
-      EXPECT_CALL(*mock_cpuset_controller_, InheritCpuMask())
-          .WillOnce(Return(Status::OK));
-      EXPECT_CALL(*mock_cpuset_controller_, InheritMemoryNodes())
-          .WillOnce(Return(Status::OK));
-    }
 
     // Latency update on a machine without latency support is ignored.
     EXPECT_OK(handler_->Update(spec, policy));

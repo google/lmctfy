@@ -40,11 +40,12 @@ class CpusetControllerFactory
     : public CgroupControllerFactory<CpusetController, CGROUP_CPUSET> {
  public:
   CpusetControllerFactory(const CgroupFactory *cgroup_factory,
-                          bool owns_cgroup, const KernelApi *kernel,
+                          const KernelApi *kernel,
                           EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<CpusetController, CGROUP_CPUSET>(
-          cgroup_factory, owns_cgroup, kernel, eventfd_notifications) {}
+            cgroup_factory, kernel, eventfd_notifications) {}
   virtual ~CpusetControllerFactory() {}
+
  private:
   DISALLOW_COPY_AND_ASSIGN(CpusetControllerFactory);
 };
@@ -62,12 +63,10 @@ class CpusetController : public CgroupController {
 
   // Set/inherit cpu mask for this cgroup.
   virtual ::util::Status SetCpuMask(cpu_set_t cpuset);
-  virtual ::util::Status InheritCpuMask();
 
   // Set/inherit memory nodes accessible to this container.
   virtual ::util::Status SetMemoryNodes(
-      const util::ResSet& memory_nodes);
-  virtual ::util::Status InheritMemoryNodes();
+      const util::ResSet &memory_nodes);
 
   // All statistics return NOT_FOUND if they were not found or available.
 
@@ -85,7 +84,5 @@ class CpusetController : public CgroupController {
 
 }  // namespace lmctfy
 }  // namespace containers
-
-
 
 #endif  // SRC_CONTROLLERS_CPUSET_CONTROLLER_H_

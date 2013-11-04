@@ -27,21 +27,20 @@ class MockCpuControllerFactory : public CpuControllerFactory {
   // The mock won't use the additional parameters so it is okay to fake them.
   explicit MockCpuControllerFactory(const CgroupFactory *cgroup_factory)
       : CpuControllerFactory(
-            cgroup_factory, false,
-            reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<CpuController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD1(Create, ::util::StatusOr<CpuController *>(
-      const string &hierarchy_path));
+  MOCK_CONST_METHOD1(
+      Create, ::util::StatusOr<CpuController *>(const string &hierarchy_path));
   MOCK_CONST_METHOD1(Exists, bool(const string &hierarchy_path));
 };
 
 typedef ::testing::StrictMock<MockCpuControllerFactory>
-      StrictMockCpuControllerFactory;
+    StrictMockCpuControllerFactory;
 typedef ::testing::NiceMock<MockCpuControllerFactory>
-      NiceMockCpuControllerFactory;
+    NiceMockCpuControllerFactory;
 
 class MockCpuController : public CpuController {
  public:

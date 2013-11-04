@@ -28,20 +28,19 @@ class MockCpusetControllerFactory : public CpusetControllerFactory {
   // The mock won't use the additional parameters so it is okay to fake them.
   explicit MockCpusetControllerFactory(const CgroupFactory *cgroup_factory)
       : CpusetControllerFactory(
-            cgroup_factory, false,
-            reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<CpusetController *>(const string &hierarchy_path));
   MOCK_CONST_METHOD1(Create, ::util::StatusOr<CpusetController *>(
-      const string &hierarchy_path));
+                                 const string &hierarchy_path));
 };
 
 typedef ::testing::StrictMock<MockCpusetControllerFactory>
-      StrictMockCpusetControllerFactory;
+    StrictMockCpusetControllerFactory;
 typedef ::testing::NiceMock<MockCpusetControllerFactory>
-      NiceMockCpusetControllerFactory;
+    NiceMockCpusetControllerFactory;
 
 class MockCpusetController : public CpusetController {
  public:
@@ -52,12 +51,12 @@ class MockCpusetController : public CpusetController {
   }
 
   MOCK_METHOD1(SetCpuMask, ::util::Status(cpu_set_t cpuset));
-  MOCK_METHOD0(InheritCpuMask, ::util::Status());
-  MOCK_METHOD1(SetMemoryNodes, ::util::Status(
-      const util::ResSet& memory_nodes));
-  MOCK_METHOD0(InheritMemoryNodes, ::util::Status());
+  MOCK_METHOD1(SetMemoryNodes,
+               ::util::Status(const util::ResSet &memory_nodes));
   MOCK_CONST_METHOD0(GetCpuMask, ::util::StatusOr<cpu_set_t>());
   MOCK_CONST_METHOD0(GetMemoryNodes, ::util::StatusOr<util::ResSet>());
+  MOCK_METHOD0(EnableCloneChildren, ::util::Status());
+  MOCK_METHOD0(DisableCloneChildren, ::util::Status());
 };
 
 typedef ::testing::StrictMock<MockCpusetController> StrictMockCpusetController;

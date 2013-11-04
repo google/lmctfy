@@ -26,20 +26,19 @@ class MockCpuAcctControllerFactory : public CpuAcctControllerFactory {
  public:
   explicit MockCpuAcctControllerFactory(const CgroupFactory *cgroup_factory)
       : CpuAcctControllerFactory(
-            cgroup_factory, false,
-            reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<CpuAcctController *>(const string &hierarchy_path));
   MOCK_CONST_METHOD1(Create, ::util::StatusOr<CpuAcctController *>(
-      const string &hierarchy_path));
+                                 const string &hierarchy_path));
 };
 
 typedef ::testing::StrictMock<MockCpuAcctControllerFactory>
-      StrictMockCpuAcctControllerFactory;
+    StrictMockCpuAcctControllerFactory;
 typedef ::testing::NiceMock<MockCpuAcctControllerFactory>
-      NiceMockCpuAcctControllerFactory;
+    NiceMockCpuAcctControllerFactory;
 
 class MockCpuAcctController : public CpuAcctController {
  public:
@@ -50,17 +49,16 @@ class MockCpuAcctController : public CpuAcctController {
 
   MOCK_CONST_METHOD0(GetCpuUsageInNs, ::util::StatusOr<int64>());
   MOCK_CONST_METHOD0(GetPerCpuUsageInNs,
-                     ::util::StatusOr< ::std::vector<int64>*>());
+                     ::util::StatusOr< ::std::vector<int64> *>());
   MOCK_METHOD0(SetupHistograms, ::util::Status());
   MOCK_CONST_METHOD0(GetSchedulerHistograms,
-                     ::util::StatusOr< ::std::vector<CpuHistogramData *>*>());
+                     ::util::StatusOr< ::std::vector<CpuHistogramData *> *>());
   MOCK_CONST_METHOD0(EnableSchedulerHistograms, ::util::Status());
 };
 
 typedef ::testing::StrictMock<MockCpuAcctController>
     StrictMockCpuAcctController;
-typedef ::testing::NiceMock<MockCpuAcctController>
-    NiceMockCpuAcctController;
+typedef ::testing::NiceMock<MockCpuAcctController> NiceMockCpuAcctController;
 
 }  // namespace lmctfy
 }  // namespace containers

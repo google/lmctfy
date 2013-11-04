@@ -72,7 +72,6 @@ class ContainerApiImpl : public ContainerApi {
   // ContainerApiImpl takes ownership of all pointers except kernel.
   // ResourceHandlerFactories generate resource-specific ResourceHandlers.
   ContainerApiImpl(
-      const LockHandlerFactory *lock_handler_factory,
       TasksHandlerFactory *tasks_handler_factory,
       const CgroupFactory *cgroup_factory,
       const ::std::vector<ResourceHandlerFactory *> &resource_factories,
@@ -98,21 +97,18 @@ class ContainerApiImpl : public ContainerApi {
   //   Status: OK iff the machine is setup and ready to use lmctfy.
   virtual ::util::Status InitMachine(const InitSpec &spec) const;
 
+  // Determines whether the specified container exists. Name must be resolved.
+  virtual bool Exists(const string &container_name) const;
+
  private:
   // Resolves the container name to its absolute canonical form. For details
   // about this form look at the public lmctfy.proto.
   ::util::StatusOr<string> ResolveContainerName(
       StringPiece container_name) const;
 
-  // Determines whether the specified container exists. Name must be resolved.
-  bool Exists(const string &container_name) const;
-
   // Destroys the specified container and deletes it iff the destruction
   // succeeded. Returns OK in this case.
   ::util::Status DestroyDeleteContainer(Container *container) const;
-
-  // Factory for each container's LockHandler.
-  ::std::unique_ptr<const LockHandlerFactory> lock_handler_factory_;
 
   // Factory for TasksHandler in use.
   ::std::unique_ptr<TasksHandlerFactory> tasks_handler_factory_;
@@ -143,33 +139,30 @@ class ContainerApiImpl : public ContainerApi {
 // Implementation of util::containers::lmctfy::Container
 class ContainerImpl : public Container {
  public:
-  // Takes ownership of lock_handler and tasks_handler. Does not take
-  // ownership of the resource factories, lmctfy, kernel API,
-  // subprocess_factory, or active_notifications.
+  // Takes ownership of tasks_handler. Does not take ownership of the resource
+  // factories, lmctfy, kernel API, subprocess_factory, or
+  // active_notifications.
   ContainerImpl(const string &name,
-                LockHandler *lock_handler,
                 TasksHandler *tasks_handler,
                 const ResourceFactoryMap &resource_factories,
-                const ContainerApi *lmctfy,
+                const ContainerApiImpl *lmctfy,
                 const KernelApi *kernel,
                 SubProcessFactory *subprocess_factory,
                 ActiveNotifications *active_notifications);
   virtual ~ContainerImpl();
 
-  virtual ::util::Status Update(const ContainerSpec &spec, UpdatePolicy policy)
-      LOCKS_EXCLUDED(*lock_handler_);
+  virtual ::util::Status Update(const ContainerSpec &spec, UpdatePolicy policy);
 
   // Destroys container and all resource handlers. Also kills all processes
   // inside this container. Returns OK iff successful. Does NOT delete the
   // object.
-  virtual ::util::Status Destroy() LOCKS_EXCLUDED(*lock_handler_);
+  virtual ::util::Status Destroy();
 
   // These methods are documented in //include/lmctfy.h
-  virtual ::util::Status Enter(const ::std::vector<pid_t> &tids)
-      LOCKS_EXCLUDED(*lock_handler_);
-  virtual ::util::StatusOr<ContainerInfo> Info() const;
-  virtual ::util::StatusOr<pid_t> Run(StringPiece command, FdPolicy policy)
-      LOCKS_EXCLUDED(*lock_handler_);
+  virtual ::util::Status Enter(const ::std::vector<pid_t> &tids);
+  virtual ::util::StatusOr<ContainerSpec> Spec() const;
+  virtual ::util::StatusOr<pid_t> Run(StringPiece command, FdPolicy policy);
+  virtual ::util::Status Exec(const ::std::vector<string> &command);
   virtual ::util::StatusOr< ::std::vector<Container *>> ListSubcontainers(
       ListPolicy policy) const;
   virtual ::util::StatusOr< ::std::vector<pid_t>> ListThreads(
@@ -182,7 +175,7 @@ class ContainerImpl : public Container {
   virtual ::util::StatusOr<NotificationId> RegisterNotification(
       const EventSpec &spec, EventCallback *callback);
   virtual ::util::Status UnregisterNotification(NotificationId notification_id);
-  virtual ::util::Status KillAll() LOCKS_EXCLUDED(*lock_handler_);
+  virtual ::util::Status KillAll();
 
   // Listable types for any given container.
   enum ListType {
@@ -226,39 +219,9 @@ class ContainerImpl : public Container {
   //   Status: OK iff all PIDs/TIDs are now dead.
   ::util::Status KillTasks(ListType type) const;
 
-  // Same as KillAll() but expecting the container lock to be held when called.
-  ::util::Status KillAllUnlocked() EXCLUSIVE_LOCKS_REQUIRED(*lock_handler_);
-
-  // Same as Enter() but expecting the container lock to be held when called.
-  ::util::Status EnterUnlocked(const ::std::vector<pid_t> &tids)
-      SHARED_LOCKS_REQUIRED(*lock_handler_);
-
   // Enters the current TID into this containers and starts the subprocess sp.
   // Any errors are returned through the status outparam.
-  void EnterAndRun(SubProcess *sp, ::util::Status *status)
-      SHARED_LOCKS_REQUIRED(*lock_handler_);
-
-  // Matches the resource handlers specified in handlers_to_match given the
-  // existing_handlers. This may involve creating and destroying resource
-  // handlers.
-  //
-  // Modifies all_handlers to remove any destroyed resources and add any created
-  // ones (by replacing their previous instances).
-  //
-  // Argument:
-  //   handlers_to_match: The resource handlers we want to match.
-  //   existing_handlers: The resource handlers currently being used.
-  //   spec: The spec of the container.
-  //   all_handlers: Map from resource handler type to resource handler for all
-  //       resource handlers.
-  // Return:
-  //   Status: OK iff the operation was successful.
-  ::util::Status MatchResourceHandlers(
-      const ::std::set<ResourceHandler *> &handlers_to_match,
-      const ::std::set<ResourceHandler *> &existing_handlers,
-      const ContainerSpec &spec,
-      ::std::map<ResourceType, ResourceHandler *> *all_handlers)
-      EXCLUSIVE_LOCKS_REQUIRED(*lock_handler_);
+  void EnterAndRun(SubProcess *sp, ::util::Status *status);
 
   // Same as ListSubcontainers() but the output is not guaranteed to be sorted.
   ::util::StatusOr< ::std::vector<Container *>> ListSubcontainersUnsorted(
@@ -269,8 +232,9 @@ class ContainerImpl : public Container {
   void HandleNotification(shared_ptr<Container::EventCallback> callback,
                           ::util::Status status);
 
-  // Handler for the lock subsystem used by the container.
-  ::std::unique_ptr<LockHandler> lock_handler_;
+  // Returns OK iff this container still exists. This is necessary since a
+  // container can be deleted "under you" by another process or thread.
+  ::util::Status Exists() const;
 
   // Handler for the tasks subsystem used by the container.
   ::std::unique_ptr<TasksHandler> tasks_handler_;
@@ -279,7 +243,7 @@ class ContainerImpl : public Container {
   const ResourceFactoryMap resource_factories_;
 
   // ContainerApi access for creating other containers.
-  const ContainerApi *lmctfy_;
+  const ContainerApiImpl *lmctfy_;
 
   // Wrapper for all calls to the kernel.
   const KernelApi *kernel_;

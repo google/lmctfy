@@ -14,6 +14,8 @@
 
 #include "lmctfy/lmctfy_impl.h"
 
+#include <sys/time.h>
+
 #include <algorithm>
 #include <memory>
 #include <queue>
@@ -33,8 +35,6 @@
 #include "lmctfy/controllers/eventfd_notifications.h"
 #include "lmctfy/controllers/freezer_controller.h"
 #include "lmctfy/controllers/job_controller.h"
-#include "lmctfy/file_lock_handler.h"
-#include "lmctfy/lock_handler.h"
 #include "lmctfy/resources/cpu_resource_handler.h"
 #include "lmctfy/resources/memory_resource_handler.h"
 #include "lmctfy/resources/monitoring_resource_handler.h"
@@ -74,22 +74,18 @@ using ::util::StatusOr;
 namespace containers {
 namespace lmctfy {
 
-// Location of the lock files.
-static const char kLockFilesPath[] = "/dev/cgroup/lock";
-
 // Given a map<ResourceType, T> and a ContainerSpec, extract all of the T's that
 // have the corresponding resource defined in the ContainerSpec.
 template <typename T>
 static void GetUsedResourceHandlers(
-    const ContainerSpec &spec,
-    const map<ResourceType, T> &resource_handlers,
+    const ContainerSpec &spec, const map<ResourceType, T> &resource_handlers,
     set<T> *output) {
 
 #define EXTRACT_RESOURCE(resource_proto_name, resource_type) \
-  if (spec.has_##resource_proto_name() \
-      && ((it = resource_handlers.find(resource_type)) \
-      != resource_handlers.end())) { \
-    output->insert(it->second); \
+  if (spec.has_##resource_proto_name() &&                    \
+      ((it = resource_handlers.find(resource_type)) !=       \
+       resource_handlers.end())) {                           \
+    output->insert(it->second);                              \
   }
 
   // TODO(vmarmol): Consider doing this through proto introspection.
@@ -105,9 +101,7 @@ static void GetUsedResourceHandlers(
 }
 
 // Creates a new SubProcess.
-static SubProcess *NewSubprocess() {
-  return new SubProcess();
-}
+static SubProcess *NewSubprocess() { return new SubProcess(); }
 
 // Appends the factory to output if the status is OK. Ignores those with status
 // NOT_FOUND.
@@ -153,19 +147,12 @@ static StatusOr<TasksHandlerFactory *> CreateTasksHandler(
     CgroupFactory *cgroup_factory, const KernelApi *kernel,
     EventFdNotifications *eventfd_notifications) {
   if (cgroup_factory->IsMounted(CGROUP_JOB)) {
-    bool owns_job =
-        cgroup_factory->OwnsCgroup(JobControllerFactory::HierarchyType());
-
     return new CgroupTasksHandlerFactory<JobController>(
-        new JobControllerFactory(cgroup_factory, owns_job, kernel,
-                                 eventfd_notifications),
+        new JobControllerFactory(cgroup_factory, kernel, eventfd_notifications),
         kernel);
   } else if (cgroup_factory->IsMounted(CGROUP_FREEZER)) {
-    bool owns_freezer =
-        cgroup_factory->OwnsCgroup(FreezerControllerFactory::HierarchyType());
-
     return new CgroupTasksHandlerFactory<FreezerController>(
-        new FreezerControllerFactory(cgroup_factory, owns_freezer, kernel,
+        new FreezerControllerFactory(cgroup_factory, kernel,
                                      eventfd_notifications),
         kernel);
   } else {
@@ -210,9 +197,7 @@ StatusOr<ContainerApiImpl *> ContainerApiImpl::NewContainerApiImpl(
   vector<ResourceHandlerFactory *> resources_to_use;
   resources_to_use.swap(resource_factories);
   return new ContainerApiImpl(
-      new FileLockHandlerFactory(kLockFilesPath, kernel),
-      tasks_handler_factory.release(),
-      cgroup_factory, resources_to_use, kernel,
+      tasks_handler_factory.release(), cgroup_factory, resources_to_use, kernel,
       active_notifications.release(), eventfd_notifications.release());
 }
 
@@ -256,14 +241,12 @@ Status ContainerApiImpl::InitMachineImpl(const KernelApi *kernel,
 }
 
 ContainerApiImpl::ContainerApiImpl(
-    const LockHandlerFactory *lock_handler_factory,
     TasksHandlerFactory *tasks_handler_factory,
     const CgroupFactory *cgroup_factory,
     const vector<ResourceHandlerFactory *> &resource_factories,
     const KernelApi *kernel, ActiveNotifications *active_notifications,
     EventFdNotifications *eventfd_notifications)
-    : lock_handler_factory_(CHECK_NOTNULL(lock_handler_factory)),
-      tasks_handler_factory_(CHECK_NOTNULL(tasks_handler_factory)),
+    : tasks_handler_factory_(CHECK_NOTNULL(tasks_handler_factory)),
       kernel_(CHECK_NOTNULL(kernel)),
       subprocess_factory_(NewPermanentCallback(&NewSubprocess)),
       cgroup_factory_(CHECK_NOTNULL(cgroup_factory)),
@@ -275,9 +258,7 @@ ContainerApiImpl::ContainerApiImpl(
   }
 }
 
-ContainerApiImpl::~ContainerApiImpl() {
-  STLDeleteValues(&resource_factories_);
-}
+ContainerApiImpl::~ContainerApiImpl() { STLDeleteValues(&resource_factories_); }
 
 StatusOr<Container *> ContainerApiImpl::Get(StringPiece container_name) const {
   // Resolve the container name.
@@ -289,18 +270,10 @@ StatusOr<Container *> ContainerApiImpl::Get(StringPiece container_name) const {
 
   // Ensure it exists.
   if (!Exists(resolved_name)) {
-    return Status(::util::error::NOT_FOUND,
-                  Substitute("Can't get non-existent container \"$0\"",
-                             resolved_name));
+    return Status(
+        ::util::error::NOT_FOUND,
+        Substitute("Can't get non-existent container \"$0\"", resolved_name));
   }
-
-  // Get the lock handler for this container.
-  StatusOr<LockHandler *> statusor_lock = lock_handler_factory_->Get(
-      resolved_name);
-  if (!statusor_lock.ok()) {
-    return statusor_lock.status();
-  }
-  unique_ptr<LockHandler> lock_handler(statusor_lock.ValueOrDie());
 
   // Get the tasks handler for this container.
   StatusOr<TasksHandler *> statusor_tasks_handler =
@@ -310,10 +283,9 @@ StatusOr<Container *> ContainerApiImpl::Get(StringPiece container_name) const {
   }
   unique_ptr<TasksHandler> tasks_handler(statusor_tasks_handler.ValueOrDie());
 
-  return new ContainerImpl(resolved_name, lock_handler.release(),
-                           tasks_handler.release(), resource_factories_, this,
-                           kernel_, subprocess_factory_.get(),
-                           active_notifications_.get());
+  return new ContainerImpl(
+      resolved_name, tasks_handler.release(), resource_factories_, this,
+      kernel_, subprocess_factory_.get(), active_notifications_.get());
 }
 
 StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
@@ -337,23 +309,9 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
 
   // Ensure the container doesn't already exist.
   if (Exists(resolved_name)) {
-    return Status(::util::error::ALREADY_EXISTS,
-                  Substitute("Can't create existing container \"$0\"",
-                             resolved_name));
-  }
-
-  // Create the lock and grab an exclusive lock for the creation
-  StatusOr<LockHandler *> statusor_lock = lock_handler_factory_->Create(
-      resolved_name);
-  if (!statusor_lock.ok()) {
-    return statusor_lock.status();
-  }
-  unique_ptr<LockHandler> lock_handler(statusor_lock.ValueOrDie());
-
-  // Grab an exclusive lock for the creation.
-  ScopedExclusiveLock l(lock_handler.get());
-  if (!l.held()) {
-    return l.lock_status();
+    return Status(
+        ::util::error::ALREADY_EXISTS,
+        Substitute("Can't create existing container \"$0\"", resolved_name));
   }
 
   // Create the tasks handler for this container
@@ -373,8 +331,8 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
   StatusOr<ResourceHandler *> statusor;
   for (auto type_handler_pair : resource_factories_) {
     // Don't create resources that were not specified.
-    if (used_handler_factories.find(type_handler_pair.second)
-        == used_handler_factories.end()) {
+    if (used_handler_factories.find(type_handler_pair.second) ==
+        used_handler_factories.end()) {
       continue;
     }
 
@@ -401,15 +359,14 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
   }
 
   return StatusOr<Container *>(new ContainerImpl(
-      resolved_name, lock_handler.release(), tasks_handler.release(),
-      resource_factories_, this, kernel_, subprocess_factory_.get(),
-      active_notifications_.get()));
+      resolved_name, tasks_handler.release(), resource_factories_, this,
+      kernel_, subprocess_factory_.get(), active_notifications_.get()));
 }
 
 Status ContainerApiImpl::Destroy(Container *container) const {
   // Get all subcontainers to destroy them.
-  StatusOr<vector<Container *>> statusor = container->ListSubcontainers(
-      Container::LIST_RECURSIVE);
+  StatusOr<vector<Container *>> statusor =
+      container->ListSubcontainers(Container::LIST_RECURSIVE);
   if (!statusor.ok()) {
     return statusor.status();
   }
@@ -457,9 +414,6 @@ Status ContainerApiImpl::InitMachine(const InitSpec &spec) const {
     RETURN_IF_ERROR(type_handler_pair.second->InitMachine(spec));
   }
 
-  // Initialize the lock handler.
-  RETURN_IF_ERROR(lock_handler_factory_->InitMachine(spec));
-
   return Status::OK;
 }
 
@@ -488,22 +442,22 @@ StatusOr<string> ContainerApiImpl::ResolveContainerName(
   // Ensure that no part of the path starts with a non-alphanumeric character.
   if (RE2::PartialMatch(resolved_name, "/[^a-zA-Z0-9]")) {
     return Status(::util::error::INVALID_ARGUMENT,
-                  Substitute("Part of the container name \"$0\" starts with a "
-                             "non-alphanumeric character",
-                             container_name));
+                  Substitute(
+                      "Part of the container name \"$0\" starts with a "
+                      "non-alphanumeric character",
+                      container_name));
   }
 
   return resolved_name;
 }
 
-ContainerImpl::ContainerImpl(const string &name, LockHandler *lock_handler,
-                             TasksHandler *tasks_handler,
+ContainerImpl::ContainerImpl(const string &name, TasksHandler *tasks_handler,
                              const ResourceFactoryMap &resource_factories,
-                             const ContainerApi *lmctfy, const KernelApi *kernel,
+                             const ContainerApiImpl *lmctfy,
+                             const KernelApi *kernel,
                              SubProcessFactory *subprocess_factory,
                              ActiveNotifications *active_notifications)
     : Container(name),
-      lock_handler_(CHECK_NOTNULL(lock_handler)),
       tasks_handler_(CHECK_NOTNULL(tasks_handler)),
       resource_factories_(resource_factories),
       lmctfy_(CHECK_NOTNULL(lmctfy)),
@@ -513,64 +467,8 @@ ContainerImpl::ContainerImpl(const string &name, LockHandler *lock_handler,
 
 ContainerImpl::~ContainerImpl() {}
 
-Status ContainerImpl::MatchResourceHandlers(
-    const set<ResourceHandler *> &handlers_to_match,
-    const set<ResourceHandler *> &existing_handlers,
-    const ContainerSpec &spec,
-    map<ResourceType, ResourceHandler *> *all_handlers) {
-  set<ResourceHandler *> handlers;
-
-  // Find new resources so we can create them. These are the resources not
-  // already existing (handlers_to_match - existing_handlers).
-  StatusOr<ResourceHandler *> statusor;
-  handlers = STLSetDifference(handlers_to_match, existing_handlers);
-  for (ResourceHandler *handler : handlers) {
-    // Create a new resource handler attached to this container.
-    auto factory_it = resource_factories_.find(handler->type());
-    if (factory_it == resource_factories_.end()) {
-      return Status(::util::error::INVALID_ARGUMENT,
-                    Substitute("Specified unsupported resource type with ID $0",
-                               handler->type()));
-    }
-    statusor = factory_it->second->Create(name_, spec);
-    if (!statusor.ok()) {
-      return statusor.status();
-    }
-
-    // Replace the old handler with the new one and delete the old one.
-    all_handlers->erase(handler->type());
-    all_handlers->insert(make_pair(handler->type(), statusor.ValueOrDie()));
-    delete handler;
-  }
-
-  // Find missing resources so that we can destroy them. These are the existing
-  // resources that are not in the matched set (existing_handlers -
-  // handlers_to_match).
-  Status status;
-  handlers = STLSetDifference(existing_handlers, handlers_to_match);
-  for (ResourceHandler *handler : handlers) {
-    // TODO(vmarmol): We should probably enter these into the parent before
-    // destroying the resource. Do this by adding a "reparent" option to
-    // ResourceHandler's Destroy().
-
-    // Destroy the resource and remove it from all_handlers.
-    ResourceType type = handler->type();
-    status = handler->Destroy();
-    if (!status.ok()) {
-      return status;
-    }
-    all_handlers->erase(type);
-  }
-
-  return Status::OK;
-}
-
 Status ContainerImpl::Update(const ContainerSpec &spec, UpdatePolicy policy) {
-  // Grab an exclusive lock before applying an update.
-  ScopedExclusiveLock l(lock_handler_.get());
-  if (!l.held()) {
-    return l.lock_status();
-  }
+  RETURN_IF_ERROR(Exists());
 
   // Get all resources and map them by type.
   StatusOr<vector<ResourceHandler *>> statusor_handlers = GetResourceHandlers();
@@ -602,112 +500,83 @@ Status ContainerImpl::Update(const ContainerSpec &spec, UpdatePolicy policy) {
     }
   }
 
-  Status status;
   if (policy == Container::UPDATE_REPLACE) {
-    // If replace was specified, create any resources that are new and destroy
-    // any that are not listed.
-    status = MatchResourceHandlers(used_handlers, existing_handlers, spec,
-                                   &all_handlers);
-    if (!status.ok()) {
-      return status;
+    // If replace was specified, ensure that all existing resources were
+    // specified. We check this by verifying that used, existing, and their
+    // intersections are the same size.
+    if (!(used_handlers.size() == existing_handlers.size() &&
+          used_handlers.size() == existing_used_intersection.size())) {
+      return Status(::util::error::INVALID_ARGUMENT,
+                    "Must specify all isolated resources in a replace update");
     }
   } else {
     // Ensure that only existing resource handlers were specified.
     if (existing_used_intersection.size() != used_handlers.size()) {
       return Status(::util::error::INVALID_ARGUMENT,
-                    Substitute("Specified resource that is not already being "
-                               "isolated in container \"$0\"",
-                               name_));
+                    Substitute(
+                        "Specified resource that is not already being "
+                        "isolated in container \"$0\"",
+                        name_));
     }
   }
 
-  // Apply the update to the intersection of the existing and used since those
-  // are the ones that have not been updated (when doing a replace) and they are
-  // the ones that were specified (when doing a diff).
-  for (ResourceHandler *handler : existing_used_intersection) {
-    status = handler->Update(spec, policy);
-    if (!status.ok()) {
-      return status;
-    }
+  // Apply the update to all specified handlers.
+  for (ResourceHandler *handler : used_handlers) {
+    RETURN_IF_ERROR(handler->Update(spec, policy));
   }
 
   return Status::OK;
 }
 
 Status ContainerImpl::Destroy() {
-  Status status;
+  RETURN_IF_ERROR(Exists());
 
-  {
-    // Grab an exclusive lock before destroying.
-    ScopedExclusiveLock l(lock_handler_.get());
-    if (!l.held()) {
-      return l.lock_status();
-    }
-
-    // Ensure the container is empty (no tasks).
-    status = KillAllUnlocked();
-    if (!status.ok()) {
-      return status;
-    }
-
-    // Get and destroy all resources.
-    StatusOr<vector<ResourceHandler *>> statusor = GetResourceHandlers();
-    if (!statusor.ok()) {
-      return statusor.status();
-    }
-    vector<ResourceHandler *> handlers = statusor.ValueOrDie();
-    ElementDeleter d(&handlers);
-    while (!handlers.empty()) {
-      ResourceHandler *handler = handlers.back();
-
-      // Only destroy the resources attached to this container.
-      if (name_ == handler->container_name()) {
-        // Destroy deletes the element on success, on failure ElementDeleter
-        // does.
-        status = handler->Destroy();
-        if (!status.ok()) {
-          return status;
-        }
-      } else {
-        delete handler;
-      }
-
-      handlers.pop_back();
-    }
-
-    // Destroy tasks handler.
-    status = tasks_handler_->Destroy();
-    if (!status.ok()) {
-      return status;
-    }
-
-    // The handler was deleted in Destroy(), just release it.
-    tasks_handler_.release();
+  // Ensure the container is empty (no tasks).
+  Status status = KillAll();
+  if (!status.ok()) {
+    return status;
   }
 
-  // Destroy the lock.
-  status = lock_handler_->Destroy();
+  // Get and destroy all resources.
+  StatusOr<vector<ResourceHandler *>> statusor = GetResourceHandlers();
+  if (!statusor.ok()) {
+    return statusor.status();
+  }
+  vector<ResourceHandler *> handlers = statusor.ValueOrDie();
+  ElementDeleter d(&handlers);
+  while (!handlers.empty()) {
+    ResourceHandler *handler = handlers.back();
+
+    // Only destroy the resources attached to this container.
+    if (name_ == handler->container_name()) {
+      // Destroy deletes the element on success, on failure ElementDeleter
+      // does.
+      status = handler->Destroy();
+      if (!status.ok()) {
+        return status;
+      }
+    } else {
+      delete handler;
+    }
+
+    handlers.pop_back();
+  }
+
+  // Destroy tasks handler.
+  status = tasks_handler_->Destroy();
   if (!status.ok()) {
     return status;
   }
 
   // The handler was deleted in Destroy(), just release it.
-  lock_handler_.release();
+  tasks_handler_.release();
 
   return Status::OK;
 }
 
 Status ContainerImpl::Enter(const vector<pid_t> &tids) {
-  // Entering into a container only requires a shared lock.
-  ScopedSharedLock l(lock_handler_.get());
-  if (!l.held()) {
-    return l.lock_status();
-  }
+  RETURN_IF_ERROR(Exists());
 
-  return EnterUnlocked(tids);
-}
-
-Status ContainerImpl::EnterUnlocked(const vector<pid_t> &tids) {
   Status status = tasks_handler_->TrackTasks(tids);
   if (!status.ok()) {
     return status;
@@ -734,7 +603,7 @@ Status ContainerImpl::EnterUnlocked(const vector<pid_t> &tids) {
 void ContainerImpl::EnterAndRun(SubProcess *sp, Status *status) {
   // Enter into the container so that the command we start is run inside this
   // container.
-  *status = EnterUnlocked(vector<pid_t>(1, kernel_->GetTID()));
+  *status = Enter(vector<pid_t>(1, kernel_->GetTID()));
   if (!status->ok()) {
     return;
   }
@@ -750,6 +619,8 @@ void ContainerImpl::EnterAndRun(SubProcess *sp, Status *status) {
 }
 
 StatusOr<pid_t> ContainerImpl::Run(StringPiece command, FdPolicy policy) {
+  RETURN_IF_ERROR(Exists());
+
   Status status;
   unique_ptr<SubProcess> sp(subprocess_factory_->Run());
 
@@ -777,14 +648,6 @@ StatusOr<pid_t> ContainerImpl::Run(StringPiece command, FdPolicy policy) {
                        NewPermanentCallback(this, &ContainerImpl::EnterAndRun,
                                             sp.get(), &status));
 
-  // We don't want to have the container destroyed while we are starting this
-  // command so we need a shared lock. Otherwise the destruction may need to
-  // kill the threads in the container which will include our thread running the
-  // command.
-  ScopedSharedLock l(lock_handler_.get());
-  if (!l.held()) {
-    return l.lock_status();
-  }
   thread.Start();
   thread.Join();
 
@@ -796,10 +659,44 @@ StatusOr<pid_t> ContainerImpl::Run(StringPiece command, FdPolicy policy) {
   return sp->pid();
 }
 
-StatusOr<ContainerInfo> ContainerImpl::Info() const {
-  // TODO(vmarmol): Implement.
-  LOG(DFATAL) << "Unimplemented";
-  return Status(::util::error::UNIMPLEMENTED, "Unimplemented");
+StatusOr<ContainerSpec> ContainerImpl::Spec() const {
+  RETURN_IF_ERROR(Exists());
+
+  // Generate resource handlers.
+  vector<ResourceHandler *> handlers = XRETURN_IF_ERROR(GetResourceHandlers());
+  ElementDeleter d(&handlers);
+
+  // Get the spec from each ResourceHandler.
+  ContainerSpec spec;
+  for (ResourceHandler *handler : handlers) {
+    RETURN_IF_ERROR(handler->Spec(&spec));
+  }
+
+  return spec;
+}
+
+Status ContainerImpl::Exec(const vector<string> &command) {
+  RETURN_IF_ERROR(Exists());
+
+  // Verify args.
+  if (command.empty()) {
+    return Status(::util::error::INVALID_ARGUMENT, "No command provided");
+  }
+
+  // Enter into the container so that the command we start is run inside this
+  // container.
+  RETURN_IF_ERROR(Enter({0}));
+
+  // Clear timers, since they are preserved across an exec*().
+  kernel_->SetITimer(ITIMER_REAL, nullptr, nullptr);
+  kernel_->SetITimer(ITIMER_VIRTUAL, nullptr, nullptr);
+  kernel_->SetITimer(ITIMER_PROF, nullptr, nullptr);
+  // Execute the command.
+  kernel_->Execvp(command[0], command);
+
+  // This only happens on error.
+  return Status(::util::error::INTERNAL,
+                Substitute("Exec failed with: $0", strerror(errno)));
 }
 
 // Sort the containers by name ascending.
@@ -810,6 +707,8 @@ static bool CompareContainerByName(Container *container1,
 
 StatusOr<vector<Container *>> ContainerImpl::ListSubcontainers(
     ListPolicy policy) const {
+  RETURN_IF_ERROR(Exists());
+
   StatusOr<vector<Container *>> statusor = ListSubcontainersUnsorted(policy);
   if (!statusor.ok()) {
     return statusor.status();
@@ -903,6 +802,8 @@ Status ContainerImpl::Resume() {
 }
 
 StatusOr<ContainerStats> ContainerImpl::Stats(StatsType stats_type) const {
+  RETURN_IF_ERROR(Exists());
+
   ContainerStats stats;
 
   // Get all resource handlers.
@@ -943,11 +844,7 @@ StatusOr<Container::NotificationId> ContainerImpl::RegisterNotification(
   // is deleted.
   shared_ptr<Container::EventCallback> user_callback(callback);
 
-  // Grab a shared lock to ensure the hierarchy does not change underneath us.
-  ScopedSharedLock l(lock_handler_.get());
-  if (!l.held()) {
-    return l.lock_status();
-  }
+  RETURN_IF_ERROR(Exists());
 
   // Get all resource handlers.
   vector<ResourceHandler *> handlers;
@@ -976,6 +873,8 @@ StatusOr<Container::NotificationId> ContainerImpl::RegisterNotification(
 }
 
 Status ContainerImpl::UnregisterNotification(NotificationId notification_id) {
+  RETURN_IF_ERROR(Exists());
+
   // If remove failed, there is no such notification.
   if (!active_notifications_->Remove(notification_id)) {
     return Status(
@@ -987,22 +886,11 @@ Status ContainerImpl::UnregisterNotification(NotificationId notification_id) {
   return Status::OK;
 }
 
-Status ContainerImpl::KillAll() {
-  // Grab exclusive lock.
-  ScopedExclusiveLock l(lock_handler_.get());
-  if (!l.held()) {
-    return l.lock_status();
-  }
-
-  return KillAllUnlocked();
-}
-
 // TODO(vmarmol): Use Pause()/Resume() when that is available.
-Status ContainerImpl::KillAllUnlocked() {
-  Status status;
+Status ContainerImpl::KillAll() {
+  RETURN_IF_ERROR(Exists());
 
-  // We keep the container lock through all of the expensive operations below
-  // to keep from racing with any Enter()s.
+  Status status;
 
   // Send a SIGKILL to all processes.
   status = KillTasks(LIST_PROCESSES);
@@ -1040,9 +928,8 @@ StatusOr<vector<ResourceHandler *>> ContainerImpl::GetResourceHandlers() const {
       // when non-root containers were not found.
       if (statusor.ok()) {
         break;
-      } else if (
-          (statusor.status().error_code() != ::util::error::NOT_FOUND)
-          || !has_parent) {
+      } else if ((statusor.status().error_code() != ::util::error::NOT_FOUND) ||
+                 !has_parent) {
         return statusor.status();
       }
 
@@ -1061,8 +948,9 @@ StatusOr<vector<ResourceHandler *>> ContainerImpl::GetResourceHandlers() const {
 }
 
 StatusOr<vector<pid_t>> ContainerImpl::ListProcessesOrThreads(
-    ListPolicy policy,
-    ListType type) const {
+    ListPolicy policy, ListType type) const {
+  RETURN_IF_ERROR(Exists());
+
   StatusOr<vector<pid_t>> statusor;
 
   // Get the processes/threads of this container.
@@ -1079,8 +967,8 @@ StatusOr<vector<pid_t>> ContainerImpl::ListProcessesOrThreads(
   // Get the processes/threads of subcontainers if asked.
   if (policy == Container::LIST_RECURSIVE) {
     // Get all subcontainers.
-    StatusOr<vector<Container *>> statusor_containers = ListSubcontainers(
-        Container::LIST_RECURSIVE);
+    StatusOr<vector<Container *>> statusor_containers =
+        ListSubcontainers(Container::LIST_RECURSIVE);
     if (!statusor_containers.ok()) {
       return statusor_containers.status();
     }
@@ -1142,11 +1030,20 @@ Status ContainerImpl::KillTasks(ListType type) const {
   } else if (!statusor.ValueOrDie().empty()) {
     return Status(
         ::util::error::FAILED_PRECONDITION,
-        Substitute("Expected container \"$0\" to have no $1, has $2. Some may "
-                   "be unkillable",
-                   name_,
-                   type == LIST_PROCESSES ? "processes" : "threads",
-                   statusor.ValueOrDie().size()));
+        Substitute(
+            "Expected container \"$0\" to have no $1, has $2. Some may "
+            "be unkillable",
+            name_, type == LIST_PROCESSES ? "processes" : "threads",
+            statusor.ValueOrDie().size()));
+  }
+
+  return Status::OK;
+}
+
+Status ContainerImpl::Exists() const {
+  if (!lmctfy_->Exists(name_)) {
+    return Status(::util::error::NOT_FOUND,
+                  Substitute("Container \"$0\" does not exist", name_));
   }
 
   return Status::OK;

@@ -39,6 +39,8 @@ class MockCgroupController : public CgroupController {
   MOCK_CONST_METHOD0(GetProcesses, ::util::StatusOr< ::std::vector<pid_t>>());
   MOCK_CONST_METHOD0(GetSubcontainers,
                      ::util::StatusOr< ::std::vector<string>>());
+  MOCK_METHOD0(EnableCloneChildren, ::util::Status());
+  MOCK_METHOD0(DisableCloneChildren, ::util::Status());
 };
 
 typedef ::testing::StrictMock<MockCgroupController> StrictMockCgroupController;

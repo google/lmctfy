@@ -18,6 +18,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/integral_types.h"
 #include "lmctfy/kernel_files.h"
 #include "strings/numbers.h"
 #include "strings/split.h"
@@ -43,12 +44,21 @@ MemoryController::MemoryController(const string &cgroup_path, bool owns_cgroup,
     : CgroupController(CGROUP_MEMORY, cgroup_path, owns_cgroup, kernel,
                        eventfd_notifications) {}
 
+// Cleanup on the input limits to be done.  For example, even though the kernel
+// reports a maxint limit for "infinite", it refuses to read one in and needs
+// to be passed -1 instead.
+static Bytes ModifyLimit(Bytes limit) {
+  if (limit >= Bytes(kint64max)) return Bytes(-1);
+  return limit;
+}
+
 Status MemoryController::SetLimit(Bytes limit) {
-  return SetParamBytes(KernelFiles::Memory::kLimitInBytes, limit);
+  return SetParamBytes(KernelFiles::Memory::kLimitInBytes, ModifyLimit(limit));
 }
 
 Status MemoryController::SetSoftLimit(Bytes limit) {
-  return SetParamBytes(KernelFiles::Memory::kSoftLimitInBytes, limit);
+  return SetParamBytes(KernelFiles::Memory::kSoftLimitInBytes,
+                       ModifyLimit(limit));
 }
 
 StatusOr<Bytes> MemoryController::GetWorkingSet() const {

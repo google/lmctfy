@@ -32,6 +32,10 @@ inline string JoinPath(StringPiece p1, StringPiece p2) {
   return JoinPath(p1, p2, "");
 }
 
+// Return the "basename" for "fname".  I.e. strip out everything up to and
+// including the last "/" in the name.
+StringPiece Basename(StringPiece path);
+
 }  // namespace file
 
 #endif  // FILE_BASE_PATH_H__

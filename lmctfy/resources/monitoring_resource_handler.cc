@@ -16,9 +16,12 @@
 
 #include <vector>
 
+#include "file/base/path.h"
 #include "util/errors.h"
 #include "util/task/codes.pb.h"
 
+using ::file::Basename;
+using ::file::JoinPath;
 using ::std::vector;
 using ::util::StatusOr;
 
@@ -37,10 +40,8 @@ MonitoringResourceHandlerFactory::New(
   }
 
   // Create perf controller.
-  bool owns_perf =
-      cgroup_factory->OwnsCgroup(PerfControllerFactory::HierarchyType());
-  PerfControllerFactory *perf_controller = new PerfControllerFactory(
-      cgroup_factory, owns_perf, kernel, eventfd_notifications);
+  PerfControllerFactory *perf_controller =
+      new PerfControllerFactory(cgroup_factory, kernel, eventfd_notifications);
 
   return new MonitoringResourceHandlerFactory(perf_controller, cgroup_factory,
                                               kernel);
@@ -52,18 +53,31 @@ MonitoringResourceHandlerFactory::MonitoringResourceHandlerFactory(
     : CgroupResourceHandlerFactory(RESOURCE_MONITORING, cgroup_factory, kernel),
       perf_controller_factory_(perf_controller_factory) {}
 
-StatusOr<ResourceHandler *> MonitoringResourceHandlerFactory::
-    GetResourceHandler(const string &container_name) const {
+// TODO(vmarmol): Refactor into a common place where all flat hierarchies can
+// use.
+// Get the flat container name.
+string GetFlatContainerName(const string &container_name) {
+  return JoinPath("/", Basename(container_name));
+}
+
+StatusOr<ResourceHandler *>
+MonitoringResourceHandlerFactory::GetResourceHandler(
+    const string &container_name) const {
+  const string flat_container_name = GetFlatContainerName(container_name);
+
   PerfController *controller;
-  RETURN_IF_ERROR(perf_controller_factory_->Get(container_name), &controller);
+  RETURN_IF_ERROR(perf_controller_factory_->Get(flat_container_name),
+                  &controller);
   return new MonitoringResourceHandler(container_name, kernel_, controller);
 }
 
-StatusOr<ResourceHandler *> MonitoringResourceHandlerFactory::
-    CreateResourceHandler(const string &container_name,
-                          const ContainerSpec &spec) const {
+StatusOr<ResourceHandler *>
+MonitoringResourceHandlerFactory::CreateResourceHandler(
+    const string &container_name, const ContainerSpec &spec) const {
+  const string flat_container_name = GetFlatContainerName(container_name);
+
   PerfController *controller;
-  RETURN_IF_ERROR(perf_controller_factory_->Create(container_name),
+  RETURN_IF_ERROR(perf_controller_factory_->Create(flat_container_name),
                   &controller);
   return new MonitoringResourceHandler(container_name, kernel_, controller);
 }
@@ -75,7 +89,7 @@ MonitoringResourceHandler::MonitoringResourceHandler(
                             vector<CgroupController *>({perf_controller})) {}
 
 util::Status MonitoringResourceHandler::Update(const ContainerSpec &spec,
-                                         Container::UpdatePolicy policy) {
+                                               Container::UpdatePolicy policy) {
   return util::Status::OK;
 }
 
@@ -89,10 +103,10 @@ util::Status MonitoringResourceHandler::Spec(ContainerSpec *spec) const {
 }
 
 StatusOr<Container::NotificationId>
-    MonitoringResourceHandler::RegisterNotification(
-        const EventSpec &spec, Callback1< ::util::Status> *callback) {
+MonitoringResourceHandler::RegisterNotification(
+    const EventSpec &spec, Callback1< ::util::Status> *callback) {
   ::std::unique_ptr<Callback1< ::util::Status>> callback_deleter(callback);
-  return  ::util::Status(::util::error::NOT_FOUND, "No handled event found");
+  return ::util::Status(::util::error::NOT_FOUND, "No handled event found");
 }
 
 }  // namespace lmctfy

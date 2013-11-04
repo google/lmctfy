@@ -434,7 +434,6 @@ inline void* memrchr(const void* bytes, int find_char, size_t len) {
 #else
 #define ATTRIBUTE_NO_SANITIZE_ADDRESS
 #endif
-#define ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS ATTRIBUTE_NO_SANITIZE_ADDRESS
 
 // Tell MemorySanitizer to relax the handling of a given function. All "Use of
 // uninitialized value" warnings from such functions will be suppressed, and all

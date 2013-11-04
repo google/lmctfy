@@ -35,11 +35,11 @@ class JobControllerFactory
     : public CgroupControllerFactory<JobController, CGROUP_JOB> {
  public:
   // Does not own cgroup_factory or kernel.
-  JobControllerFactory(const CgroupFactory *cgroup_factory, bool owns_cgroup,
+  JobControllerFactory(const CgroupFactory *cgroup_factory,
                        const KernelApi *kernel,
                        EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<JobController, CGROUP_JOB>(
-            cgroup_factory, owns_cgroup, kernel, eventfd_notifications) {}
+            cgroup_factory, kernel, eventfd_notifications) {}
   virtual ~JobControllerFactory() {}
 
  private:

@@ -39,6 +39,7 @@ using ::std::string;
 #include "lmctfy/cli/commands/list.h"
 #include "lmctfy/cli/commands/notify.h"
 #include "lmctfy/cli/commands/run.h"
+#include "lmctfy/cli/commands/spec.h"
 #include "lmctfy/cli/commands/stats.h"
 #include "lmctfy/cli/output_map.h"
 #include "include/lmctfy.h"
@@ -95,6 +96,7 @@ static void RegisterCommands() {
   RegisterListCommands();
   RegisterNotifyCommands();
   RegisterRunCommand();
+  RegisterSpecCommand();
   RegisterStatsCommand();
 }
 

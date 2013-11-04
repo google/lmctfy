@@ -27,28 +27,26 @@ class MockPerfControllerFactory : public PerfControllerFactory {
   // The mock won't use the additional parameters so it is ok to fake them.
   explicit MockPerfControllerFactory(const CgroupFactory *cgroup_factory)
       : PerfControllerFactory(
-            cgroup_factory, false,
-            reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<PerfController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD1(Create, ::util::StatusOr<PerfController *>(
-      const string &hierarchy_path));
+  MOCK_CONST_METHOD1(
+      Create, ::util::StatusOr<PerfController *>(const string &hierarchy_path));
 };
 
 typedef ::testing::StrictMock<MockPerfControllerFactory>
-      StrictMockPerfControllerFactory;
+    StrictMockPerfControllerFactory;
 typedef ::testing::NiceMock<MockPerfControllerFactory>
-      NiceMockPerfControllerFactory;
+    NiceMockPerfControllerFactory;
 
 class MockPerfController : public PerfController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockPerfController()
       : PerfController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-                       reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
-  }
+                       reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 };
 
 typedef ::testing::StrictMock<MockPerfController> StrictMockPerfController;

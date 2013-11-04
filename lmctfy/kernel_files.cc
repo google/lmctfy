@@ -66,6 +66,8 @@ const char KernelFiles::Memory::kStepSizeInBytes[] =
     "memory.step_size_in_bytes";
 const char KernelFiles::Memory::kSwapfile[] = "memory.swapfile";
 const char KernelFiles::Memory::kUsageInBytes[] = "memory.usage_in_bytes";
+const char KernelFiles::Memory::kForceEmpty[] = "memory.force_empty";
+const char KernelFiles::Memory::kTryToFreePages[] = "memory.try_to_free_pages";
 
 const char KernelFiles::Memory::IdlePageStats::kStale[] = "stale";
 const char KernelFiles::Memory::Stat::kHierarchicalMemoryLimit[] =

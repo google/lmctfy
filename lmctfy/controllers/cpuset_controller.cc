@@ -71,10 +71,6 @@ Status CpusetController::SetCpuMask(cpu_set_t cpuset) {
   return SetParamString(KernelFiles::CPUSet::kCPUs, cpu_string);
 }
 
-Status CpusetController::InheritCpuMask() {
-  return InheritParam(KernelFiles::CPUSet::kCPUs);
-}
-
 StatusOr<cpu_set_t> CpusetController::GetCpuMask() const {
   string cpu_string;
   RETURN_IF_ERROR(GetParamString(KernelFiles::CPUSet::kCPUs), &cpu_string);
@@ -87,10 +83,6 @@ Status CpusetController::SetMemoryNodes(const ResSet& memory_nodes) {
   string memory_nodes_string;
   memory_nodes.Format(&memory_nodes_string);
   return SetParamString(KernelFiles::CPUSet::kMemNodes, memory_nodes_string);
-}
-
-Status CpusetController::InheritMemoryNodes() {
-  return InheritParam(KernelFiles::CPUSet::kMemNodes);
 }
 
 StatusOr<ResSet> CpusetController::GetMemoryNodes() const {

@@ -27,7 +27,6 @@
 #include "lmctfy/active_notifications.h"
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
-#include "lmctfy/lock_handler_mock.h"
 #include "lmctfy/resource_handler_mock.h"
 #include "lmctfy/tasks_handler_mock.h"
 #include "include/lmctfy.pb.h"
@@ -43,7 +42,6 @@
 namespace containers {
 namespace lmctfy {
 class CgroupFactory;
-class LockHandler;
 class TasksHandler;
 }  // namespace lmctfy
 }  // namespace containers
@@ -56,6 +54,7 @@ using ::util::FileLinesTestUtil;
 using ::std::make_pair;
 using ::std::map;
 using ::std::sort;
+using ::std::unique_ptr;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::testing::AtLeast;
@@ -75,9 +74,9 @@ using ::testing::StrEq;
 using ::testing::StrEq;
 using ::testing::StrictMock;
 using ::testing::_;
-using ::std::unique_ptr;
 using ::util::Status;
 using ::util::StatusOr;
+using ::util::error::NOT_FOUND;
 
 namespace containers {
 namespace lmctfy {
@@ -86,22 +85,21 @@ typedef ::system_api::KernelAPIMock MockKernelApi;
 
 class MockContainerApiImpl : public ContainerApiImpl {
  public:
-  MockContainerApiImpl(const MockLockHandlerFactory *mock_lock_handler_factory,
-                   MockTasksHandlerFactory *mock_tasks_handler_factory,
+  MockContainerApiImpl(MockTasksHandlerFactory *mock_tasks_handler_factory,
                    const CgroupFactory *cgroup_factory,
                    const vector<ResourceHandlerFactory *> &resource_factories,
                    const MockKernelApi *mock_kernel,
                    ActiveNotifications *active_notifications,
                    EventFdNotifications *eventfd_notifications)
-      : ContainerApiImpl(mock_lock_handler_factory, mock_tasks_handler_factory,
-                     cgroup_factory, resource_factories, mock_kernel,
-                     active_notifications, eventfd_notifications) {}
+      : ContainerApiImpl(mock_tasks_handler_factory, cgroup_factory,
+                     resource_factories, mock_kernel, active_notifications,
+                     eventfd_notifications) {}
 
   MOCK_CONST_METHOD1(Get, StatusOr<Container *>(StringPiece container_name));
   MOCK_CONST_METHOD2(Create, StatusOr<Container *>(StringPiece container_name,
                                                    const ContainerSpec &spec));
   MOCK_CONST_METHOD1(Destroy, Status(Container *container));
-  MOCK_CONST_METHOD1(Info, StatusOr<ContainerInfo>(StringPiece container_name));
+  MOCK_CONST_METHOD1(Exists, bool(const string &container_name));
   MOCK_CONST_METHOD1(Detect, StatusOr<string>(pid_t pid));
   MOCK_CONST_METHOD1(InitMachine, Status(const InitSpec &spec));
 };
@@ -120,13 +118,12 @@ class ContainerApiImplTest : public ::testing::Test {
 
     active_notifications_ = new ActiveNotifications();
     mock_eventfd_notifications_ = MockEventFdNotifications::NewStrict();
-    mock_lock_handler_factory_ = new StrictMockLockHandlerFactory();
     mock_tasks_handler_factory_ = new StrictMockTasksHandlerFactory();
     mock_cgroup_factory_ = new StrictMockCgroupFactory();
-    lmctfy_.reset(new ContainerApiImpl(
-        mock_lock_handler_factory_, mock_tasks_handler_factory_,
-        mock_cgroup_factory_, resource_factories, &mock_kernel_.Mock(),
-        active_notifications_, mock_eventfd_notifications_));
+    lmctfy_.reset(
+        new ContainerApiImpl(mock_tasks_handler_factory_, mock_cgroup_factory_,
+                         resource_factories, &mock_kernel_.Mock(),
+                         active_notifications_, mock_eventfd_notifications_));
   }
 
   // Expect the machine to have a set of mounts. If cgroups_mounted is true, it
@@ -158,7 +155,6 @@ class ContainerApiImplTest : public ::testing::Test {
 
  protected:
   unique_ptr<ContainerApiImpl> lmctfy_;
-  MockLockHandlerFactory *mock_lock_handler_factory_;
   MockTasksHandlerFactory *mock_tasks_handler_factory_;
   MockCgroupFactory *mock_cgroup_factory_;
   MockResourceHandlerFactory *mock_handler_factory1_;
@@ -275,12 +271,8 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
       .WillRepeatedly(Return(0));
   EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/job"))
       .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/lock"))
-      .WillRepeatedly(Return(0));
   EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/perf_event"))
       .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), FileExists("/dev/cgroup/lock/.lock"))
-      .WillRepeatedly(Return(true));
   EXPECT_CALL(mock_kernel_.Mock(),
               Mount("cgroup", "/dev/cgroup/memory", "cgroup", 0, _))
       .WillOnce(DoAll(Invoke(&ExpectMemoryMount), Return(0)));
@@ -333,10 +325,6 @@ TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
       .WillRepeatedly(Return(0));
   EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_))
       .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/lock"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), FileExists("/dev/cgroup/lock/.lock"))
-      .WillRepeatedly(Return(true));
 
   // All cgroups are accessible.
   vector<string> kPaths = {
@@ -381,10 +369,7 @@ TEST_F(ContainerApiImplTest, GetSuccess) {
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(true));
 
-  // Get the lock and tasks handler
-  EXPECT_CALL(*mock_lock_handler_factory_, Get(kName))
-      .WillRepeatedly(Return(StatusOr<LockHandler *>(
-          new StrictMockLockHandler())));
+  // Get the tasks handler
   EXPECT_CALL(*mock_tasks_handler_factory_, Get(kName))
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(
           new StrictMockTasksHandler(kName))));
@@ -405,31 +390,12 @@ TEST_F(ContainerApiImplTest, GetContainerDoesNotExist) {
   EXPECT_EQ(::util::error::NOT_FOUND, status.status().error_code());
 }
 
-TEST_F(ContainerApiImplTest, GetErrorGettingLockHandler) {
-  const string kName = "/test";
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
-      .WillRepeatedly(Return(true));
-
-  EXPECT_CALL(*mock_lock_handler_factory_, Get(kName))
-      .WillRepeatedly(Return(StatusOr<LockHandler *>(Status::CANCELLED)));
-  EXPECT_CALL(*mock_tasks_handler_factory_, Get(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
-
-  StatusOr<Container *> status = lmctfy_->Get(kName);
-  EXPECT_EQ(::util::error::CANCELLED, status.status().error_code());
-}
-
 TEST_F(ContainerApiImplTest, GetErrorGettingTasksHandler) {
   const string kName = "/test";
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(true));
 
-  EXPECT_CALL(*mock_lock_handler_factory_, Get(kName))
-      .WillRepeatedly(Return(StatusOr<LockHandler *>(
-          new StrictMockLockHandler())));
   EXPECT_CALL(*mock_tasks_handler_factory_, Get(kName))
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(Status::CANCELLED)));
 
@@ -463,14 +429,6 @@ TEST_F(ContainerApiImplTest, CreateSuccess) {
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(
           new StrictMockTasksHandler(kName))));
 
-  MockLockHandler *mock_lock_handler = new StrictMockLockHandler();
-  EXPECT_CALL(*mock_lock_handler_factory_, Create(kName))
-      .WillOnce(Return(mock_lock_handler));
-  EXPECT_CALL(*mock_lock_handler, ExclusiveLock())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler, Unlock())
-      .WillOnce(Return());
-
   ContainerSpec spec;
   spec.mutable_cpu();
   spec.mutable_memory();
@@ -496,8 +454,6 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
       new StrictMockResourceHandlerFactory(RESOURCE_MONITORING);
   MockResourceHandlerFactory *global_handler =
       new StrictMockResourceHandlerFactory(RESOURCE_GLOBAL);
-  MockLockHandlerFactory *mock_lock_handler_factory =
-      new StrictMockLockHandlerFactory();
 
   const vector<ResourceHandlerFactory *> resource_factories = {
     cpu_handler, memory_handler, diskio_handler, network_handler,
@@ -507,13 +463,10 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   MockTasksHandlerFactory *mock_tasks_handler_factory =
       new StrictMockTasksHandlerFactory();
   MockCgroupFactory *mock_cgroup_factory = new StrictMockCgroupFactory();
-  lmctfy_.reset(new ContainerApiImpl(mock_lock_handler_factory,
-                                   mock_tasks_handler_factory,
-                                   mock_cgroup_factory,
-                                   resource_factories,
-                                   new StrictMock<MockKernelApi>(),
-                                   new ActiveNotifications(),
-                                   MockEventFdNotifications::NewStrict()));
+  lmctfy_.reset(new ContainerApiImpl(
+      mock_tasks_handler_factory, mock_cgroup_factory, resource_factories,
+      new StrictMock<MockKernelApi>(), new ActiveNotifications(),
+      MockEventFdNotifications::NewStrict()));
 
   EXPECT_CALL(*mock_tasks_handler_factory, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -539,14 +492,6 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   EXPECT_CALL(*mock_tasks_handler_factory, Create(kName))
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(
           new StrictMockTasksHandler(kName))));
-
-  MockLockHandler *mock_lock_handler = new StrictMockLockHandler();
-  EXPECT_CALL(*mock_lock_handler_factory, Create(kName))
-      .WillOnce(Return(mock_lock_handler));
-  EXPECT_CALL(*mock_lock_handler, ExclusiveLock())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler, Unlock())
-      .WillOnce(Return());
 
   ContainerSpec spec;
   spec.mutable_cpu();
@@ -576,19 +521,11 @@ TEST_F(ContainerApiImplTest, CreateOnlySpecCpuSuccess) {
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(
           new StrictMockTasksHandler(kName))));
 
-  // Memory and Network were not spec'd so they should not be created
+  // Memory and Global were not spec'd so they should not be created
   EXPECT_CALL(*mock_handler_factory2_, Create(_, _))
       .Times(0);
   EXPECT_CALL(*mock_handler_factory3_, Create(_, _))
       .Times(0);
-
-  MockLockHandler *mock_lock_handler = new StrictMockLockHandler();
-  EXPECT_CALL(*mock_lock_handler_factory_, Create(kName))
-      .WillOnce(Return(mock_lock_handler));
-  EXPECT_CALL(*mock_lock_handler, ExclusiveLock())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler, Unlock())
-      .WillOnce(Return());
 
   ContainerSpec spec;
   spec.mutable_cpu();
@@ -619,92 +556,12 @@ TEST_F(ContainerApiImplTest, CreateNoResourcesSpecified) {
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(
           new StrictMockTasksHandler(kName))));
 
-  // LockHandler is always created
-  MockLockHandler *mock_lock_handler = new StrictMockLockHandler();
-  EXPECT_CALL(*mock_lock_handler_factory_, Create(kName))
-      .WillOnce(Return(mock_lock_handler));
-  EXPECT_CALL(*mock_lock_handler, ExclusiveLock())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler, Unlock())
-      .WillOnce(Return());
-
   ContainerSpec spec;
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_TRUE(status.ok());
   EXPECT_NE(static_cast<Container *>(NULL), status.ValueOrDie());
   delete status.ValueOrDie();
-}
-
-TEST_F(ContainerApiImplTest, CreateLockHandlerCreationFails) {
-  const string kName = "/test";
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
-      .WillRepeatedly(Return(false));
-
-  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
-      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_CPU))));
-  EXPECT_CALL(*mock_handler_factory2_, Create(kName, _))
-      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_MEMORY))));
-  EXPECT_CALL(*mock_handler_factory3_, Create(kName, _))
-      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_GLOBAL))));
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
-
-  EXPECT_CALL(*mock_lock_handler_factory_, Create(kName))
-      .WillOnce(Return(Status::CANCELLED));
-
-  ContainerSpec spec;
-  spec.mutable_cpu();
-  spec.mutable_memory();
-  spec.mutable_network();
-
-  StatusOr<Container *> status = lmctfy_->Create(kName, spec);
-  ASSERT_FALSE(status.ok());
-  EXPECT_EQ(Status::CANCELLED, status.status());
-}
-
-TEST_F(ContainerApiImplTest, CreateExclusiveLockFails) {
-  const string kName = "/test";
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
-      .WillRepeatedly(Return(false));
-
-  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
-      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_CPU))));
-  EXPECT_CALL(*mock_handler_factory2_, Create(kName, _))
-      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_MEMORY))));
-  EXPECT_CALL(*mock_handler_factory3_, Create(kName, _))
-      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_GLOBAL))));
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
-
-  MockLockHandler *mock_lock_handler = new StrictMockLockHandler();
-  EXPECT_CALL(*mock_lock_handler_factory_, Create(kName))
-      .WillOnce(Return(mock_lock_handler));
-  EXPECT_CALL(*mock_lock_handler, ExclusiveLock())
-      .WillOnce(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_lock_handler, Unlock())
-      .Times(0);
-
-  ContainerSpec spec;
-  spec.mutable_cpu();
-  spec.mutable_memory();
-  spec.mutable_network();
-
-  StatusOr<Container *> status = lmctfy_->Create(kName, spec);
-  ASSERT_FALSE(status.ok());
-  EXPECT_EQ(Status::CANCELLED, status.status());
 }
 
 TEST_F(ContainerApiImplTest, CreateTasksHandlerCreationFails) {
@@ -726,14 +583,6 @@ TEST_F(ContainerApiImplTest, CreateTasksHandlerCreationFails) {
   EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(
           Status::CANCELLED)));
-
-  MockLockHandler *mock_lock_handler = new StrictMockLockHandler();
-  EXPECT_CALL(*mock_lock_handler_factory_, Create(kName))
-      .WillOnce(Return(mock_lock_handler));
-  EXPECT_CALL(*mock_lock_handler, ExclusiveLock())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler, Unlock())
-      .WillOnce(Return());
 
   ContainerSpec spec;
   spec.mutable_cpu();
@@ -770,14 +619,6 @@ TEST_F(ContainerApiImplTest, CreateResourceCreationFails) {
   // The partially created resources will be destroyed
   EXPECT_CALL(*cpu_handler, Destroy())
       .WillRepeatedly(Return(Status::OK));
-
-  MockLockHandler *mock_lock_handler = new StrictMockLockHandler();
-  EXPECT_CALL(*mock_lock_handler_factory_, Create(kName))
-      .WillOnce(Return(mock_lock_handler));
-  EXPECT_CALL(*mock_lock_handler, ExclusiveLock())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler, Unlock())
-      .WillOnce(Return());
 
   ContainerSpec spec;
   spec.mutable_cpu();
@@ -870,21 +711,19 @@ class ContainerApiImplDestroyTest : public ::testing::Test {
     resource_factories.push_back(
         new StrictMockResourceHandlerFactory(RESOURCE_CPU));
 
-    mock_lock_handler_factory_ = new StrictMockLockHandlerFactory();
     mock_tasks_handler_factory_ = new StrictMockTasksHandlerFactory();
     mock_cgroup_factory_ = new StrictMockCgroupFactory();
     active_notifications_ = new ActiveNotifications();
     mock_eventfd_notifications_ = MockEventFdNotifications::NewStrict();
     mock_lmctfy_.reset(new StrictMock<MockContainerApiImpl>(
-        mock_lock_handler_factory_, mock_tasks_handler_factory_,
-        mock_cgroup_factory_, resource_factories, &mock_kernel_.Mock(),
-        active_notifications_, mock_eventfd_notifications_));
+        mock_tasks_handler_factory_, mock_cgroup_factory_, resource_factories,
+        &mock_kernel_.Mock(), active_notifications_,
+        mock_eventfd_notifications_));
     mock_container_ = new StrictMock<MockContainer>("/test");
   }
 
  protected:
   unique_ptr<MockContainerApiImpl> mock_lmctfy_;
-  MockLockHandlerFactory *mock_lock_handler_factory_;
   MockTasksHandlerFactory *mock_tasks_handler_factory_;
   MockCgroupFactory *mock_cgroup_factory_;
   MockContainer *mock_container_;
@@ -1149,9 +988,6 @@ TEST_F(ContainerApiImplTest, InitMachineSuccess) {
   EXPECT_CALL(*mock_handler_factory3_,
               InitMachine(EqualsInitializedProto(spec)))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler_factory_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillOnce(Return(Status::OK));
 
   EXPECT_OK(lmctfy_->InitMachine(spec));
 }
@@ -1169,29 +1005,6 @@ TEST_F(ContainerApiImplTest, InitMachineResourceHandlerInitFails) {
   EXPECT_CALL(*mock_handler_factory3_,
               InitMachine(EqualsInitializedProto(spec)))
       .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler_factory_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::OK));
-
-  EXPECT_EQ(Status::CANCELLED, lmctfy_->InitMachine(spec));
-}
-
-TEST_F(ContainerApiImplTest, InitMachineLockHandlerInitFails) {
-  InitSpec spec;
-  spec.mutable_memory();
-
-  EXPECT_CALL(*mock_handler_factory1_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_handler_factory2_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_handler_factory3_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler_factory_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, lmctfy_->InitMachine(spec));
 }
@@ -1230,8 +1043,10 @@ class ContainerImplTest : public ::testing::Test {
     mock_resource_factory3_.reset(
         new StrictMockResourceHandlerFactory(RESOURCE_GLOBAL));
 
-    mock_lock_handler_ = new StrictMockLockHandler();
-    mock_lmctfy_.reset(new StrictMockContainerApi());
+    mock_lmctfy_.reset(new StrictMock<MockContainerApiImpl>(
+        new StrictMockTasksHandlerFactory(), new StrictMockCgroupFactory(),
+        vector<ResourceHandlerFactory *>(), &mock_kernel_.Mock(),
+        new ActiveNotifications(), MockEventFdNotifications::NewStrict()));
     mock_subprocess_ = new StrictMock<MockSubProcess>();
     mock_subprocess_factory_.reset(
         NewPermanentCallback(&IdentitySubProcessFactory, mock_subprocess_));
@@ -1245,13 +1060,14 @@ class ContainerImplTest : public ::testing::Test {
 
     container_.reset(new ContainerImpl(
         container_name,
-        mock_lock_handler_,
         mock_tasks_handler_,
         factory_map,
         mock_lmctfy_.get(),
         &mock_kernel_.Mock(),
         mock_subprocess_factory_.get(),
         &active_notifications_));
+
+    ExpectExists(true);
   }
 
   // Expect the specified container to have the subcontainers with the specified
@@ -1342,7 +1158,7 @@ class ContainerImplTest : public ::testing::Test {
   // Returns 3 ResourceHandlers:
   // - CPU: Attached to kContainerName
   // - Memory: Attached to kContainerName.
-  // - Network: Attached to kParentContainer.
+  // - Global: Attached to kParentContainer.
   vector<MockResourceHandler *> ExpectGetResourceHandlers(Status last_status) {
     vector<MockResourceHandler *> output;
 
@@ -1373,32 +1189,6 @@ class ContainerImplTest : public ::testing::Test {
     output.push_back(mock_handler3);
 
     return output;
-  }
-
-  // Expect calls to ExclusiveLock()/Unlock() with lock returning the specified
-  // lock_status.
-  void ExpectExclusiveLock(Status lock_status) {
-    EXPECT_CALL(*mock_lock_handler_, ExclusiveLock())
-        .WillOnce(Return(lock_status));
-
-    // Unlock only when the lock succeeded.
-    if (lock_status.ok()) {
-      EXPECT_CALL(*mock_lock_handler_, Unlock())
-          .WillOnce(Return());
-    }
-  }
-
-  // Expect calls to SharedLock()/Unlock() with lock returning the specified
-  // lock_status.
-  void ExpectSharedLock(Status lock_status) {
-    EXPECT_CALL(*mock_lock_handler_, SharedLock())
-        .WillOnce(Return(lock_status));
-
-    // Unlock unlock when the lock succeeded.
-    if (lock_status.ok()) {
-      EXPECT_CALL(*mock_lock_handler_, Unlock())
-          .WillOnce(Return());
-    }
   }
 
   // Expect Kill() to be called on the specified PIDs and returning ret_val.
@@ -1450,6 +1240,12 @@ class ContainerImplTest : public ::testing::Test {
     }
   }
 
+  // Expect a call to Exists() that returns true iff exists is specified.
+  void ExpectExists(bool exists) {
+    EXPECT_CALL(*mock_lmctfy_, Exists(kContainerName))
+        .WillRepeatedly(Return(exists));
+  }
+
   // Wrappers for testing private functions.
 
   StatusOr<vector<ResourceHandler *>> CallGetResourceHandlers() {
@@ -1471,17 +1267,25 @@ class ContainerImplTest : public ::testing::Test {
   unique_ptr<MockResourceHandlerFactory> mock_resource_factory1_;
   unique_ptr<MockResourceHandlerFactory> mock_resource_factory2_;
   unique_ptr<MockResourceHandlerFactory> mock_resource_factory3_;
-  MockLockHandler *mock_lock_handler_;
 
   ActiveNotifications active_notifications_;
   unique_ptr<ContainerImpl> container_;
-  unique_ptr<MockContainerApi> mock_lmctfy_;
+  unique_ptr<MockContainerApiImpl> mock_lmctfy_;
   MockSubProcess *mock_subprocess_;
   unique_ptr<SubProcessFactory> mock_subprocess_factory_;
   MockKernelApiOverride mock_kernel_;
 };
 
 // Tests for ListSubcontainers().
+
+TEST_F(ContainerImplTest, ListSubcontainersNoContainer) {
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectExists(false);
+
+    EXPECT_ERROR_CODE(NOT_FOUND, container_->ListSubcontainers(policy));
+  }
+}
 
 TEST_F(ContainerImplTest, ListSubcontainersNoSubcontainers) {
   // Call for self and recursive
@@ -1574,6 +1378,15 @@ TEST_F(ContainerImplTest, ListSubcontainersRecursiveListSubcontainersFails) {
 }
 
 // Tests for ListThreads().
+
+TEST_F(ContainerImplTest, ListThreadsNoContainer) {
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectExists(false);
+
+    EXPECT_ERROR_CODE(NOT_FOUND, container_->ListThreads(policy));
+  }
+}
 
 TEST_F(ContainerImplTest, ListThreadsSelfSuccess) {
   const vector<pid_t> kPids = {1, 2, 3, 4};
@@ -1699,6 +1512,15 @@ TEST_F(ContainerImplTest, ListThreadsRecursiveListThreadsFails) {
 }
 
 // Tests for ListProcesses().
+
+TEST_F(ContainerImplTest, ListProcessesNoContainer) {
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectExists(false);
+
+    EXPECT_ERROR_CODE(NOT_FOUND, container_->ListProcesses(policy));
+  }
+}
 
 TEST_F(ContainerImplTest, ListProcessesSelfSuccess) {
   const vector<pid_t> kPids = {1, 2, 3, 4};
@@ -2015,6 +1837,14 @@ TEST_F(ContainerImplTest, GetResourceHandlersOnRootContainerError) {
 
 // Tests for Stats().
 
+TEST_F(ContainerImplTest, StatsNoContainer) {
+  for (Container::StatsType type : stats_types_) {
+    ExpectExists(false);
+
+    EXPECT_ERROR_CODE(NOT_FOUND, container_->Stats(type));
+  }
+}
+
 // Append the specified type to the output. Does not actually fill with values.
 void AppendCpuStats(Container::StatsType type, ContainerStats *output) {
   output->mutable_cpu();
@@ -2028,7 +1858,7 @@ TEST_F(ContainerImplTest, StatsSuccess) {
     vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
         Status::OK);
 
-    // Each resource handler has 2 stat pairs (except Network which is not
+    // Each resource handler has 2 stat pairs (except Global which is not
     // attached to this container).
     for (MockResourceHandler *mock_handler : mock_handlers) {
       if (mock_handler->type() == RESOURCE_CPU) {
@@ -2099,9 +1929,13 @@ TEST_F(ContainerImplTest, StatsResourceStatsFails) {
 
 // Tests for KillAll().
 
-TEST_F(ContainerImplTest, KillAllAlreadyEmpty) {
-  ExpectExclusiveLock(Status::OK);
+TEST_F(ContainerImplTest, KillAllNoContainer) {
+  ExpectExists(false);
 
+  EXPECT_ERROR_CODE(NOT_FOUND, container_->KillAll());
+}
+
+TEST_F(ContainerImplTest, KillAllAlreadyEmpty) {
   // No processes or threads.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
       .WillRepeatedly(Return(vector<pid_t>()));
@@ -2117,8 +1951,6 @@ TEST_F(ContainerImplTest, KillAllAlreadyEmpty) {
 
 TEST_F(ContainerImplTest, KillAllDieOnFirstKill) {
   const vector<pid_t> kPids = {1, 2, 3};
-
-  ExpectExclusiveLock(Status::OK);
 
   // Processes are killed on the first SIGKILL.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
@@ -2139,8 +1971,6 @@ TEST_F(ContainerImplTest, KillAllDieOnFirstKill) {
 
 TEST_F(ContainerImplTest, KillAllSigkillFails) {
   const vector<pid_t> kPids = {1, 2, 3};
-
-  ExpectExclusiveLock(Status::OK);
 
   // Processes are killed on the first SIGTERM.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
@@ -2163,8 +1993,6 @@ TEST_F(ContainerImplTest, KillAllSigkillFails) {
 TEST_F(ContainerImplTest, KillAllDoNotDieOnFirstKill) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  ExpectExclusiveLock(Status::OK);
-
   // Processes are killed after the second SIGKILL.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
       .WillOnce(Return(kPids))
@@ -2185,8 +2013,6 @@ TEST_F(ContainerImplTest, KillAllDoNotDieOnFirstKill) {
 
 TEST_F(ContainerImplTest, KillAllUsleepFails) {
   const vector<pid_t> kPids = {1, 2, 3};
-
-  ExpectExclusiveLock(Status::OK);
 
   // Processes are killed after the second SIGKILL.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
@@ -2210,8 +2036,6 @@ TEST_F(ContainerImplTest, KillAllUsleepFails) {
 TEST_F(ContainerImplTest, KillAllUnkillableProcesses) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  ExpectExclusiveLock(Status::OK);
-
   // Processes are never killed.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
       .WillRepeatedly(Return(kPids));
@@ -2233,8 +2057,6 @@ TEST_F(ContainerImplTest, KillAllUnkillableProcesses) {
 TEST_F(ContainerImplTest, KillAllWithTouristThreads) {
   const vector<pid_t> kPids = {1, 2, 3};
   const vector<pid_t> kTids = {4, 5, 6};
-
-  ExpectExclusiveLock(Status::OK);
 
   // Processes are killed after the first SIGKILL.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
@@ -2258,8 +2080,6 @@ TEST_F(ContainerImplTest, KillAllWithTouristThreads) {
 TEST_F(ContainerImplTest, KillAllWithTouristThreadsSigkillFails) {
   const vector<pid_t> kPids = {1, 2, 3};
   const vector<pid_t> kTids = {4, 5, 6};
-
-  ExpectExclusiveLock(Status::OK);
 
   // Processes are killed after the first SIGKILL.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
@@ -2285,8 +2105,6 @@ TEST_F(ContainerImplTest, KillAllUnkillableTouristThreads) {
   const vector<pid_t> kPids = {1, 2, 3};
   const vector<pid_t> kTids = {4, 5, 6};
 
-  ExpectExclusiveLock(Status::OK);
-
   // Processes are killed after the first SIGKILL.
   EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
       .WillOnce(Return(kPids))
@@ -2305,12 +2123,6 @@ TEST_F(ContainerImplTest, KillAllUnkillableTouristThreads) {
   Status status = container_->KillAll();
   EXPECT_FALSE(status.ok());
   EXPECT_EQ(::util::error::FAILED_PRECONDITION, status.error_code());
-}
-
-TEST_F(ContainerImplTest, KillAllExclusiveLockFails) {
-  ExpectExclusiveLock(Status::CANCELLED);
-
-  EXPECT_EQ(Status::CANCELLED, container_->KillAll());
 }
 
 // Tests for KillTasks().
@@ -2495,10 +2307,14 @@ TEST_F(ContainerImplTest, KillTasksProcessesKillFails) {
 
 // Tests for Enter().
 
+TEST_F(ContainerImplTest, EnterNoContainer) {
+  ExpectExists(false);
+
+  EXPECT_ERROR_CODE(NOT_FOUND, container_->Enter({0}));
+}
+
 TEST_F(ContainerImplTest, EnterSuccess) {
   vector<pid_t> tids = {1, 2, 3};
-
-  ExpectSharedLock(Status::OK);
 
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::OK));
@@ -2517,8 +2333,6 @@ TEST_F(ContainerImplTest, EnterSuccess) {
 TEST_F(ContainerImplTest, EnterNoTids) {
   vector<pid_t> tids;
 
-  ExpectSharedLock(Status::OK);
-
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::OK));
 
@@ -2533,18 +2347,8 @@ TEST_F(ContainerImplTest, EnterNoTids) {
   EXPECT_TRUE(container_->Enter(tids).ok());
 }
 
-TEST_F(ContainerImplTest, EnterLockFails) {
-  vector<pid_t> tids = {1, 2, 3};
-
-  ExpectSharedLock(Status::CANCELLED);
-
-  EXPECT_EQ(Status::CANCELLED, container_->Enter(tids));
-}
-
 TEST_F(ContainerImplTest, EnterTrackTasksFails) {
   vector<pid_t> tids = {1, 2, 3};
-
-  ExpectSharedLock(Status::OK);
 
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::CANCELLED));
@@ -2554,8 +2358,6 @@ TEST_F(ContainerImplTest, EnterTrackTasksFails) {
 
 TEST_F(ContainerImplTest, EnterGetResourceHandlersFails) {
   vector<pid_t> tids = {1, 2, 3};
-
-  ExpectSharedLock(Status::OK);
 
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::OK));
@@ -2568,8 +2370,6 @@ TEST_F(ContainerImplTest, EnterGetResourceHandlersFails) {
 
 TEST_F(ContainerImplTest, EnterResourceHandlerEnterFails) {
   vector<pid_t> tids = {1, 2, 3};
-
-  ExpectSharedLock(Status::OK);
 
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::OK));
@@ -2587,11 +2387,16 @@ TEST_F(ContainerImplTest, EnterResourceHandlerEnterFails) {
 
 // Tests for Destroy().
 
+TEST_F(ContainerImplTest, DestroyNoContainer) {
+  ExpectExists(false);
+
+  EXPECT_ERROR_CODE(NOT_FOUND, container_->Destroy());
+}
+
 TEST_F(ContainerImplTest, DestroySuccess) {
-  ExpectExclusiveLock(Status::OK);
   ExpectSimpleKillAll(Status::OK);
 
-  // All attached resources are destroyed (all but Network)
+  // All attached resources are destroyed (all but Global)
   vector<MockResourceHandler *> mock_handlers =
       ExpectGetResourceHandlers(Status::OK);
   vector<MockResourceHandler *> to_delete;
@@ -2605,19 +2410,15 @@ TEST_F(ContainerImplTest, DestroySuccess) {
 
   EXPECT_CALL(*mock_tasks_handler_, Destroy())
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler_, Destroy())
-      .WillOnce(Return(Status::OK));
 
   // Destroy() should delete the handlers.
   unique_ptr<MockTasksHandler> d1(mock_tasks_handler_);
-  unique_ptr<MockLockHandler> d2(mock_lock_handler_);
   ElementDeleter d(&to_delete);
 
   EXPECT_TRUE(container_->Destroy().ok());
 }
 
 TEST_F(ContainerImplTest, DestroyOnlyDestroyResourcesAttachedToContainer) {
-  ExpectExclusiveLock(Status::OK);
   ExpectSimpleKillAll(Status::OK);
 
   // Two resources are attached to this container, the other to the parent
@@ -2645,34 +2446,22 @@ TEST_F(ContainerImplTest, DestroyOnlyDestroyResourcesAttachedToContainer) {
 
   EXPECT_CALL(*mock_tasks_handler_, Destroy())
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler_, Destroy())
-      .WillOnce(Return(Status::OK));
 
   // Destroy() should delete the handlers.
   unique_ptr<MockTasksHandler> d1(mock_tasks_handler_);
-  unique_ptr<MockLockHandler> d2(mock_lock_handler_);
   unique_ptr<MockResourceHandler> d3(mock_handler1);
   unique_ptr<MockResourceHandler> d4(mock_handler3);
 
   EXPECT_TRUE(container_->Destroy().ok());
 }
 
-TEST_F(ContainerImplTest, DestroyExclusiveLockFails) {
-  ExpectExclusiveLock(Status::CANCELLED);
-  ExpectSimpleKillAll(Status::OK);
-
-  EXPECT_EQ(Status::CANCELLED, container_->Destroy());
-}
-
 TEST_F(ContainerImplTest, DestroyKillAllFails) {
-  ExpectExclusiveLock(Status::OK);
   ExpectSimpleKillAll(Status::CANCELLED);
 
   EXPECT_EQ(Status::CANCELLED, container_->Destroy());
 }
 
 TEST_F(ContainerImplTest, DestroyGetResourceHandlersFails) {
-  ExpectExclusiveLock(Status::OK);
   ExpectSimpleKillAll(Status::OK);
 
   vector<MockResourceHandler *> mock_handlers =
@@ -2682,7 +2471,6 @@ TEST_F(ContainerImplTest, DestroyGetResourceHandlersFails) {
 }
 
 TEST_F(ContainerImplTest, DestroyResourceHandlerDestroyFails) {
-  ExpectExclusiveLock(Status::OK);
   ExpectSimpleKillAll(Status::OK);
 
   vector<MockResourceHandler *> mock_handlers =
@@ -2696,7 +2484,6 @@ TEST_F(ContainerImplTest, DestroyResourceHandlerDestroyFails) {
 }
 
 TEST_F(ContainerImplTest, DestroyTasksHandlerDestroyFails) {
-  ExpectExclusiveLock(Status::OK);
   ExpectSimpleKillAll(Status::OK);
 
   vector<MockResourceHandler *> mock_handlers =
@@ -2718,42 +2505,24 @@ TEST_F(ContainerImplTest, DestroyTasksHandlerDestroyFails) {
   EXPECT_EQ(Status::CANCELLED, container_->Destroy());
 }
 
-TEST_F(ContainerImplTest, DestroyLockHandlerDestroyFails) {
-  ExpectExclusiveLock(Status::OK);
-  ExpectSimpleKillAll(Status::OK);
-
-  vector<MockResourceHandler *> mock_handlers =
-      ExpectGetResourceHandlers(Status::OK);
-  vector<MockResourceHandler *> to_delete;
-  for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() != RESOURCE_GLOBAL) {
-      EXPECT_CALL(*mock_handler, Destroy())
-          .WillOnce(Return(Status::OK));
-      to_delete.push_back(mock_handler);
-    }
-  }
-
-  EXPECT_CALL(*mock_tasks_handler_, Destroy())
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_lock_handler_, Destroy())
-      .WillOnce(Return(Status::CANCELLED));
-
-  // Destroy() should delete the handlers.
-  unique_ptr<MockTasksHandler> d1(mock_tasks_handler_);
-  ElementDeleter d(&to_delete);
-
-  EXPECT_EQ(Status::CANCELLED, container_->Destroy());
-}
-
 // Tests for Run().
 
 static const char kCmd[] = "echo hi";
 static const pid_t kTid = 42;
 static const pid_t kPid = 22;
 
-TEST_F(ContainerImplTest, RunSuccessBackground) {
-  ExpectSharedLock(Status::OK);
+TEST_F(ContainerImplTest, RunNoContainer) {
+  const vector<Container::FdPolicy> kFdPolicies = {Container::FDS_DETACHED,
+                                                   Container::FDS_INHERITED};
 
+  for (const auto &fd_policy : kFdPolicies) {
+    ExpectExists(false);
+
+    EXPECT_ERROR_CODE(NOT_FOUND, container_->Run(kCmd, fd_policy));
+  }
+}
+
+TEST_F(ContainerImplTest, RunSuccessBackground) {
   EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_, SetUseSession())
@@ -2774,8 +2543,6 @@ TEST_F(ContainerImplTest, RunSuccessBackground) {
 }
 
 TEST_F(ContainerImplTest, RunSuccessForeground) {
-  ExpectSharedLock(Status::OK);
-
   EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_,
@@ -2802,21 +2569,7 @@ TEST_F(ContainerImplTest, RunSuccessForeground) {
   EXPECT_EQ(kPid, statusor.ValueOrDie());
 }
 
-TEST_F(ContainerImplTest, RunSharedLockFails) {
-  ExpectSharedLock(Status::CANCELLED);
-
-  EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, SetUseSession())
-      .Times(1);
-
-  EXPECT_EQ(Status::CANCELLED,
-            container_->Run(kCmd, Container::FDS_DETACHED).status());
-}
-
 TEST_F(ContainerImplTest, RunEnterFails) {
-  ExpectSharedLock(Status::OK);
-
   EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_, SetUseSession())
@@ -2832,8 +2585,6 @@ TEST_F(ContainerImplTest, RunEnterFails) {
 }
 
 TEST_F(ContainerImplTest, RunStartProcessFails) {
-  ExpectSharedLock(Status::OK);
-
   EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_, SetUseSession())
@@ -2853,14 +2604,24 @@ TEST_F(ContainerImplTest, RunStartProcessFails) {
 
 // Tests for Update().
 
+TEST_F(ContainerImplTest, UpdateNoContainer) {
+  const vector<Container::UpdatePolicy> kUpdatePolicies = {
+      Container::UPDATE_DIFF, Container::UPDATE_REPLACE};
+
+  ContainerSpec spec;
+  for (const auto &update_policy : kUpdatePolicies) {
+    ExpectExists(false);
+
+    EXPECT_ERROR_CODE(NOT_FOUND, container_->Update(spec, update_policy));
+  }
+}
+
 TEST_F(ContainerImplTest, UpdateDiffSuccess) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2881,9 +2642,7 @@ TEST_F(ContainerImplTest, UpdateDiffOnlyMemoryUpdated) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(100);
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2902,9 +2661,7 @@ TEST_F(ContainerImplTest, UpdateDiffOnlyMemoryUpdated) {
 TEST_F(ContainerImplTest, UpdateDiffEmptySpec) {
   ContainerSpec spec;
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2919,9 +2676,7 @@ TEST_F(ContainerImplTest, UpdateDiffNonExistingResource) {
   // Specify global which is not attached to this container.
   spec.mutable_global()->set_fd_limit(100);
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   ExpectGetResourceHandlers(Status::OK);
 
   Status status = container_->Update(spec, Container::UPDATE_DIFF);
@@ -2929,19 +2684,8 @@ TEST_F(ContainerImplTest, UpdateDiffNonExistingResource) {
   EXPECT_EQ(::util::error::INVALID_ARGUMENT, status.error_code());
 }
 
-TEST_F(ContainerImplTest, UpdateDiffLockFails) {
-  ContainerSpec spec;
-
-  ExpectExclusiveLock(Status::CANCELLED);
-
-  EXPECT_EQ(Status::CANCELLED,
-            container_->Update(spec, Container::UPDATE_DIFF));
-}
-
 TEST_F(ContainerImplTest, UpdateDiffGetResourceHandlersFails) {
   ContainerSpec spec;
-
-  ExpectExclusiveLock(Status::OK);
 
   ExpectGetResourceHandlers(Status::CANCELLED);
 
@@ -2954,9 +2698,7 @@ TEST_F(ContainerImplTest, UpdateDiffUpdateFails) {
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2976,9 +2718,7 @@ TEST_F(ContainerImplTest, UpdateReplaceSuccess) {
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2995,164 +2735,44 @@ TEST_F(ContainerImplTest, UpdateReplaceSuccess) {
   EXPECT_TRUE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesDestroyed) {
+TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesMissing) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
-  // Expect CPU to be updated and memory to be deleted since it was
-  // not specified in the spec.
-  unique_ptr<ResourceHandler> memory_deleter;
-  for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() == RESOURCE_MEMORY) {
-      EXPECT_CALL(*mock_handler, Destroy())
-          .WillOnce(Return(Status::OK));
-
-      // Delete the handler as Destroy() would.
-      memory_deleter.reset(mock_handler);
-    } else if (mock_handler->type() == RESOURCE_CPU) {
-      EXPECT_CALL(*mock_handler, Update(EqualsInitializedProto(spec),
-                                        Container::UPDATE_REPLACE))
-          .WillOnce(Return(Status::OK));
-    }
-  }
-
-  EXPECT_TRUE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
+  EXPECT_FALSE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesCreated) {
+TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesExtra) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
-  spec.mutable_global()->set_fd_limit(100);
+  spec.mutable_global();
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
-  // Expect CPU and memory to be updated. Expect global to be created, but not
-  // updated.
-  for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() != RESOURCE_GLOBAL) {
-      EXPECT_CALL(*mock_handler, Update(EqualsInitializedProto(spec),
-                                        Container::UPDATE_REPLACE))
-          .WillOnce(Return(Status::OK));
-    } else {
-      EXPECT_CALL(*mock_resource_factory3_,
-                  Create(kContainerName, EqualsInitializedProto(spec)))
-          .WillOnce(Return(new StrictMockResourceHandler(kContainerName,
-                                                         RESOURCE_GLOBAL)));
-    }
-  }
-
-  EXPECT_TRUE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
+  EXPECT_FALSE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesCreatedAndSomeDestroyed) {
+TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesExtraAndSomeMissing) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
-  spec.mutable_global()->set_fd_limit(100);
+  spec.mutable_global();
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
-  // Expect CPU and memory to be updated. Expect global to be created, but not
-  // updated.
-  unique_ptr<ResourceHandler> memory_deleter;
-  for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() == RESOURCE_MEMORY) {
-      EXPECT_CALL(*mock_handler, Destroy())
-          .WillOnce(Return(Status::OK));
-
-      // Delete the handler as Destroy() would.
-      memory_deleter.reset(mock_handler);
-    } else if (mock_handler->type() == RESOURCE_CPU) {
-      EXPECT_CALL(*mock_handler, Update(EqualsInitializedProto(spec),
-                                        Container::UPDATE_REPLACE))
-          .WillOnce(Return(Status::OK));
-    } else {
-      EXPECT_CALL(*mock_resource_factory3_,
-                  Create(kContainerName, EqualsInitializedProto(spec)))
-          .WillOnce(Return(new StrictMockResourceHandler(kContainerName,
-                                                         RESOURCE_GLOBAL)));
-    }
-  }
-
-  EXPECT_TRUE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
-}
-
-TEST_F(ContainerImplTest, UpdateReplaceDestroyFails) {
-  ContainerSpec spec;
-  spec.mutable_cpu()->set_limit(2000);
-
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
-  vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
-      Status::OK);
-
-  // Expect CPU to be updated and memory to be deleted since it was
-  // not specified in the spec.
-  for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() == RESOURCE_MEMORY) {
-      EXPECT_CALL(*mock_handler, Destroy())
-          .WillRepeatedly(Return(Status::CANCELLED));
-    }
-  }
-
-  EXPECT_EQ(Status::CANCELLED,
-            container_->Update(spec, Container::UPDATE_REPLACE));
-}
-
-TEST_F(ContainerImplTest, UpdateReplaceCreateFails) {
-  ContainerSpec spec;
-  spec.mutable_cpu()->set_limit(2000);
-  spec.mutable_memory()->set_limit(100);
-  spec.mutable_global()->set_fd_limit(100);
-
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
-  vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
-      Status::OK);
-
-  // Expect CPU and memory to be updated. Expect global to be created, but not
-  // updated.
-  for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() == RESOURCE_GLOBAL) {
-      EXPECT_CALL(*mock_resource_factory3_,
-                  Create(kContainerName, EqualsInitializedProto(spec)))
-          .WillRepeatedly(Return(Status::CANCELLED));
-    }
-  }
-
-  EXPECT_EQ(Status::CANCELLED,
-            container_->Update(spec, Container::UPDATE_REPLACE));
-}
-
-TEST_F(ContainerImplTest, UpdateReplaceLockFails) {
-  ContainerSpec spec;
-
-  ExpectExclusiveLock(Status::CANCELLED);
-
-  EXPECT_EQ(Status::CANCELLED,
-            container_->Update(spec, Container::UPDATE_REPLACE));
+  EXPECT_FALSE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
 TEST_F(ContainerImplTest, UpdateReplaceGetResourceHandlersFails) {
   ContainerSpec spec;
-
-  ExpectExclusiveLock(Status::OK);
 
   ExpectGetResourceHandlers(Status::CANCELLED);
 
@@ -3165,9 +2785,7 @@ TEST_F(ContainerImplTest, UpdateReplaceUpdateFails) {
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  ExpectExclusiveLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -3197,13 +2815,22 @@ void DeleteCallback(const EventSpec &spec, Callback1<Status> *callback) {
   delete callback;
 }
 
+TEST_F(ContainerImplTest, RegisterNotificationNoContainer) {
+  EventSpec spec;
+  spec.mutable_oom();
+
+  ExpectExists(false);
+
+  EXPECT_ERROR_CODE(NOT_FOUND,
+                    container_->RegisterNotification(
+                        spec, NewPermanentCallback(&NotificationCallback)));
+}
+
 TEST_F(ContainerImplTest, RegisterNotificationSuccess) {
   EventSpec spec;
   spec.mutable_oom();
 
-  ExpectSharedLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -3240,24 +2867,11 @@ TEST_F(ContainerImplTest, RegisterNotificationBadCallback) {
                "not a repeatable callback");
 }
 
-TEST_F(ContainerImplTest, RegisterNotificationLockFails) {
-  EventSpec spec;
-  spec.mutable_oom();
-
-  ExpectSharedLock(Status::CANCELLED);
-
-  EXPECT_ERROR_CODE(::util::error::CANCELLED,
-                    container_->RegisterNotification(
-                        spec, NewPermanentCallback(&NotificationCallback)));
-}
-
 TEST_F(ContainerImplTest, RegisterNotificationGetResourceHandlersFails) {
   EventSpec spec;
   spec.mutable_oom();
 
-  ExpectSharedLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::CANCELLED);
 
@@ -3270,9 +2884,7 @@ TEST_F(ContainerImplTest, RegisterNotificationFailureWhileRegistering) {
   EventSpec spec;
   spec.mutable_oom();
 
-  ExpectSharedLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -3300,9 +2912,7 @@ TEST_F(ContainerImplTest, RegisterNotificationNoHandlerForEvent) {
   EventSpec spec;
   spec.mutable_oom();
 
-  ExpectSharedLock(Status::OK);
-
-  // Returns CPU, MEMORY, and NETWORK ResourceHandlers.
+  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -3321,6 +2931,16 @@ TEST_F(ContainerImplTest, RegisterNotificationNoHandlerForEvent) {
 
 // Tests for UnregisterNotification().
 
+TEST_F(ContainerImplTest, UnregisterNotificationNoContainer) {
+  ExpectExists(false);
+
+  // Register the notification.
+  Container::NotificationId notification_id = active_notifications_.Add();
+
+  EXPECT_ERROR_CODE(NOT_FOUND,
+                    container_->UnregisterNotification(notification_id));
+}
+
 TEST_F(ContainerImplTest, UnregisterNotificationSuccess) {
   // Register the notification.
   Container::NotificationId notification_id = active_notifications_.Add();
@@ -3336,6 +2956,169 @@ TEST_F(ContainerImplTest, UnregisterNotificationAlreadyUnregistered) {
   // Already unregistered, should not be able to unregister it again.
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     container_->UnregisterNotification(notification_id));
+}
+
+// Tests for Spec().
+
+TEST_F(ContainerImplTest, SpecNoContainer) {
+  ExpectExists(false);
+
+  EXPECT_ERROR_CODE(NOT_FOUND, container_->Spec());
+}
+
+// Append the specified type to the output. Does not actually fill with values.
+void AppendCpuSpec(ContainerSpec *output) {
+  output->mutable_cpu();
+}
+void AppendMemorySpec(ContainerSpec *output) {
+  output->mutable_memory();
+}
+
+TEST_F(ContainerImplTest, SpecSuccess) {
+  vector<MockResourceHandler *> mock_handlers =
+      ExpectGetResourceHandlers(Status::OK);
+
+  // Add Spec() to CPU and memory.
+  for (MockResourceHandler *mock_handler : mock_handlers) {
+    if (mock_handler->type() == RESOURCE_CPU) {
+      EXPECT_CALL(*mock_handler, Spec(NotNull()))
+          .WillRepeatedly(DoAll(Invoke(&AppendCpuSpec), Return(Status::OK)));
+    } else if (mock_handler->type() == RESOURCE_MEMORY) {
+      EXPECT_CALL(*mock_handler, Spec(NotNull()))
+          .WillRepeatedly(DoAll(Invoke(&AppendMemorySpec), Return(Status::OK)));
+    } else {
+      EXPECT_CALL(*mock_handler, Spec(NotNull()))
+          .WillRepeatedly(Return(Status::OK));
+    }
+  }
+
+  StatusOr<ContainerSpec> statusor = container_->Spec();
+  ASSERT_OK(statusor);
+  ContainerSpec stats = statusor.ValueOrDie();
+  EXPECT_TRUE(stats.has_cpu());
+  EXPECT_TRUE(stats.has_memory());
+  EXPECT_FALSE(stats.has_diskio());
+  EXPECT_FALSE(stats.has_network());
+  EXPECT_FALSE(stats.has_monitoring());
+  EXPECT_FALSE(stats.has_global());
+}
+
+TEST_F(ContainerImplTest, SpecEmpty) {
+  vector<MockResourceHandler *> mock_handlers =
+      ExpectGetResourceHandlers(Status::OK);
+
+  for (MockResourceHandler *mock_handler : mock_handlers) {
+    EXPECT_CALL(*mock_handler, Spec(NotNull()))
+        .WillRepeatedly(Return(Status::OK));
+  }
+
+  StatusOr<ContainerSpec> statusor = container_->Spec();
+  ASSERT_OK(statusor);
+  ContainerSpec stats = statusor.ValueOrDie();
+  EXPECT_FALSE(stats.has_cpu());
+  EXPECT_FALSE(stats.has_memory());
+  EXPECT_FALSE(stats.has_diskio());
+  EXPECT_FALSE(stats.has_network());
+  EXPECT_FALSE(stats.has_monitoring());
+  EXPECT_FALSE(stats.has_global());
+}
+
+TEST_F(ContainerImplTest, SpecGetResourceHandlersFails) {
+  vector<MockResourceHandler *> mock_handlers =
+      ExpectGetResourceHandlers(Status::CANCELLED);
+
+  EXPECT_EQ(Status::CANCELLED, container_->Spec().status());
+}
+
+TEST_F(ContainerImplTest, SpecResourceSpecFails) {
+  vector<MockResourceHandler *> mock_handlers =
+      ExpectGetResourceHandlers(Status::OK);
+
+  for (MockResourceHandler *mock_handler : mock_handlers) {
+    EXPECT_CALL(*mock_handler, Spec(NotNull()))
+        .WillRepeatedly(Return(Status::CANCELLED));
+  }
+
+  EXPECT_EQ(Status::CANCELLED, container_->Spec().status());
+}
+
+// Tests for Exec().
+
+TEST_F(ContainerImplTest, ExecSuccess) {
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  ExpectExists(true);
+  ExpectEnter(0, Status::OK);
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
+      .WillOnce(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
+      .WillOnce(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
+      .WillOnce(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), Execvp(kCmd[0], kCmd))
+      .WillOnce(Return(0));
+
+  // We expect INTERNAL since Exec does not typically return on success.
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, container_->Exec(kCmd));
+}
+
+TEST_F(ContainerImplTest, ExecContainerNotFound) {
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  ExpectExists(false);
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, container_->Exec(kCmd));
+}
+
+TEST_F(ContainerImplTest, ExecEnterFails) {
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  ExpectExists(true);
+  ExpectEnter(0, Status::CANCELLED);
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
+      .WillRepeatedly(Return(0));
+
+  EXPECT_EQ(Status::CANCELLED, container_->Exec(kCmd));
+}
+
+TEST_F(ContainerImplTest, ExecSetITimerFails) {
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  ExpectExists(true);
+  ExpectEnter(0, Status::OK);
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
+      .WillOnce(Return(-1));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
+      .WillOnce(Return(-1));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
+      .WillOnce(Return(-1));
+  EXPECT_CALL(mock_kernel_.Mock(), Execvp(kCmd[0], kCmd))
+      .WillOnce(Return(0));
+
+  // We expect INTERNAL since Exec does not typically return on success and we
+  // ignore the failure of SetITimer.
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, container_->Exec(kCmd));
+}
+
+TEST_F(ContainerImplTest, ExecExecvpFails) {
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  ExpectExists(true);
+  ExpectEnter(0, Status::OK);
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), Execvp(kCmd[0], kCmd))
+      .WillOnce(Return(1));
+
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, container_->Exec(kCmd));
 }
 
 

@@ -16,6 +16,7 @@
 
 #include <memory>
 
+#include "base/integral_types.h"
 #include "util/bytes.h"
 #include "system_api/kernel_api_mock.h"
 #include "file/base/path.h"
@@ -93,6 +94,17 @@ TEST_F(MemoryControllerTest, SetLimit) {
   EXPECT_TRUE(controller_->SetLimit(Bytes(42)).ok());
 }
 
+TEST_F(MemoryControllerTest, SetInfiniteLimit) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kLimitInBytes);
+
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "-1", kResFile,
+                                                       NotNull(), NotNull()))
+      .WillOnce(Return(0));
+
+  EXPECT_TRUE(controller_->SetLimit(Bytes(kint64max)).ok());
+}
+
 TEST_F(MemoryControllerTest, SetLimitFails) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kLimitInBytes);
@@ -113,6 +125,17 @@ TEST_F(MemoryControllerTest, SetSoftLimit) {
       .WillOnce(Return(0));
 
   EXPECT_TRUE(controller_->SetSoftLimit(Bytes(42)).ok());
+}
+
+TEST_F(MemoryControllerTest, SetInfiniteSoftLimit) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kSoftLimitInBytes);
+
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "-1", kResFile,
+                                                       NotNull(), NotNull()))
+      .WillOnce(Return(0));
+
+  EXPECT_TRUE(controller_->SetSoftLimit(Bytes(kint64max)).ok());
 }
 
 TEST_F(MemoryControllerTest, SetSoftLimitFailes) {

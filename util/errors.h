@@ -24,7 +24,6 @@
 
 // A set of convenience wrappers for operations that return Status and StatusOr.
 //
-//
 // To propagate errors:
 //   RETURN_IF_ERROR(method(args));
 //   RETURN_IF_ERROR(method(args), &output);
@@ -50,6 +49,50 @@
 //   RETURN_IF_ERROR(checkNumber(n), &value);
 //
 //   printf("%d\n", value);
+//
+//   return Status::OK;
+// }
+//
+// StatusOr<string> produceString(const string &str) {
+//   if (str.empty())
+//     return Status(INVALID_ARGUMENT, "string is empty");
+//   return str + ": other";
+// }
+//
+// Status validateInput(const string &str) {
+//   string output = XRETURN_IF_ERROR(produceString(str));
+//   printf("%s\n", string);
+//
+//   return Status::OK;
+// }
+//
+// Alternatively, if you want to change error code to INTERNAL you might use
+// this:
+//
+// Status validateInput(const string &str) {
+//   string output = XRETURN_INTERNAL_IF_ERROR(produceString(str));
+//   printf("%s\n", string);
+//
+//   return Status::OK;
+// }
+//
+// Moreover, one can prepend some string to be more verbose.
+//
+// Status validateInput(const string &str) {
+//   string output = XRETURN_INTERNAL_IF_ERROR(produceString(str),
+//       "Could not create output string");
+//   printf("%s\n", string);
+//
+//   return Status::OK;
+// }
+//
+// Alternatively to CHECK one can user XVERIFY_OR_RETURN which returns
+// INTERNAL error in case of problems and logs DFATAL.
+//
+// Status checkInput(const string &str) {
+//   string output = XVERIFY_OR_RETURN(produceString(str),
+//                                     "This shouldn't happen.");
+//   printf("%s\n", string);
 //
 //   return Status::OK;
 // }
@@ -124,4 +167,114 @@ inline ::util::Status ToStatus(const ::util::StatusOr<T> &status_or_t) {
 #define CHECK_OK(expr)                                                   \
     CHECK(::util::errors_internal::ToStatus(expr).ok()) \
 
+// If the boolean is false, DFATALs and returns an INTERNAL error.
+#define VERIFY_OR_RETURN(invariant, message)                                  \
+  do {                                                                        \
+    if (!(invariant)) {                                                       \
+      const auto &_message_tmp = message;                                     \
+      LOG(DFATAL) << _message_tmp;                                            \
+      return Status(::util::error::INTERNAL, StringPiece(_message_tmp));      \
+    }                                                                         \
+  } while (0)
+
+// Macros defined below are working thanks to GCC extension.
+#if defined(__GNUC__)
+
+namespace util {
+namespace errors_internal {
+
+inline const ::util::Status &XToStatus(const ::util::Status &status) {
+  return status;
+}
+
+template <typename T>
+inline const ::util::Status &XToStatus(const ::util::StatusOr<T> &statusor) {
+  return statusor.status();
+}
+
+template <typename... Args>
+inline const ::util::Status XToStatus(const ::util::Status &status,
+                                      const Args &... rest) {
+  return ::util::Status(status.CanonicalCode(),
+                        StrCat(rest..., ": ", status.ToString()));
+}
+
+template <typename T, typename... Args>
+inline const ::util::Status XToStatus(const ::util::StatusOr<T> &statusor,
+                                      const Args &... rest) {
+  return ::util::Status(statusor.status().CanonicalCode(),
+                        StrCat(rest..., ": ", statusor.status().ToString()));
+}
+
+template <typename... Args>
+inline const ::util::Status XToInternalStatus(const ::util::Status &status) {
+  return ::util::Status(::util::error::INTERNAL, status.ToString());
+}
+
+template <typename T, typename... Args>
+inline const ::util::Status XToInternalStatus(
+    const ::util::StatusOr<T> &statusor) {
+  return ::util::Status(::util::error::INTERNAL, statusor.status().ToString());
+}
+
+template <typename... Args>
+inline const ::util::Status XToInternalStatus(const ::util::Status &status,
+                                              const Args &... rest) {
+  return ::util::Status(::util::error::INTERNAL,
+                        StrCat(rest..., ": ", status.ToString()));
+}
+
+template <typename T, typename... Args>
+inline const ::util::Status XToInternalStatus(
+    const ::util::StatusOr<T> &statusor, const Args &... rest) {
+  return ::util::Status(::util::error::INTERNAL,
+                        StrCat(rest..., ": ", statusor.status().ToString()));
+}
+
+inline void XToValue(const ::util::Status &status) {}
+
+template <typename T>
+inline T XToValue(const ::util::StatusOr<T> &statusor) {
+  return statusor.ValueOrDie();
+}
+
+}  // namespace errors_internal
+}  // namespace util
+
+// Returns the status of the specified expression if it is not OK.
+// Also evaluates to value in case of StatusOr (so that it can be assigned).
+#define XRETURN_IF_ERROR(expr, ...)                                          \
+  ({                                                                         \
+    const auto _eval_expr = (expr);                                          \
+    if (PREDICT_FALSE(!_eval_expr.ok())) {                                   \
+      return ::util::errors_internal::XToStatus(_eval_expr,      \
+                                                            ##__VA_ARGS__);  \
+    }                                                                        \
+    ::util::errors_internal::XToValue(_eval_expr);               \
+  })
+
+// Same as XRETURN_IF_ERROR but in case of error changes error code to INTERNAL.
+#define XRETURN_INTERNAL_IF_ERROR(expr, ...)                                 \
+  ({                                                                         \
+    const auto _eval_expr = (expr);                                          \
+    if (PREDICT_FALSE(!_eval_expr.ok())) {                                   \
+      return ::util::errors_internal::XToInternalStatus(         \
+          _eval_expr, ##__VA_ARGS__);                                        \
+    }                                                                        \
+    ::util::errors_internal::XToValue(_eval_expr);               \
+  })
+
+// Same as XRETURN_IF_ERROR but also logs a DFATAL in case of error.
+#define XVERIFY_OR_RETURN(expr, ...)                                         \
+  ({                                                                         \
+    const auto _eval_expr = (expr);                                          \
+    if (PREDICT_FALSE(!_eval_expr.ok())) {                                   \
+      const ::util::Status _status =                                         \
+          ::util::errors_internal::XToStatus(_eval_expr);        \
+      return _status;                                                        \
+    }                                                                        \
+    ::util::errors_internal::XToValue(_eval_expr);               \
+  })
+
+#endif  // defined(__GNUC__)
 #endif  // UTIL_ERRORS_H_

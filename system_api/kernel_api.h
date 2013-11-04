@@ -19,16 +19,19 @@
 #ifndef SYSTEM_API_KERNEL_API_H_
 #define SYSTEM_API_KERNEL_API_H_
 
+#include <sched.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <time.h>
-#include <sched.h>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/integral_types.h"
 #include "base/logging.h"
+#include "util/task/status.h"
 
 struct pollfd;
 struct epoll_event;
@@ -60,6 +63,8 @@ class KernelAPI : public SystemClockAPI {
   // Only creates the directories that don't already exist. If the directory
   // already exists, it is a no-op.
   virtual int MkDirRecursive(const string& path) const;
+  // Removes a directory. Retries internally if the system call gets
+  // interrupted.
   virtual int RmDir(const string& path) const;
   virtual int Kill(pid_t pid) const;
   virtual int Signal(pid_t pid, int sig) const;
@@ -79,7 +84,9 @@ class KernelAPI : public SystemClockAPI {
   // This is distinct from ProcFileExists as this gets a fake procfs prefix in
   // integration tests.
   virtual bool ProcFileExists(const string &file_name) const;
-  virtual bool ReadFileToString(const string& file_name, string* output) const;
+  virtual bool ReadFileToString(const string &file_name, string *output) const;
+  virtual ::util::Status GetFileContents(const string &file_name,
+                                         string *output) const;
   virtual size_t WriteResFileWithLog(const string& contents,
                                     const string& path, bool log) const;
   virtual size_t WriteResFile(const string& contents,
@@ -130,6 +137,10 @@ class KernelAPI : public SystemClockAPI {
   virtual size_t SafeWriteResFileWithRetry(int retries, const string &contents,
                                            const string &path, bool *open_error,
                                            bool *write_error) const;
+  virtual int Execvp(const string &file,
+                     const ::std::vector<string> &argv) const;
+  virtual int SetITimer(int which, const struct itimerval *new_value,
+                        struct itimerval *old_value) const;
 
   virtual int Umount(const string& path) const;
   virtual int Mount(const string& name, const string& path,

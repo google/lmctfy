@@ -58,16 +58,8 @@ class CpusetControllerStub : public CpusetController {
     return ::util::Status::OK;
   }
 
-  virtual ::util::Status InheritCpuMask() {
-    return ::util::Status::OK;
-  }
-
   virtual ::util::Status SetMemoryNodes(
       const util::ResSet& memory_nodes) {
-    return ::util::Status::OK;
-  }
-
-  virtual ::util::Status InheritMemoryNodes() {
     return ::util::Status::OK;
   }
 

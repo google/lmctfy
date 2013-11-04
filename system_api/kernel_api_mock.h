@@ -49,6 +49,8 @@ class KernelAPIMock : public KernelAPI {
   MOCK_CONST_METHOD1(ProcFileExists, bool(const string &file_name));
   MOCK_CONST_METHOD2(ReadFileToString,
                      bool(const string& file_name, string* output));
+  MOCK_CONST_METHOD2(GetFileContents,
+                     ::util::Status(const string &file_name, string *output));
   MOCK_CONST_METHOD3(WriteResFileWithLog, size_t(const string& contents,
                                                  const string& path,
                                                  bool log));
@@ -101,6 +103,11 @@ class KernelAPIMock : public KernelAPI {
   MOCK_CONST_METHOD5(Mount, int(const string& name, const string& path,
                                 const string& fstype, uint64 flags,
                                 const void *data));
+  MOCK_CONST_METHOD2(Execvp, int(const string &filename,
+                                 const ::std::vector<string> &argv));
+  MOCK_CONST_METHOD3(SetITimer,
+                     int(int which, const struct itimerval *new_value,
+                         struct itimerval *old_value));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KernelAPIMock);

@@ -57,30 +57,19 @@ Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
   unique_ptr<Container> container;
   RETURN_IF_ERROR(lmctfy->Get(container_name), &container);
 
-  // Run command and get the child's PID.
-  Container::FdPolicy fd_policy = Container::FDS_INHERITED;
+  // If no wait, run and output the PID, else exec the command.
   if (FLAGS_lmctfy_no_wait) {
-    fd_policy = Container::FDS_DETACHED;
-  }
-  pid_t pid;
-  RETURN_IF_ERROR(container->Run(command, fd_policy), &pid);
-
-  // Output the PID if no wait, else wait for the PID to finish.
-  if (FLAGS_lmctfy_no_wait) {
+    pid_t pid =
+        XRETURN_IF_ERROR(container->Run(command, Container::FDS_DETACHED));
     output->push_back(OutputMap("pid", Substitute("$0", pid)));
   } else {
-    int status = 0;
+    // Run the specified command through /bin/sh.
+    vector<string> args;
+    args.push_back("/bin/sh");
+    args.push_back("-c");
+    args.push_back(command);
 
-    // Wait for PID and output the exit code.
-    if (waitpid(pid, &status, 0) != pid) {
-      return Status(
-          ::util::error::FAILED_PRECONDITION,
-          Substitute("Failed while waiting for child with PID $0", pid));
-    }
-
-    // TODO(thockin): The whole process should exit() with the child's status.
-    output->push_back(
-        OutputMap("exit_code", Substitute("$0", WEXITSTATUS(status))));
+    RETURN_IF_ERROR(container->Exec(args));
   }
 
   return Status::OK;
@@ -89,13 +78,10 @@ Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
 void RegisterRunCommand() {
   RegisterRootCommand(
       CMD("run",
-          "Run the specified command in the specified container. Block waiting "
-          "for the command unless -n is specified. Outputs the exit code of "
-          "commands run in the foreground.",
-          "[-n] <container name> \"<command>\"",
-          CMD_TYPE_SETTER,
-          2,
-          2,
+          "Run the specified command in the specified container. Execs the "
+          "specified command under /bin/sh. If -n is specified, runs the "
+          "command in the background and returns the PID of the new process",
+          "[-n] <container name> \"<command>\"", CMD_TYPE_SETTER, 2, 2,
           &RunInContainer));
 }
 

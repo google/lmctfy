@@ -38,6 +38,8 @@ namespace containers {
 namespace lmctfy {
 
 static const char kContainerName[] = "/test";
+static const char kTaskInAllocName[] = "/sub";
+static const char kTaskInAllocContainerName[] = "/test/sub";
 
 class MonitoringResourceHandlerFactoryTest : public ::testing::Test {
  public:
@@ -122,6 +124,19 @@ TEST_F(MonitoringResourceHandlerFactoryTest, GetSuccess) {
   EXPECT_EQ(kContainerName, handler->container_name());
 }
 
+TEST_F(MonitoringResourceHandlerFactoryTest, GetTaskInAlloc) {
+  EXPECT_CALL(*mock_controller_factory_, Get(kTaskInAllocName))
+      .WillRepeatedly(Return(mock_controller_));
+
+  StatusOr<ResourceHandler *> statusor =
+      CallGetResourceHandler(kTaskInAllocContainerName);
+  EXPECT_OK(statusor);
+  EXPECT_NE(nullptr, statusor.ValueOrDie());
+  unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
+  EXPECT_EQ(RESOURCE_MONITORING, handler->type());
+  EXPECT_EQ(kTaskInAllocContainerName, handler->container_name());
+}
+
 TEST_F(MonitoringResourceHandlerFactoryTest, GetFails) {
   EXPECT_CALL(*mock_controller_factory_, Get(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
@@ -147,6 +162,21 @@ TEST_F(MonitoringResourceHandlerFactoryTest, CreateSuccess) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_MONITORING, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
+}
+
+TEST_F(MonitoringResourceHandlerFactoryTest, CreateTaskInAlloc) {
+  ContainerSpec spec;
+
+  EXPECT_CALL(*mock_controller_factory_, Create(kTaskInAllocName))
+      .WillRepeatedly(Return(mock_controller_));
+
+  StatusOr<ResourceHandler *> statusor =
+      CallCreateResourceHandler(kTaskInAllocContainerName, spec);
+  EXPECT_OK(statusor);
+  EXPECT_NE(nullptr, statusor.ValueOrDie());
+  unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
+  EXPECT_EQ(RESOURCE_MONITORING, handler->type());
+  EXPECT_EQ(kTaskInAllocContainerName, handler->container_name());
 }
 
 TEST_F(MonitoringResourceHandlerFactoryTest, CreateFails) {

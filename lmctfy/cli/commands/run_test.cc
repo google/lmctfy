@@ -21,6 +21,7 @@
 #include "gflags/gflags.h"
 #include "lmctfy/cli/output_map.h"
 #include "include/lmctfy_mock.h"
+#include "util/errors_test_util.h"
 #include "strings/substitute.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -78,39 +79,23 @@ TEST_F(RunTest, ForegroundSuccess) {
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
-  // We start a no-op child so we can reap it.
-  EXPECT_CALL(*mock_container_, Run(kCmd, Container::FDS_INHERITED))
-      .WillRepeatedly(Return(StartChild(0)));
+  EXPECT_CALL(*mock_container_,
+              Exec(ElementsAre("/bin/sh", "-c", kCmd)))
+      .WillRepeatedly(Return(Status::OK));
 
   FLAGS_lmctfy_no_wait = false;
-  EXPECT_TRUE(RunInContainer(argv_, mock_lmctfy_.get(), &output).ok());
-  EXPECT_EQ(1, output.size());
-  EXPECT_EQ("0", output[0].GetValueByKey("exit_code"));
+  EXPECT_OK(RunInContainer(argv_, mock_lmctfy_.get(), &output));
+  EXPECT_EQ(0, output.size());
 }
 
-TEST_F(RunTest, ForegroundSuccessWithNonZeroExitCode) {
+TEST_F(RunTest, ForegroundExecFails) {
   vector<OutputMap> output;
 
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
-  // We start a no-op child so we can reap it.
-  EXPECT_CALL(*mock_container_, Run(kCmd, Container::FDS_INHERITED))
-      .WillRepeatedly(Return(StartChild(2)));
-
-  FLAGS_lmctfy_no_wait = false;
-  EXPECT_TRUE(RunInContainer(argv_, mock_lmctfy_.get(), &output).ok());
-  EXPECT_EQ(1, output.size());
-  EXPECT_EQ("2", output[0].GetValueByKey("exit_code"));
-}
-
-TEST_F(RunTest, ForegroundRunFails) {
-  vector<OutputMap> output;
-
-  EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_container_));
-
-  EXPECT_CALL(*mock_container_, Run(kCmd, Container::FDS_INHERITED))
+  EXPECT_CALL(*mock_container_,
+              Exec(ElementsAre("/bin/sh", "-c", kCmd)))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   FLAGS_lmctfy_no_wait = false;

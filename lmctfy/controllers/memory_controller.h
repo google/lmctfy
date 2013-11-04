@@ -39,11 +39,11 @@ class MemoryControllerFactory
     : public CgroupControllerFactory<MemoryController, CGROUP_MEMORY> {
  public:
   // Does not own cgroup_factory or kernel.
-  MemoryControllerFactory(const CgroupFactory *cgroup_factory, bool owns_cgroup,
+  MemoryControllerFactory(const CgroupFactory *cgroup_factory,
                           const KernelApi *kernel,
                           EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<MemoryController, CGROUP_MEMORY>(
-            cgroup_factory, owns_cgroup, kernel, eventfd_notifications) {}
+            cgroup_factory, kernel, eventfd_notifications) {}
   virtual ~MemoryControllerFactory() {}
 
  private:
@@ -91,8 +91,8 @@ class MemoryController : public CgroupController {
 
   // Register a notification for an OOM event. The handler for the event is
   // returned on success.
-  virtual ::util::StatusOr<ActiveNotifications::Handle>
-      RegisterOomNotification(CgroupController::EventCallback *callback);
+  virtual ::util::StatusOr<ActiveNotifications::Handle> RegisterOomNotification(
+      CgroupController::EventCallback *callback);
 
   // Register a notification for when memory usage goes above the specified
   // usage_threshold. The handler for the event is returned on success.

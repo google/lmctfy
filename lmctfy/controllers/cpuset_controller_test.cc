@@ -90,40 +90,6 @@ TEST_F(CpusetControllerTest, SetCpuMaskFails) {
   EXPECT_NOT_OK(controller_->SetCpuMask(cpu_set));
 }
 
-TEST_F(CpusetControllerTest, InheritCpuMask) {
-  const string kParentResFile =
-      JoinPath(kParentMountPoint, KernelFiles::CPUSet::kCPUs);
-  const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kCPUs);
-  const string kCpuString = "0-7,14,16-19";
-
-  EXPECT_CALL(*mock_kernel_, Access(kParentResFile, F_OK))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(*mock_kernel_, ReadFileToString(kParentResFile, NotNull()))
-      .WillOnce(DoAll(SetArgPointee<1>(kCpuString), Return(true)));
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, kCpuString, kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
-
-  EXPECT_OK(controller_->InheritCpuMask());
-}
-
-TEST_F(CpusetControllerTest, InheritCpuMaskFails) {
-  const string kParentResFile =
-      JoinPath(kParentMountPoint, KernelFiles::CPUSet::kCPUs);
-  const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kCPUs);
-  const string kCpuString = "0-7,14,16-19";
-
-  EXPECT_CALL(*mock_kernel_, Access(kParentResFile, F_OK))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(*mock_kernel_, ReadFileToString(kParentResFile, NotNull()))
-      .WillOnce(DoAll(SetArgPointee<1>(kCpuString), Return(true)));
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, kCpuString, kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
-
-  EXPECT_NOT_OK(controller_->InheritCpuMask());
-}
-
 TEST_F(CpusetControllerTest, GetsCpuMask) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kCPUs);
   EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
@@ -174,41 +140,6 @@ TEST_F(CpusetControllerTest, SetMemoryNodesFails) {
   ResSet memory_nodes;
   memory_nodes.ReadSetString(expected_memory_nodes_string, ",");
   EXPECT_NOT_OK(controller_->SetMemoryNodes(memory_nodes));
-}
-
-TEST_F(CpusetControllerTest, InheritMemoryNodes) {
-  const string kParentResFile =
-      JoinPath(kParentMountPoint, KernelFiles::CPUSet::kMemNodes);
-  const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kMemNodes);
-  const string kNodesString = "0-1";
-
-  EXPECT_CALL(*mock_kernel_, Access(kParentResFile, F_OK))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(*mock_kernel_, ReadFileToString(kParentResFile, NotNull()))
-      .WillOnce(DoAll(SetArgPointee<1>(kNodesString), Return(true)));
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, kNodesString, kResFile, NotNull(),
-                                        NotNull())).WillOnce(Return(0));
-
-  EXPECT_OK(controller_->InheritMemoryNodes());
-}
-
-TEST_F(CpusetControllerTest, InheritMemoryNodesFails) {
-  const string kParentResFile =
-      JoinPath(kParentMountPoint, KernelFiles::CPUSet::kMemNodes);
-  const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kMemNodes);
-  const string kNodesString = "0-1";
-
-  EXPECT_CALL(*mock_kernel_, Access(kParentResFile, F_OK))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(*mock_kernel_, ReadFileToString(kParentResFile, NotNull()))
-      .WillOnce(DoAll(SetArgPointee<1>(kNodesString), Return(true)));
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, kNodesString, kResFile, NotNull(),
-                                        NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
-
-  EXPECT_NOT_OK(controller_->InheritMemoryNodes());
 }
 
 TEST_F(CpusetControllerTest, GetsMemoryNodes) {

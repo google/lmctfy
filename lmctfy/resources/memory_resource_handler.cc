@@ -53,10 +53,8 @@ StatusOr<MemoryResourceHandlerFactory *> MemoryResourceHandlerFactory::New(
   }
 
   // Create memory controller.
-  bool owns_memory =
-      cgroup_factory->OwnsCgroup(MemoryControllerFactory::HierarchyType());
   MemoryControllerFactory *memory_controller = new MemoryControllerFactory(
-      cgroup_factory, owns_memory, kernel, eventfd_notifications);
+      cgroup_factory, kernel, eventfd_notifications);
 
   return new MemoryResourceHandlerFactory(memory_controller, cgroup_factory,
                                           kernel);
@@ -109,11 +107,10 @@ Status MemoryResourceHandler::Update(const ContainerSpec &spec,
 
   // During a diff: update what was specified.
   // During an update:
-  // - If no limit specified, default to MAX_INT64.
+  // - If no limit specified, default to -1 (unlimited).
   // - If no reservation specified, default to 0.
 
   // Set the limit. The default is -1 if it was not specified during a replace.
-  // The kernel interprets it as the maximum permissible value.
   if (memory_spec.has_limit()) {
     RETURN_IF_ERROR(memory_controller_->SetLimit(Bytes(memory_spec.limit())));
   } else if (policy == Container::UPDATE_REPLACE) {

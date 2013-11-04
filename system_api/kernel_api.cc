@@ -34,10 +34,12 @@
 #include "base/logging.h"
 #include "base/sysinfo.h"
 #include "base/timer.h"
+#include "file/base/helpers.h"
 #include "strings/strip.h"
 #include "strings/substitute.h"
 
 using ::std::string;
+using ::std::vector;
 using ::strings::Substitute;
 
 namespace system_api {
@@ -117,7 +119,16 @@ int KernelAPI::MkDirRecursive(const string& path) const {
 
 int KernelAPI::RmDir(const string& path) const {
   ElapsedTimer timer("RmDir", true, kMaxAllowedTimeInSec);
-  return rmdir(path.c_str());
+  const int kNumRetries = 3;
+  int retval = 0;
+  for (int i = 0; i < kNumRetries; ++i) {
+    retval = rmdir(path.c_str());
+    if (retval == -1 && errno == EINTR) {
+      continue;
+    }
+    break;
+  }
+  return retval;
 }
 
 int KernelAPI::Kill(pid_t pid) const {
@@ -176,11 +187,18 @@ bool KernelAPI::ProcFileExists(const string &file_name) const {
   return Exists(file_name);
 }
 
-bool KernelAPI::ReadFileToString(const string& file_name,
-                                 string* output) const {
+bool KernelAPI::ReadFileToString(const string &file_name,
+                                 string *output) const {
   string debug = Substitute("ReadFileToString: $0", file_name);
   ElapsedTimer timer(debug.c_str(), true, kMaxAllowedTimeInSec);
   return ReadFileToStringHelper(file_name, output);
+}
+
+::util::Status KernelAPI::GetFileContents(const string &file_name,
+                                          string *output) const {
+  string debug = Substitute("GetFileContents: $0", file_name);
+  ElapsedTimer timer(debug.c_str(), true, kMaxAllowedTimeInSec);
+  return ::file::GetContents(file_name, output, ::file::Defaults());
 }
 
 size_t KernelAPI::WriteResFile(const string& contents,
@@ -361,6 +379,23 @@ int KernelAPI::Chown(const string &path, uid_t owner, gid_t group) const {
 int KernelAPI::Usleep(useconds_t usec) const {
   ElapsedTimer timer("Usleep: ", true, kMaxAllowedTimeInSec);
   return usleep(usec);
+}
+
+int KernelAPI::Execvp(const string &file, const vector<string> &argv) const {
+  // Build a vector of C-compatible strings.
+  vector<const char *> cargv;
+  for (const string &s : argv) {
+    cargv.push_back(s.c_str());
+  }
+  cargv.push_back(nullptr);
+
+  return execvp(file.c_str(), const_cast<char *const *>(&cargv.front()));
+}
+
+int KernelAPI::SetITimer(int which, const struct itimerval *new_value,
+                         struct itimerval *old_value) const {
+  ElapsedTimer timer("SetITimer: ", true, kMaxAllowedTimeInSec);
+  return setitimer(which, new_value, old_value);
 }
 
 int KernelAPI::Umount(const string& path) const {

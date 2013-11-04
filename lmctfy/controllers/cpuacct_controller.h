@@ -37,11 +37,12 @@ class CpuAcctControllerFactory
     : public CgroupControllerFactory<CpuAcctController, CGROUP_CPUACCT> {
  public:
   CpuAcctControllerFactory(const CgroupFactory *cgroup_factory,
-                           bool owns_cgroup, const KernelApi *kernel,
+                           const KernelApi *kernel,
                            EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<CpuAcctController, CGROUP_CPUACCT>(
-            cgroup_factory, owns_cgroup, kernel, eventfd_notifications) {}
+            cgroup_factory, kernel, eventfd_notifications) {}
   virtual ~CpuAcctControllerFactory() {}
+
  private:
   DISALLOW_COPY_AND_ASSIGN(CpuAcctControllerFactory);
 };
@@ -81,12 +82,12 @@ class CpuAcctController : public CgroupController {
 
   // Get per-cpu usage in nanoseconds.
   // Caller owns the newly allocated vector.
-  virtual ::util::StatusOr< ::std::vector<int64>*> GetPerCpuUsageInNs() const;
+  virtual ::util::StatusOr< ::std::vector<int64> *> GetPerCpuUsageInNs() const;
 
   // Get Scheduler performance histograms.
   // Caller owns the newly allocated vector.
   // TODO(jnagal): Considering returning by value after evaluating overheads.
-  virtual ::util::StatusOr< ::std::vector<CpuHistogramData *>*>
+  virtual ::util::StatusOr< ::std::vector<CpuHistogramData *> *>
       GetSchedulerHistograms() const;
 
  private:

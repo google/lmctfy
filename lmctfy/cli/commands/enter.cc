@@ -93,8 +93,7 @@ void RegisterEnterCommand() {
   RegisterRootCommand(
       CMD("enter",
           "Enter a set of TIDs into the specified container. If none "
-          "specified, assume the PID of the calling process. TID/PID 0 also "
-          "refers to the calling process' PID.",
+          "specified, assume the PID of the parent process.",
           "<container name> [<space-separated list of TIDs>]",
           CMD_TYPE_SETTER,
           1,

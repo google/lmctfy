@@ -52,12 +52,13 @@ class CpuController;
 class CpuControllerFactory
     : public CgroupControllerFactory<CpuController, CGROUP_CPU> {
  public:
-  CpuControllerFactory(const CgroupFactory *cgroup_factory, bool owns_cgroup,
+  CpuControllerFactory(const CgroupFactory *cgroup_factory,
                        const KernelApi *kernel,
                        EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<CpuController, CGROUP_CPU>(
-            cgroup_factory, owns_cgroup, kernel, eventfd_notifications) {}
+            cgroup_factory, kernel, eventfd_notifications) {}
   virtual ~CpuControllerFactory() {}
+
  private:
   DISALLOW_COPY_AND_ASSIGN(CpuControllerFactory);
 };

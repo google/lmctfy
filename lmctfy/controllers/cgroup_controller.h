@@ -36,7 +36,7 @@ namespace lmctfy {
 typedef ::system_api::KernelAPI KernelApi;
 
 // Interface for all factories of cgroup-based Controllers.
-template<typename ControllerType>
+template <typename ControllerType>
 class CgroupControllerFactoryInterface {
  public:
   virtual ~CgroupControllerFactoryInterface() {}
@@ -106,12 +106,12 @@ class CgroupControllerFactory
 
   // Does not take ownership of cgroup_factory, kernel, or
   // eventfd_notifications.
-  CgroupControllerFactory(const CgroupFactory *cgroup_factory, bool owns_cgroup,
+  CgroupControllerFactory(const CgroupFactory *cgroup_factory,
                           const KernelApi *kernel,
                           EventFdNotifications *eventfd_notifications)
       : cgroup_factory_(CHECK_NOTNULL(cgroup_factory)),
         kernel_(CHECK_NOTNULL(kernel)),
-        owns_cgroup_(owns_cgroup),
+        owns_cgroup_(cgroup_factory->OwnsCgroup(hierarchy_type)),
         eventfd_notifications_(CHECK_NOTNULL(eventfd_notifications)) {}
   virtual ~CgroupControllerFactory() {}
 
@@ -232,13 +232,19 @@ class CgroupController {
   //       container.
   virtual ::util::StatusOr< ::std::vector<string>> GetSubcontainers() const;
 
-  bool owns_cgroup() const {
-    return owns_cgroup_;
-  }
+  // Whether to enable or disable cloning the parent's configuration into the
+  // children's cgroups.
+  //
+  // Arguments:
+  //   value: Whether to enable/disable inheriting the parent's configuration.
+  // Return:
+  //   Status: Status of the operation. OK on success.
+  virtual ::util::Status EnableCloneChildren();
+  virtual ::util::Status DisableCloneChildren();
 
-  CgroupHierarchy type() const {
-    return type_;
-  }
+  bool owns_cgroup() const { return owns_cgroup_; }
+
+  CgroupHierarchy type() const { return type_; }
 
  protected:
   // Arguments:
@@ -265,19 +271,10 @@ class CgroupController {
   // Return:
   //   Status: Status of the operation. Iff OK, the write was successful. If the
   //       file could not be found or accessed, NOT_FOUND is returned.
+  virtual ::util::Status SetParamBool(const string &cgroup_file, bool value);
   virtual ::util::Status SetParamInt(const string &cgroup_file, int64 value);
   virtual ::util::Status SetParamString(const string &cgroup_file,
                                         const string &value);
-
-  // Inherits the specified value in the cgroup_file from the parent's value in
-  // the same cgroup_file. The parent is NOT the container's parent, but rather
-  // the parent in the cgroup hierarchy. This operation is undefined on /.
-  //
-  // Arguments:
-  //   cgroup_file: The cgroup file to write to, e.g. "memory.limit_in_bytes"
-  // Return:
-  //   Status: Status of the operation. Iff OK, the operation was successful.
-  virtual ::util::Status InheritParam(const string &cgroup_file);
 
   // Reads the a value of a certain type from the specified cgroup_file of this
   // controller.
@@ -293,6 +290,7 @@ class CgroupController {
   //   StatusOr: Status of the operation. Iff OK, the value read from the file
   //       is provided. If the file is not available on the machine, NOT_FOUND
   //       is returned.
+  virtual ::util::StatusOr<bool> GetParamBool(const string &cgroup_file) const;
   virtual ::util::StatusOr<int64> GetParamInt(const string &cgroup_file) const;
   virtual ::util::StatusOr<string> GetParamString(
       const string &cgroup_file) const;
@@ -359,7 +357,6 @@ class CgroupController {
   //   string: The cgroup path of the specified file. e.g.:
   //       "/dev/cgroup/memory/test/memory.limit_in_bytes"
   string CgroupFilePath(const string &cgroup_file) const;
-  string ParentCgroupFilePath(const string &cgroup_file) const;
 
   // Parses a PID on each line of the specified file and returns them.
   //

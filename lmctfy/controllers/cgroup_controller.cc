@@ -81,6 +81,19 @@ StatusOr<vector<string>> CgroupController::GetSubcontainers() const {
   return GetSubdirectories();
 }
 
+Status CgroupController::EnableCloneChildren() {
+  return SetParamBool(KernelFiles::CGroup::Children::kClone, true);
+}
+
+Status CgroupController::DisableCloneChildren() {
+  return SetParamBool(KernelFiles::CGroup::Children::kClone, false);
+}
+
+Status CgroupController::SetParamBool(const string &cgroup_file,
+                                      bool value) {
+  return SetParamString(cgroup_file, value ? "1" : "0");
+}
+
 Status CgroupController::SetParamInt(const string &cgroup_file,
                                      int64 value) {
   return SetParamString(cgroup_file, Substitute("$0", value));
@@ -92,14 +105,20 @@ Status CgroupController::SetParamString(const string &cgroup_file,
   return WriteStringToFile(file_path, value);
 }
 
-Status CgroupController::InheritParam(const string &cgroup_file) {
-  const string parent_path = ParentCgroupFilePath(cgroup_file);
+StatusOr<bool> CgroupController::GetParamBool(
+    const string &cgroup_file) const {
+  int64 value;
+  RETURN_IF_ERROR(GetParamInt(cgroup_file), &value);
 
-  // Read the value from our parent.
-  string contents;
-  RETURN_IF_ERROR(ReadStringFromFile(parent_path), &contents);
-
-  return SetParamString(cgroup_file, contents);
+  switch (value) {
+    case 0:
+      return false;
+    case 1:
+      return true;
+    default:
+      return Status(::util::error::OUT_OF_RANGE,
+                    Substitute("Value \"$0\" out of range for a bool", value));
+  }
 }
 
 StatusOr<int64> CgroupController::GetParamInt(
@@ -234,12 +253,6 @@ Status CgroupController::WriteStringToFile(const string &file_path,
 
 string CgroupController::CgroupFilePath(const string &cgroup_file) const {
   return JoinPath(cgroup_path_, cgroup_file);
-}
-
-string CgroupController::ParentCgroupFilePath(const string &cgroup_file) const {
-  // The parent is NOT the container's parent, but rather the parent in the
-  // cgroup hierarchy. e.g.: /batch/test -> parent: /batch.
-  return JoinPath(File::StripBasename(cgroup_path_), cgroup_file);
 }
 
 }  // namespace lmctfy

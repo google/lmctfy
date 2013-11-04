@@ -36,10 +36,10 @@ class FreezerControllerFactory
  public:
   // Does not own cgroup_factory or kernel.
   FreezerControllerFactory(const CgroupFactory *cgroup_factory,
-                           bool owns_cgroup, const KernelApi *kernel,
+                           const KernelApi *kernel,
                            EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<FreezerController, CGROUP_FREEZER>(
-            cgroup_factory, owns_cgroup, kernel, eventfd_notifications) {}
+            cgroup_factory, kernel, eventfd_notifications) {}
   virtual ~FreezerControllerFactory() {}
 
  private:

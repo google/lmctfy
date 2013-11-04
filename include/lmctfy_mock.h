@@ -31,8 +31,6 @@ class MockContainerApi : public ContainerApi {
                      ::util::StatusOr<Container *>(StringPiece container_name,
                                                    const ContainerSpec &spec));
   MOCK_CONST_METHOD1(Destroy, ::util::Status(Container *container));
-  MOCK_CONST_METHOD1(Info, ::util::StatusOr<ContainerInfo>(
-      StringPiece container_name));
   MOCK_CONST_METHOD1(Detect, ::util::StatusOr<string>(pid_t pid));
 };
 
@@ -50,7 +48,8 @@ class MockContainer : public Container {
   MOCK_METHOD1(Enter, ::util::Status(const ::std::vector<pid_t> &pids));
   MOCK_METHOD2(Run, ::util::StatusOr<pid_t>(StringPiece command,
                                             FdPolicy policy));
-  MOCK_CONST_METHOD0(Info, ::util::StatusOr<ContainerInfo>());
+  MOCK_CONST_METHOD0(Spec, ::util::StatusOr<ContainerSpec>());
+  MOCK_METHOD1(Exec, ::util::Status(const ::std::vector<string> &command));
   MOCK_CONST_METHOD1(
       ListSubcontainers,
       ::util::StatusOr< ::std::vector<Container *>>(ListPolicy policy));

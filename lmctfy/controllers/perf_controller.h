@@ -30,11 +30,11 @@ class PerfControllerFactory
     : public CgroupControllerFactory<PerfController, CGROUP_PERF_EVENT> {
  public:
   // Does not own the cgroup_factory or kernel.
-  PerfControllerFactory(const CgroupFactory *cgroup_factory, bool owns_cgroup,
+  PerfControllerFactory(const CgroupFactory *cgroup_factory,
                         const KernelApi *kernel,
                         EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<PerfController, CGROUP_PERF_EVENT>(
-            cgroup_factory, owns_cgroup, kernel, eventfd_notifications) {}
+            cgroup_factory, kernel, eventfd_notifications) {}
   virtual ~PerfControllerFactory() {}
 
  private:

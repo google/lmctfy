@@ -67,18 +67,12 @@ StatusOr<CpuResourceHandlerFactory *> CpuResourceHandlerFactory::New(
   }
 
   // Create controllers.
-  bool owns_cpu =
-      cgroup_factory->OwnsCgroup(CpuControllerFactory::HierarchyType());
-  bool owns_cpuacct =
-      cgroup_factory->OwnsCgroup(CpuAcctControllerFactory::HierarchyType());
-  bool owns_cpuset =
-      cgroup_factory->OwnsCgroup(CpusetControllerFactory::HierarchyType());
-  CpuControllerFactory *cpu_controller = new CpuControllerFactory(
-      cgroup_factory, owns_cpu, kernel, eventfd_notifications);
+  CpuControllerFactory *cpu_controller =
+      new CpuControllerFactory(cgroup_factory, kernel, eventfd_notifications);
   CpuAcctControllerFactory *cpuacct_controller = new CpuAcctControllerFactory(
-      cgroup_factory, owns_cpuacct, kernel, eventfd_notifications);
+      cgroup_factory, kernel, eventfd_notifications);
   CpusetControllerFactory *cpuset_controller = new CpusetControllerFactory(
-      cgroup_factory, owns_cpuset, kernel, eventfd_notifications);
+      cgroup_factory, kernel, eventfd_notifications);
 
   return new CpuResourceHandlerFactory(cpu_controller, cpuacct_controller,
                                        cpuset_controller, cgroup_factory,
@@ -133,7 +127,7 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::GetResourceHandler(
   // Cpuset is flat.
   StatusOr<CpusetController *> cpuset_statusor =
       cpuset_controller_factory_->Get(
-          JoinPath("/", File::Basename(container_name)));
+          JoinPath("/", file::Basename(container_name).ToString()));
   CpusetController *cpuset_controller;
   if (!cpuset_statusor.ok()) {
     // cpuset hierarchy might not exist in case of subcontainers.
@@ -164,7 +158,7 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::Create(
 
 StatusOr<ResourceHandler *> CpuResourceHandlerFactory::CreateResourceHandler(
     const string &container_name, const ContainerSpec &spec) const {
-  const string base_container_name = File::Basename(container_name);
+  const string base_container_name = file::Basename(container_name).ToString();
   const string parent_name = File::StripBasename(container_name);
 
   // TODO(vmarmol): Support creation of batch subcontainers under non-batch
@@ -260,21 +254,27 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
     return status;
   }
 
+  // Set cpuset to inherit from the parent. We do this for root and that is
+  // inherited by its children.
+  unique_ptr<CpusetController> cpuset_controller;
+  RETURN_IF_ERROR(cpuset_controller_factory_->Get("/"), &cpuset_controller);
+  RETURN_IF_ERROR(cpuset_controller->EnableCloneChildren());
+
   return Status::OK;
 }
 
-CpuResourceHandler::CpuResourceHandler(
-    const string &container_name, const KernelApi *kernel,
-    CpuController *cpu_controller, CpuAcctController *cpuacct_controller,
-    CpusetController *cpuset_controller)
+CpuResourceHandler::CpuResourceHandler(const string &container_name,
+                                       const KernelApi *kernel,
+                                       CpuController *cpu_controller,
+                                       CpuAcctController *cpuacct_controller,
+                                       CpusetController *cpuset_controller)
     : CgroupResourceHandler(container_name, RESOURCE_CPU, kernel,
-                            vector<CgroupController *>({
-                              cpu_controller,
-                              cpuacct_controller,
-                              cpuset_controller})),
-    cpu_controller_(CHECK_NOTNULL(cpu_controller)),
-    cpuacct_controller_(CHECK_NOTNULL(cpuacct_controller)),
-    cpuset_controller_(CHECK_NOTNULL(cpuset_controller)) {}
+                            vector<CgroupController *>({cpu_controller,
+                                                        cpuacct_controller,
+                                                        cpuset_controller})),
+      cpu_controller_(CHECK_NOTNULL(cpu_controller)),
+      cpuacct_controller_(CHECK_NOTNULL(cpuacct_controller)),
+      cpuset_controller_(CHECK_NOTNULL(cpuset_controller)) {}
 
 Status CpuResourceHandler::Create(const ContainerSpec &spec) {
   // Setup latency before calling update. Ignore if latency is not supported.
@@ -344,25 +344,13 @@ Status CpuResourceHandler::Update(const ContainerSpec &spec,
 
   // Set max throughput.
   if (cpu_spec.has_max_limit()) {
-    RETURN_IF_ERROR(
-        cpu_controller_->SetMaxMilliCpus(cpu_spec.max_limit()));
+    RETURN_IF_ERROR(cpu_controller_->SetMaxMilliCpus(cpu_spec.max_limit()));
   }
 
   // Set affinity mask.
   if (cpu_spec.has_mask()) {
     RETURN_IF_ERROR(cpuset_controller_->SetCpuMask(
         ::util_os_core::UInt64ToCpuSet(cpu_spec.mask())));
-  } else if (policy == Container::UPDATE_REPLACE) {
-    // Nothing set so inherit from parent. This is necessary for upstream
-    // kernels that don't do this by default (by default they leave the field
-    // blank).
-    RETURN_IF_ERROR(cpuset_controller_->InheritCpuMask());
-  }
-
-  // Inherit memory nodes from parent. This is necessary for upstream kernels
-  // that don't do this by default (by default they leave the field blank).
-  if (policy == Container::UPDATE_REPLACE) {
-    RETURN_IF_ERROR(cpuset_controller_->InheritMemoryNodes());
   }
 
   return Status::OK;

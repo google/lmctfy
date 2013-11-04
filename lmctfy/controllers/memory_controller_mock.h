@@ -27,7 +27,7 @@ class MockMemoryControllerFactory : public MemoryControllerFactory {
   // The mock won't use the additional parameters so it is okay to fake them.
   explicit MockMemoryControllerFactory(const CgroupFactory *cgroup_factory)
       : MemoryControllerFactory(
-            cgroup_factory, false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD1(
