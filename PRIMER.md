@@ -1,6 +1,6 @@
 # lmctfy Codebase Primer
 
-The goal of this document is to provide a guick-start guide on the design of lmctfy in order to make contributing to the codebase easier.
+The goal of this document is to provide a quick-start guide on the design of lmctfy in order to make contributing to the codebase easier.
 
 ## Directory Structure
 
@@ -34,7 +34,7 @@ The lmctfy code abstracts system interactions with the system API found in `/sys
 
 At the core of lmctfy is the public C++ library API (the CLI is a thin wrapper around this). The public API has the `ContainerApi` which functions as a factory of `Container` objects (both of these are in [lmctfy.h](/include/lmctfy.h)). These make heavy use of different specifications found in [lmctfy.proto](/include/lmctfy.proto). All of these specifications are split into **resources** that lmctfy supports. The aim is for these to not change significantly over time and to be high level enough to adapt to underlying kernel changes. 
 
-The C++ library is implemented by some logic wrapping a set of **handlers**. The most prevalent of these are the **resource handlers** which each implements the support and policies of a single resource (their interface is in [resource_handler.h](/lmctfy/resource_handler.h)). Two other top-level handlers are the **tasks handler** which manages tracking of tasks (interface at [tasks_handler.h](/lmctfy/tasks_handler.h)) and the **locks handler** which implements the synchronization primitives (interface at [lock_handler.h](/lmctfy/lock_handler.h)).
+The C++ library is implemented by some logic wrapping a set of **handlers**. The most prevalent of these are the **resource handlers** which each implements the support and policies of a single resource (their interface is in [resource_handler.h](/lmctfy/resource_handler.h)). One other top-level handlers are the **tasks handler** which manages tracking of tasks (interface at [tasks_handler.h](/lmctfy/tasks_handler.h)).
 
 ### Resource Handlers
 
@@ -48,10 +48,6 @@ The controllers are what actually interacts with the kernel to implement the des
 
 lmctfy requires a canonical tasks hierarchy it uses to keep track of groups of tasks. The `TasksHandler` contains this logic. The current implementation is the `CgroupTasksHandler` which uses the `freezer` cgroup hierarchy to track tasks.
 
-### Lock Handler
-
-The `LockHandler` enables the concurrent access of each container by synchronizing certain operations. The current implementation is `FileLocksHandler` which uses in-process and file locks to synchronize container access.
-
 ## Other
 
-Feel free to e-mail the project's mailing list: <lmctfy@googlegroups.com>.
+Feel free to e-mail the project's mailing list with any questions: <lmctfy@googlegroups.com>.
