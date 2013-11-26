@@ -15,7 +15,7 @@ CXX ?= g++
 AR ?= ar
 
 # Version number of lmctfy.
-VERSION = "\"0.2-0\""
+VERSION = "\"0.2.0\""
 
 # TODO(vmarmol): Ensure our dependencies are installed
 PROTOC = protoc
