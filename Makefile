@@ -105,6 +105,10 @@ clean:
 	-rm -rf $(OUT_DIR)
 	-rm -f `find . -type f -name '*.pb.*'`
 
+examples/simple_existing: examples/simple_existing.o $(LIBRARY)
+	$(create_bin)
+	$(CXX) -o $(OUT_DIR)/$@ $(addprefix $(OUT_DIR)/,$^) $(CXXFLAGS)
+
 # All sources needed by the library (minus the system API).
 LIBRARY_SOURCES = $(INCLUDE_SOURCES) $(LIBLMCTFY_SOURCES) $(BASE_SOURCES) \
 		  $(STRINGS_SOURCES) $(FILE_SOURCES) $(THREAD_SOURCES) \
