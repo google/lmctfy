@@ -19,6 +19,8 @@
 
 #include "base/callback.h"
 #include "system_api/kernel_api_mock.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "util/file_lines_test_util.h"
 #include "gmock/gmock.h"
@@ -28,6 +30,8 @@
 
 using ::system_api::KernelAPIMock;
 using ::util::FileLinesTestUtil;
+using ::util::UnixGidValue;
+using ::util::UnixUidValue;
 using ::std::map;
 using ::std::unique_ptr;
 using ::testing::DoAll;
@@ -209,7 +213,8 @@ TEST_F(CgroupFactoryTest, CreateSuccess) {
       .WillRepeatedly(Return(-1));
   EXPECT_CALL(*mock_kernel_, MkDir(kCgroupPath)).WillRepeatedly(Return(0));
 
-  StatusOr<string> statusor = factory_->Create(kType, kContainerName);
+  StatusOr<string> statusor = factory_->Create(
+      kType, kContainerName, UnixUidValue::Root(), UnixGidValue::Root());
   ASSERT_TRUE(statusor.ok());
   EXPECT_EQ(kCgroupPath, statusor.ValueOrDie());
 }
@@ -218,7 +223,8 @@ TEST_F(CgroupFactoryTest, CreateSuccessDoesNotOwnCgroup) {
   EXPECT_CALL(*mock_kernel_, Access(kCgroupPathNotOwns, F_OK))
       .WillRepeatedly(Return(0));
 
-  StatusOr<string> statusor = factory_->Create(kTypeNotOwns, kContainerName);
+  StatusOr<string> statusor = factory_->Create(
+      kTypeNotOwns, kContainerName, UnixUidValue::Root(), UnixGidValue::Root());
   ASSERT_TRUE(statusor.ok());
   EXPECT_EQ(kCgroupPathNotOwns, statusor.ValueOrDie());
 }
@@ -227,7 +233,8 @@ TEST_F(CgroupFactoryTest, CreateDoesNotOwnCgroupCgroupDoesNotExist) {
   EXPECT_CALL(*mock_kernel_, Access(kCgroupPathNotOwns, F_OK))
       .WillRepeatedly(Return(-1));
 
-  StatusOr<string> statusor = factory_->Create(kTypeNotOwns, kContainerName);
+  StatusOr<string> statusor = factory_->Create(
+      kTypeNotOwns, kContainerName, UnixUidValue::Root(), UnixGidValue::Root());
   EXPECT_FALSE(statusor.ok());
   EXPECT_EQ(::util::error::NOT_FOUND, statusor.status().error_code());
 }
@@ -236,7 +243,8 @@ TEST_F(CgroupFactoryTest, CreateCgroupAlreadyExists) {
   EXPECT_CALL(*mock_kernel_, Access(kCgroupPath, F_OK))
       .WillRepeatedly(Return(0));
 
-  StatusOr<string> statusor = factory_->Create(kType, kContainerName);
+  StatusOr<string> statusor = factory_->Create(
+      kType, kContainerName, UnixUidValue::Root(), UnixGidValue::Root());
   EXPECT_FALSE(statusor.ok());
   EXPECT_EQ(::util::error::ALREADY_EXISTS, statusor.status().error_code());
 }
@@ -247,7 +255,8 @@ TEST_F(CgroupFactoryTest, CreateMkdirFails) {
   EXPECT_CALL(*mock_kernel_, MkDir(kCgroupPath))
       .WillRepeatedly(Return(-1));
 
-  StatusOr<string> statusor = factory_->Create(kType, kContainerName);
+  StatusOr<string> statusor = factory_->Create(
+      kType, kContainerName, UnixUidValue::Root(), UnixGidValue::Root());
   EXPECT_FALSE(statusor.ok());
   EXPECT_EQ(::util::error::FAILED_PRECONDITION, statusor.status().error_code());
 }

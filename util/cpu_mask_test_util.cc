@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef UTIL_PROCESS_MOCK_SUBPROCESS_H__
-#define UTIL_PROCESS_MOCK_SUBPROCESS_H__
+// Implementation of the convenience functions and operator overloading to make
+// it easier to write more natural unit test code for CpuMask.
 
-#include "util/process/subprocess.h"
-#include "gmock/gmock.h"
+#include "util/cpu_mask.h"
+#include "util/cpu_mask_test_util.h"
 
-class MockSubProcess : public SubProcess {
- public:
-  MOCK_CONST_METHOD0(pid, pid_t());
-  MOCK_CONST_METHOD0(running, bool());
-  MOCK_METHOD0(SetUseSession, void());
+namespace util {
 
-  MOCK_METHOD2(SetChannelAction, void(Channel chan, ChannelAction action));
-  MOCK_METHOD1(SetArgv, void(const ::std::vector<::std::string> &argv));
-  MOCK_METHOD0(Start, bool());
-};
+bool operator==(uint64 lhs, const CpuMask &rhs) {
+  return CpuMask(lhs) == rhs;
+}
 
-#endif  // UTIL_PROCESS_MOCK_SUBPROCESS_H__
+bool operator!=(uint64 lhs, const CpuMask &rhs) {
+  return CpuMask(lhs) != rhs;
+}
+
+}  // namespace util

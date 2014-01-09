@@ -40,7 +40,7 @@ enum ResourceType {
   RESOURCE_DISKIO,
   RESOURCE_NETWORK,
   RESOURCE_MONITORING,
-  RESOURCE_GLOBAL
+  RESOURCE_FILESYSTEM,
 };
 
 // Factory for ResourceHandlers. For each ContainerApi instance there should only
@@ -124,8 +124,9 @@ class ResourceHandler {
   // whatever population has come through the ResourceHandler itself.
   virtual ::util::Status Spec(ContainerSpec *spec) const = 0;
 
-  // Configure a newly created container.
-  virtual ::util::Status Create(const ContainerSpec &spec) = 0;
+  // Perform any setup that only occurs at container creation time. This setup
+  // will be followed by an Update().
+  virtual ::util::Status CreateResource(const ContainerSpec &spec) = 0;
 
   // Destroys the resource. On success, deletes itself.
   virtual ::util::Status Destroy() = 0;

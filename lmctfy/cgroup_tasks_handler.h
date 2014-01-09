@@ -24,6 +24,8 @@ using ::std::string;
 #include "system_api/kernel_api.h"
 #include "lmctfy/controllers/cgroup_controller.h"
 #include "lmctfy/tasks_handler.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors.h"
 #include "strings/split.h"
 #include "strings/substitute.h"
@@ -96,14 +98,17 @@ class CgroupTasksHandlerFactory : public TasksHandlerFactory {
   virtual ~CgroupTasksHandlerFactory() {}
 
   virtual ::util::StatusOr<TasksHandler *> Create(
-      const string &container_name) const {
+      const string &container_name, const ContainerSpec &spec) const {
     // TODO(vmarmol): Consider keeping track of hierarchy mapping in the
     // controller to ensure things like this are valid (i.e.: CgroupTasksHandler
     // expects a 1:1 controller, make sure it gets one).
     // Create the controller. Hierarchy is 1:1.
     CgroupController *cgroup_controller;
-    RETURN_IF_ERROR(cgroup_controller_factory_->Create(container_name),
-                    &cgroup_controller);
+    RETURN_IF_ERROR(
+        cgroup_controller_factory_->Create(
+            container_name, ::util::UnixUid(spec.owner()),
+            ::util::UnixGid(spec.owner_group())),
+        &cgroup_controller);
 
     return new CgroupTasksHandler(container_name, cgroup_controller);
   }

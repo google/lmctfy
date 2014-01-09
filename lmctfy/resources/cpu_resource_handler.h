@@ -48,14 +48,16 @@ typedef ::system_api::KernelAPI KernelApi;
 class CpuResourceHandlerFactory : public CgroupResourceHandlerFactory {
  public:
   // Create an instance of this factory. If the resource is not supported on
-  // this machine a NOT_FOUND error is returned. Does not take ownership of
-  // any argument.
+  // this machine a NOT_FOUND error is returned. The resource supports
+  // functioning without support for cpuset as is typically the case in user
+  // subcontainers. Does not take ownership of any argument.
   static ::util::StatusOr<CpuResourceHandlerFactory *> New(
       CgroupFactory *cgroup_factory, const KernelApi *kernel,
       EventFdNotifications *eventfd_notifications);
 
   // Takes ownership of all cpu related controller factories.
-  // Does not own cgroup_factory or kernel.
+  // Does not own cgroup_factory or kernel. cpuset_controller_factory may be
+  // null if not available.
   CpuResourceHandlerFactory(
       const CpuControllerFactory *cpu_controller_factory,
       const CpuAcctControllerFactory *cpuactt_controller_factory,
@@ -69,13 +71,11 @@ class CpuResourceHandlerFactory : public CgroupResourceHandlerFactory {
       const string &container_name) const override;
   virtual ::util::StatusOr<ResourceHandler *> CreateResourceHandler(
       const string &container_name, const ContainerSpec &spec) const override;
-  virtual ::util::StatusOr<ResourceHandler *> Create(
-      const string &container_name,
-      const ContainerSpec &spec);
   virtual ::util::Status InitMachine(const InitSpec &spec) override;
 
  private:
-  // Controller factory for cpu cgroup controllers.
+  // Controller factory for cpu cgroup controllers. Cpuset may be null if it is
+  // not available.
   const ::std::unique_ptr<const CpuControllerFactory>
       cpu_controller_factory_;
   const ::std::unique_ptr<const CpuAcctControllerFactory>
@@ -94,9 +94,9 @@ class CpuResourceHandlerFactory : public CgroupResourceHandlerFactory {
 // Class is thread-safe.
 class CpuResourceHandler : public CgroupResourceHandler {
  public:
-  // TODO(vmarmol): Allow CpusetController to be NULL rather than using a stub.
   // Does not own kernel. Takes ownership of cpu_controller, cpuacct_controller,
-  // and cpuset_controller.
+  // and cpuset_controller. cpuset_controller may be null if it is not
+  // available.
   CpuResourceHandler(
       const string &container_name,
       const KernelApi *kernel,
@@ -106,7 +106,7 @@ class CpuResourceHandler : public CgroupResourceHandler {
   virtual ~CpuResourceHandler() {}
 
   // Configure a newly created container with initial spec.
-  virtual ::util::Status Create(const ContainerSpec &spec);
+  virtual ::util::Status CreateOnlySetup(const ContainerSpec &spec);
   // Update a container config.
   virtual ::util::Status Update(const ContainerSpec &spec,
                                 Container::UpdatePolicy policy);

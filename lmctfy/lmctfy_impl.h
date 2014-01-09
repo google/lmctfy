@@ -161,7 +161,8 @@ class ContainerImpl : public Container {
   // These methods are documented in //include/lmctfy.h
   virtual ::util::Status Enter(const ::std::vector<pid_t> &tids);
   virtual ::util::StatusOr<ContainerSpec> Spec() const;
-  virtual ::util::StatusOr<pid_t> Run(StringPiece command, FdPolicy policy);
+  virtual ::util::StatusOr<pid_t> Run(const ::std::vector<string> &command,
+                                      const RunSpec &spec);
   virtual ::util::Status Exec(const ::std::vector<string> &command);
   virtual ::util::StatusOr< ::std::vector<Container *>> ListSubcontainers(
       ListPolicy policy) const;

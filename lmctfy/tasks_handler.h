@@ -39,7 +39,7 @@ class TasksHandlerFactory {
   // Creates a TasksHandler for a new container. Fails if the container already
   // exists.
   virtual ::util::StatusOr<TasksHandler *> Create(
-      const string &container_name) const = 0;
+      const string &container_name, const ContainerSpec &spec) const = 0;
 
   // Gets (or attaches) a TasksHandler to an existing container. Fails if the
   // container does not exist.

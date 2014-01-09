@@ -106,7 +106,7 @@ class ContainerApi {
   static ::util::Status InitMachine(const InitSpec &spec);
 
   // Returns a new instance of ContainerApi iff the status is OK. The returned
-  // instance is thread-safe.
+  // instance is thread-safe and the caller takes ownership.
   static ::util::StatusOr<ContainerApi *> New();
 
   virtual ~ContainerApi() {}
@@ -126,7 +126,7 @@ class ContainerApi {
   //       format is outlined near the top of this file.
   // Return:
   //   StatusOr: OK iff the operation was successful. On success we populate an
-  //       object for container interactions.
+  //       object for container interactions and the caller takes ownership.
   virtual ::util::StatusOr<Container *> Get(
       StringPiece container_name) const = 0;
 
@@ -142,7 +142,7 @@ class ContainerApi {
   //       share their parent's limits.
   // Return:
   //   StatusOr: OK iff the operation was successful. On success we populate an
-  //       object for container interactions.
+  //       object for container interactions and the caller takes ownership.
   virtual ::util::StatusOr<Container *> Create(
       StringPiece container_name,
       const ContainerSpec &spec) const = 0;
@@ -233,37 +233,21 @@ class Container {
     return Enter(::std::vector<pid_t>(1, tid));
   }
 
-  enum FdPolicy {
-    // Run the command with all file descriptors inherited from the parent
-    // process.
-    FDS_INHERITED,
-
-    // Run the command with all file descriptors detached from the parent
-    // process (redirected to /dev/null).
-    FDS_DETACHED,
-  };
-
   // Run the specified command inside the container. Multiple instances of run
   // can be active simultaneously. Processes MUST be reaped by the caller.
   //
   // Arguments:
-  //   command: The shell command to execute. It is executed using "/bin/sh -c".
-  //   policy: If FDS_INHERITED, the command will run with all file descriptors
-  //       left open. If FDS_DETACHED, all file descriptors will be closed
-  //       (STDIN/STDOUT/STDERR will be redirected to /dev/null) prior to
-  //       running the command.
+  //   command: The command to execute with its arguments. The first element is
+  //       the binary that will be executed and must be an absolute path. The
+  //       remaining elements are provided as arguments to the binary. Unlike
+  //       execv, you do not need to repeat the first argument.
+  //   spec: The specification of the runtime environment to use for the
+  //       execution of the command.
   // Return:
   //   StatusOr: Status of the operation. OK iff successful. On success, the
   //       PID of the command is returned.
-  virtual ::util::StatusOr<pid_t> Run(StringPiece command, FdPolicy policy) = 0;
-
-  // Returns the resource isolation specification (ContainerSpec) of this
-  // container.
-  //
-  // Return:
-  //   StatusOr: Status of the operation. OK iff successfull. On success, the
-  //       ContainerSpec is populated.
-  virtual ::util::StatusOr<ContainerSpec> Spec() const = 0;
+  virtual ::util::StatusOr<pid_t> Run(const ::std::vector<string> &command,
+                                      const RunSpec &spec) = 0;
 
   // Execute the specified command inside the container.  This replaces the
   // current process image with the specified command.  The PATH environment
@@ -279,6 +263,14 @@ class Container {
   //   Status: Status of the operation, iff failure. If this call succeeds,
   //       it never returns.
   virtual ::util::Status Exec(const ::std::vector<string> &command) = 0;
+
+  // Returns the resource isolation specification (ContainerSpec) of this
+  // container.
+  //
+  // Return:
+  //   StatusOr: Status of the operation. OK iff successfull. On success, the
+  //       ContainerSpec is populated.
+  virtual ::util::StatusOr<ContainerSpec> Spec() const = 0;
 
   // Policies on listing output
   enum ListPolicy {
@@ -302,7 +294,8 @@ class Container {
   //       subcontainers as well.
   // Return:
   //   StatusOr: Status of the operation. OK iff successful. On success
-  //       populates a list of subcontainers sorted by container names.
+  //       populates a list of subcontainers sorted by container names. The
+  //       caller takes ownership of all pointers.
   virtual ::util::StatusOr< ::std::vector<Container *>> ListSubcontainers(
       ListPolicy policy) const = 0;
 

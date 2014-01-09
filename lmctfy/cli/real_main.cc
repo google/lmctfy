@@ -129,7 +129,7 @@ static bool ParseShortFlags(int *argc, char ***argv) {
     } else if (strcmp(cur_arg, "-c") == 0) {
       // Fail if there is no other arg available.
       if (*argc - 1 == i) {
-        fprintf(stderr, "Config file not specified with -c flag");
+        fprintf(stderr, "Config file not specified with -c flag.\n");
         return false;
       }
 

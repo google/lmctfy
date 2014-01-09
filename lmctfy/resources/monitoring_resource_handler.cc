@@ -18,10 +18,14 @@
 
 #include "file/base/path.h"
 #include "util/errors.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/task/codes.pb.h"
 
 using ::file::Basename;
 using ::file::JoinPath;
+using ::util::UnixGid;
+using ::util::UnixUid;
 using ::std::vector;
 using ::util::StatusOr;
 
@@ -77,7 +81,9 @@ MonitoringResourceHandlerFactory::CreateResourceHandler(
   const string flat_container_name = GetFlatContainerName(container_name);
 
   PerfController *controller;
-  RETURN_IF_ERROR(perf_controller_factory_->Create(flat_container_name),
+  RETURN_IF_ERROR(perf_controller_factory_->Create(flat_container_name,
+                                                   UnixUid(spec.owner()),
+                                                   UnixGid(spec.owner_group())),
                   &controller);
   return new MonitoringResourceHandler(container_name, kernel_, controller);
 }

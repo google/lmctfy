@@ -34,6 +34,8 @@ using ::std::unique_ptr;
 using ::std::vector;
 using ::strings::Substitute;
 using ::testing::ElementsAre;
+#include "util/testing/equals_initialized_proto.h"
+using ::testing::EqualsInitializedProto;
 using ::testing::Ge;
 using ::testing::Return;
 using ::testing::WhenSorted;
@@ -51,6 +53,7 @@ static const char kCmd[] = "echo hi";
 class RunTest : public ::testing::Test {
  public:
   RunTest() : argv_({"run", kContainerName, kCmd}) {
+    detached_spec_.set_fd_policy(RunSpec::DETACHED);
   }
 
   virtual void SetUp() {
@@ -62,12 +65,13 @@ class RunTest : public ::testing::Test {
   // exit_code.
   pid_t StartChild(int exit_code) {
     SubProcess sp;
-    sp.SetShellCommand(Substitute("exit $0", exit_code).c_str());
+    sp.SetArgv({"/bin/sh", "-c", Substitute("exit $0", exit_code)});
     sp.Start();
     return sp.pid();
   }
 
  protected:
+  RunSpec detached_spec_;
   const vector<string> argv_;
   unique_ptr<MockContainerApi> mock_lmctfy_;
   MockContainer *mock_container_;
@@ -123,7 +127,8 @@ TEST_F(RunTest, BackgroundSuccess) {
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
-  EXPECT_CALL(*mock_container_, Run(kCmd, Container::FDS_DETACHED))
+  EXPECT_CALL(*mock_container_, Run(ElementsAre("/bin/sh", "-c", kCmd),
+                                    EqualsInitializedProto(detached_spec_)))
       .WillRepeatedly(Return(42));
 
   FLAGS_lmctfy_no_wait = true;
@@ -138,7 +143,8 @@ TEST_F(RunTest, BackgroundRunFails) {
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
-  EXPECT_CALL(*mock_container_, Run(kCmd, Container::FDS_DETACHED))
+  EXPECT_CALL(*mock_container_, Run(ElementsAre("/bin/sh", "-c", kCmd),
+                                    EqualsInitializedProto(detached_spec_)))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   FLAGS_lmctfy_no_wait = true;

@@ -25,6 +25,8 @@
 #include "lmctfy/controllers/memory_controller_mock.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -33,6 +35,8 @@
 
 using ::util::Bytes;
 using ::system_api::KernelAPIMock;
+using ::util::UnixGid;
+using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::testing::NiceMock;
@@ -50,6 +54,9 @@ static const char kContainerName[] = "/test";
 
 class MemoryResourceHandlerFactoryTest : public ::testing::Test {
  public:
+  MemoryResourceHandlerFactoryTest()
+      : owner_uid_(UnixUid(10)), owner_gid_(UnixGid(11)) {}
+
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_controller_ = new StrictMockMemoryController();
@@ -74,6 +81,9 @@ class MemoryResourceHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
+  const UnixUid owner_uid_;
+  const UnixGid owner_gid_;
+
   MockMemoryController *mock_controller_;
   MockMemoryControllerFactory *mock_controller_factory_;
   unique_ptr<KernelAPIMock> mock_kernel_;
@@ -145,8 +155,11 @@ TEST_F(MemoryResourceHandlerFactoryTest, GetFails) {
 
 TEST_F(MemoryResourceHandlerFactoryTest, CreateSuccess) {
   ContainerSpec spec;
+  spec.set_owner(owner_uid_.value());
+  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(kContainerName, owner_uid_, owner_gid_))
       .WillRepeatedly(Return(mock_controller_));
 
   StatusOr<ResourceHandler *> statusor =
@@ -160,8 +173,11 @@ TEST_F(MemoryResourceHandlerFactoryTest, CreateSuccess) {
 
 TEST_F(MemoryResourceHandlerFactoryTest, CreateFails) {
   ContainerSpec spec;
+  spec.set_owner(owner_uid_.value());
+  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(kContainerName, owner_uid_, owner_gid_))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED,
@@ -191,6 +207,26 @@ class MemoryResourceHandlerTest : public ::testing::Test {
   unique_ptr<KernelAPIMock> mock_kernel_;
   unique_ptr<MemoryResourceHandler> handler_;
 };
+
+// Tests for CreateOnlySetup()
+
+TEST_F(MemoryResourceHandlerTest, CreateOnlySetupSucceeds) {
+  ContainerSpec spec;
+
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(1))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_OK(handler_->CreateOnlySetup(spec));
+}
+
+TEST_F(MemoryResourceHandlerTest, CreateOnlySetupFails) {
+  ContainerSpec spec;
+
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(1))
+      .WillOnce(Return(Status::CANCELLED));
+
+  EXPECT_NOT_OK(handler_->CreateOnlySetup(spec));
+}
 
 // Tests for Stats()
 

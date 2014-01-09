@@ -50,7 +50,7 @@ class MockResourceHandler : public ResourceHandler {
   MOCK_METHOD2(Update, ::util::Status(const ContainerSpec &spec,
                                       Container::UpdatePolicy policy));
   MOCK_METHOD0(Destroy, ::util::Status());
-  MOCK_METHOD1(Create, ::util::Status(const ContainerSpec &spec));
+  MOCK_METHOD1(CreateResource, ::util::Status(const ContainerSpec &spec));
   MOCK_METHOD1(Enter, ::util::Status(const ::std::vector<pid_t> &tids));
   MOCK_CONST_METHOD2(Stats, ::util::Status(Container::StatsType type,
                                            ContainerStats *output));

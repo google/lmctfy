@@ -105,6 +105,13 @@ Status CgroupController::SetParamString(const string &cgroup_file,
   return WriteStringToFile(file_path, value);
 }
 
+Status CgroupController::SetChildrenLimit(int64 value) {
+  if (!owns_cgroup_) {
+    return Status::OK;
+  }
+  return SetParamInt(KernelFiles::CGroup::Children::kLimit, value);
+}
+
 StatusOr<bool> CgroupController::GetParamBool(
     const string &cgroup_file) const {
   int64 value;
@@ -193,6 +200,10 @@ StatusOr<vector<string>> CgroupController::GetSubdirectories() const {
   }
 
   return subdirs;
+}
+
+StatusOr<int64> CgroupController::GetChildrenLimit() const {
+  return GetParamInt(KernelFiles::CGroup::Children::kLimit);
 }
 
 StatusOr<ActiveNotifications::Handle> CgroupController::RegisterNotification(

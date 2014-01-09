@@ -24,7 +24,9 @@ using ::std::string;
 #include "file/base/path.h"
 #include "lmctfy/controllers/cgroup_controller.h"
 #include "lmctfy/controllers/cgroup_factory.h"
+#include "util/errors.h"
 #include "strings/substitute.h"
+#include "strings/strcat.h"
 #include "util/gtl/stl_util.h"
 #include "util/task/status.h"
 
@@ -58,6 +60,9 @@ StatusOr<ResourceHandler *> CgroupResourceHandlerFactory::Create(
   }
   unique_ptr<ResourceHandler> handler(statusor_handler.ValueOrDie());
 
+  // Run the create action before applying the update.
+  RETURN_IF_ERROR(handler->CreateResource(spec));
+
   // Prepare the container by doing a replace update.
   Status status = handler->Update(spec, Container::UPDATE_REPLACE);
   if (!status.ok()) {
@@ -84,8 +89,16 @@ CgroupResourceHandler::~CgroupResourceHandler() {
   STLDeleteValues(&controllers_);
 }
 
-Status CgroupResourceHandler::Create(const ContainerSpec &spec) {
-  return Status::OK;
+Status CgroupResourceHandler::CreateResource(const ContainerSpec &spec) {
+  for (auto controller : controllers_) {
+    // TODO(jonathanw): Remove the if and use default once we have handed
+    // ownership of this to lmctfy.
+    if (spec.has_children_limit()) {
+      RETURN_IF_ERROR(controller.second->SetChildrenLimit(
+                          spec.children_limit()));
+    }
+  }
+  return CreateOnlySetup(spec);
 }
 
 Status CgroupResourceHandler::Destroy() {
@@ -127,6 +140,45 @@ Status CgroupResourceHandler::Enter(const vector<pid_t> &tids) {
   }
 
   return Status::OK;
+}
+
+Status CgroupResourceHandler::Adjust(
+    Container::UpdatePolicy policy,
+    ContainerSpec *update_spec) const {
+  switch (policy) {
+    case Container::UpdatePolicy::UPDATE_DIFF:
+      return Status::OK;
+    case Container::UpdatePolicy::UPDATE_REPLACE:
+      RecursiveFillDefaults(update_spec);
+      return Status::OK;
+  }
+  return Status(util::error::INVALID_ARGUMENT,
+                StrCat("Unrecognised update policy specified: ", policy));
+}
+
+Status CgroupResourceHandler::Validate(const ContainerSpec &update_spec) const {
+  ContainerSpec spec_after_update = update_spec;
+  RETURN_IF_ERROR(Spec(&spec_after_update));
+  return VerifyFullSpec(spec_after_update);
+}
+
+Status CgroupResourceHandler::Update(const ContainerSpec &spec,
+                                     Container::UpdatePolicy policy) {
+  ContainerSpec adjusted_spec = spec;
+  RETURN_IF_ERROR(Adjust(policy, &adjusted_spec));
+  RETURN_IF_ERROR(Validate(adjusted_spec));
+  return DoUpdate(adjusted_spec);
+}
+
+Status CgroupResourceHandler::DoUpdate(const ContainerSpec &spec) {
+  return Status(util::error::UNIMPLEMENTED, __func__);
+}
+
+void CgroupResourceHandler::RecursiveFillDefaults(ContainerSpec *spec) const {
+}
+
+Status CgroupResourceHandler::VerifyFullSpec(const ContainerSpec &spec) const {
+  return Status(util::error::UNIMPLEMENTED, __func__);
 }
 
 }  // namespace lmctfy

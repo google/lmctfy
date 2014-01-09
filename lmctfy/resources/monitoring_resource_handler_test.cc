@@ -21,11 +21,15 @@
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
 #include "lmctfy/controllers/perf_controller_mock.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
 using ::system_api::KernelAPIMock;
+using ::util::UnixGid;
+using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::testing::Return;
@@ -43,6 +47,9 @@ static const char kTaskInAllocContainerName[] = "/test/sub";
 
 class MonitoringResourceHandlerFactoryTest : public ::testing::Test {
  public:
+  MonitoringResourceHandlerFactoryTest()
+      : owner_uid_(UnixUid(10)), owner_gid_(UnixGid(11)) {}
+
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_controller_ = new StrictMockPerfController();
@@ -67,6 +74,9 @@ class MonitoringResourceHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
+  const UnixUid owner_uid_;
+  const UnixGid owner_gid_;
+
   MockPerfController *mock_controller_;
   MockPerfControllerFactory *mock_controller_factory_;
   unique_ptr<KernelAPIMock> mock_kernel_;
@@ -151,8 +161,11 @@ TEST_F(MonitoringResourceHandlerFactoryTest, GetFails) {
 
 TEST_F(MonitoringResourceHandlerFactoryTest, CreateSuccess) {
   ContainerSpec spec;
+  spec.set_owner(owner_uid_.value());
+  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(kContainerName, owner_uid_, owner_gid_))
       .WillRepeatedly(Return(mock_controller_));
 
   StatusOr<ResourceHandler *> statusor =
@@ -166,8 +179,11 @@ TEST_F(MonitoringResourceHandlerFactoryTest, CreateSuccess) {
 
 TEST_F(MonitoringResourceHandlerFactoryTest, CreateTaskInAlloc) {
   ContainerSpec spec;
+  spec.set_owner(owner_uid_.value());
+  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_, Create(kTaskInAllocName))
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(kTaskInAllocName, owner_uid_, owner_gid_))
       .WillRepeatedly(Return(mock_controller_));
 
   StatusOr<ResourceHandler *> statusor =
@@ -181,8 +197,11 @@ TEST_F(MonitoringResourceHandlerFactoryTest, CreateTaskInAlloc) {
 
 TEST_F(MonitoringResourceHandlerFactoryTest, CreateFails) {
   ContainerSpec spec;
+  spec.set_owner(owner_uid_.value());
+  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(kContainerName, owner_uid_, owner_gid_))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED,

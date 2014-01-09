@@ -156,16 +156,24 @@ class CgroupResourceHandlerFactory : public ResourceHandlerFactory {
 // cgroup-based resource handlers. Implements a generic Destroy() and Enter(),
 // see below for details.
 //
-// A cgroup-based ResourceHandler only needs to implement:
-// - Update()
+// A cgroup-based ResourceHandler has to implement:
 // - Stats()
+// - Spec()
 // - RegisterNotification()
+// - DoUpdate()
+// - VerifyFullSpec()
+// - RecursiveFillDefaults()
+// - FillSpec()
 // These are the core details of how the resource handler is implemented. Take a
 // look at the documentaion in the ResourceHandler class definition for more
 // details of expected behavior.
 //
 // If the default behavior for Destroy() and Enter() is not satisfactory, those
 // can be overwritten as well.
+//
+// NOTE: Some classes override Update() but don't implement methods:
+// DoUpdate(), VerifyFullSpec(), RecursiveFillDefaults() and FillSpec().
+// This approach is deprecated and will be changed as soon as possible.
 //
 // Class is thread-safe.
 class CgroupResourceHandler : public ResourceHandler {
@@ -178,16 +186,24 @@ class CgroupResourceHandler : public ResourceHandler {
       const ::std::vector<CgroupController *> &controllers);
   virtual ~CgroupResourceHandler();
 
+  virtual ::util::Status CreateResource(const ContainerSpec &spec) final;
+
+  // TODO(kyurtsever) Make this method final and make DoUpdate,
+  // FillWithDefaults and VerifyFullSpec methods pure virtual.
+  // See these methods TODO for sufficient condition.
+  //
+  // If you don't override Update you _have_ to override DoUpdate,
+  // FillWithDefaults and VerifyFullSpec, and also your Spec _has_ to conform
+  // to semantic described below (writing only to unset fields).
   virtual ::util::Status Update(const ContainerSpec &spec,
-                                Container::UpdatePolicy policy) = 0;
+                                Container::UpdatePolicy policy);
   virtual ::util::Status Stats(Container::StatsType type,
                                ContainerStats *output) const = 0;
+  // Fills all unset fields of @spec with values read from the machine.
+  // TODO(kyurtsever) Make all implementations conform to this semantic.
   virtual ::util::Status Spec(ContainerSpec *spec) const = 0;
   virtual ::util::StatusOr<Container::NotificationId> RegisterNotification(
       const EventSpec &spec, Callback1< ::util::Status> *callback) = 0;
-
-  // Configure a new spec for a newly created container.
-  virtual ::util::Status Create(const ContainerSpec &spec);
 
   // Destroys all controllers and iff OK deletes this object.
   virtual ::util::Status Destroy();
@@ -196,6 +212,29 @@ class CgroupResourceHandler : public ResourceHandler {
   virtual ::util::Status Enter(const ::std::vector<pid_t> &tids);
 
  protected:
+  // Perform any setup that only occurs at container creation time. This setup
+  // will be followed by an Update(). This should be overridden to handle the
+  // setup for this specific resource--general setup that happens in all
+  // resources will occur in CreateResource
+  virtual ::util::Status CreateOnlySetup(const ContainerSpec &spec) {
+    return ::util::Status::OK;
+  }
+
+  // TODO(kyurtsever) Make methods DoUpdate, RecursiveFillDefaults and
+  // VerifyFullSpec pure virtual when all ContainerSpec repeated fields are in
+  // submessages (always set semantics for repeated fields).
+
+  // Updates the machine with exactly supplied fields. Doesn't fill defaults.
+  // Doesn't verify correctness.
+  virtual ::util::Status DoUpdate(const ContainerSpec &spec);
+
+  // Fills all unset fields of @spec with default values.
+  // Unset parameters in submessages and repeated submessages are also filled.
+  virtual void RecursiveFillDefaults(ContainerSpec *spec) const;
+
+  // Checks if container state described in @spec is correct.
+  virtual ::util::Status VerifyFullSpec(const ContainerSpec &spec) const;
+
   // Map of controller hierarchies to their controllers.
   ::std::map<CgroupHierarchy, CgroupController *> controllers_;
 
@@ -203,6 +242,13 @@ class CgroupResourceHandler : public ResourceHandler {
   const KernelApi *kernel_;
 
  private:
+  // Adjust @update_spec according to @policy.
+  ::util::Status Adjust(Container::UpdatePolicy policy,
+                        ContainerSpec *update_spec) const;
+
+  // Check if update described in @update_spec is valid.
+  ::util::Status Validate(const ContainerSpec &update_spec) const;
+
   DISALLOW_COPY_AND_ASSIGN(CgroupResourceHandler);
 };
 

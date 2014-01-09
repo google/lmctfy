@@ -24,6 +24,8 @@ using ::std::string;
 #include "util/bytes.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors.h"
 #include "util/task/codes.pb.h"
 #include "util/task/status.h"
@@ -35,6 +37,8 @@ class CgroupController;
 }  // namespace containers
 
 using ::util::Bytes;
+using ::util::UnixGid;
+using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::util::Status;
@@ -84,8 +88,8 @@ StatusOr<ResourceHandler *> MemoryResourceHandlerFactory::CreateResourceHandler(
     const string &container_name, const ContainerSpec &spec) const {
   // Memory has a 1:1 mapping from container name to hierarchy path. It also
   // only has the memory cgroup controller for now.
-  StatusOr<MemoryController *> statusor =
-      memory_controller_factory_->Create(container_name);
+  StatusOr<MemoryController *> statusor = memory_controller_factory_->Create(
+      container_name, UnixUid(spec.owner()), UnixGid(spec.owner_group()));
   if (!statusor.ok()) {
     return statusor.status();
   }
@@ -100,6 +104,11 @@ MemoryResourceHandler::MemoryResourceHandler(
     : CgroupResourceHandler(container_name, RESOURCE_MEMORY, kernel,
                             vector<CgroupController *>({memory_controller})),
       memory_controller_(CHECK_NOTNULL(memory_controller)) {}
+
+Status MemoryResourceHandler::CreateOnlySetup(const ContainerSpec &spec) {
+  // TODO(rgooch): make this configurable.
+  return memory_controller_->SetStalePageAge(1);
+}
 
 Status MemoryResourceHandler::Update(const ContainerSpec &spec,
                                      Container::UpdatePolicy policy) {

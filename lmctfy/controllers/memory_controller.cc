@@ -61,6 +61,10 @@ Status MemoryController::SetSoftLimit(Bytes limit) {
                        ModifyLimit(limit));
 }
 
+Status MemoryController::SetStalePageAge(uint64 scan_cycles) {
+  return SetParamInt(KernelFiles::Memory::kStalePageAge, scan_cycles);
+}
+
 StatusOr<Bytes> MemoryController::GetWorkingSet() const {
   // Get usage in bytes.
   StatusOr<Bytes> statusor_bytes =
@@ -118,6 +122,10 @@ StatusOr<Bytes> MemoryController::GetEffectiveLimit() const {
 
 StatusOr<Bytes> MemoryController::GetSoftLimit() const {
   return GetParamBytes(KernelFiles::Memory::kSoftLimitInBytes);
+}
+
+StatusOr<uint64> MemoryController::GetStalePageAge() const {
+  return GetParamInt(KernelFiles::Memory::kStalePageAge);
 }
 
 StatusOr<map<string, int64>> MemoryController::GetStats(

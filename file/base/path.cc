@@ -16,6 +16,7 @@
 
 #include <string>
 
+using ::std::make_pair;
 using ::std::string;
 
 namespace file {
@@ -57,20 +58,36 @@ string JoinPath(StringPiece p1, StringPiece p2, StringPiece p3) {
   return result;
 }
 
-StringPiece Basename(StringPiece path) {
+namespace internal {
+
+// Return the parts of the path, split on the final "/".  If there is no
+// "/" in the path, the first part of the output is empty and the second
+// is the input. If the only "/" in the path is the first character, it is
+// the first part of the output.
+std::pair<StringPiece, StringPiece> SplitPath(StringPiece path) {
   stringpiece_ssize_type pos = path.find_last_of('/');
 
   // Handle the case with no '/' in 'path'.
   if (pos == StringPiece::npos) {
-    return path;
+    return make_pair(StringPiece(path, 0, 0), path);
   }
 
   // Handle the case with a single leading '/' in 'path'.
   if (pos == 0) {
-    return StringPiece(path, 1);
+    return make_pair(StringPiece(path, 0, 1), StringPiece(path, 1));
   }
 
-  return StringPiece(path, pos + 1);
+  return make_pair(StringPiece(path, 0, pos), StringPiece(path, pos + 1));
+}
+
+}  // namespace internal
+
+StringPiece Dirname(StringPiece path) {
+  return internal::SplitPath(path).first;
+}
+
+StringPiece Basename(StringPiece path) {
+  return internal::SplitPath(path).second;
 }
 
 }  // namespace file

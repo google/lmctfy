@@ -23,6 +23,7 @@
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/resource_handler_mock.h"
 #include "include/lmctfy.pb.h"
+#include "util/errors_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "util/task/status.h"
@@ -40,12 +41,16 @@ using ::std::vector;
 using ::testing::DoAll;
 #include "util/testing/equals_initialized_proto.h"
 using ::testing::EqualsInitializedProto;
+using ::testing::Invoke;
 using ::testing::NotNull;
 using ::testing::Return;
 using ::testing::SetArgPointee;
 using ::testing::StrictMock;
+using ::testing::_;
 using ::util::Status;
 using ::util::StatusOr;
+using ::util::error::NOT_FOUND;
+using ::util::error::INVALID_ARGUMENT;
 
 namespace containers {
 namespace lmctfy {
@@ -173,9 +178,11 @@ TEST_F(CgroupResourceHandlerFactoryTest, Create) {
       new StrictMockResourceHandler(kContainerName, RESOURCE_CPU);
   factory_->set_create_resource_handlers_status(mock_handler);
 
+  EXPECT_CALL(*mock_handler, CreateResource(EqualsInitializedProto(spec)))
+      .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_handler,
               Update(EqualsInitializedProto(spec), Container::UPDATE_REPLACE))
-      .WillRepeatedly(Return(Status::OK));
+      .WillOnce(Return(Status::OK));
 
   StatusOr<ResourceHandler *> statusor = factory_->Create(kContainerName, spec);
   ASSERT_TRUE(statusor.ok());
@@ -190,15 +197,32 @@ TEST_F(CgroupResourceHandlerFactoryTest, CreateCreateControllersFails) {
   EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainerName, spec).status());
 }
 
+TEST_F(CgroupResourceHandlerFactoryTest, CreateCreateFails) {
+  ContainerSpec spec;
+  MockResourceHandler *mock_handler =
+      new StrictMockResourceHandler(kContainerName, RESOURCE_CPU);
+  factory_->set_create_resource_handlers_status(mock_handler);
+
+  EXPECT_CALL(*mock_handler, CreateResource(EqualsInitializedProto(spec)))
+      .WillOnce(Return(Status::CANCELLED));
+  EXPECT_CALL(*mock_handler,
+              Update(EqualsInitializedProto(spec), Container::UPDATE_REPLACE))
+      .WillRepeatedly(Return(Status::OK));
+
+  EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainerName, spec).status());
+}
+
 TEST_F(CgroupResourceHandlerFactoryTest, CreateUpdateFails) {
   ContainerSpec spec;
   MockResourceHandler *mock_handler =
       new StrictMockResourceHandler(kContainerName, RESOURCE_CPU);
   factory_->set_create_resource_handlers_status(mock_handler);
 
+  EXPECT_CALL(*mock_handler, CreateResource(EqualsInitializedProto(spec)))
+      .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_handler,
               Update(EqualsInitializedProto(spec), Container::UPDATE_REPLACE))
-      .WillRepeatedly(Return(Status::CANCELLED));
+      .WillOnce(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainerName, spec).status());
 }
@@ -284,6 +308,219 @@ TEST_F(CgroupResourceHandlerTest, EnterEnterFails) {
       .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED, handler_->Enter(tids));
+}
+
+TEST_F(CgroupResourceHandlerTest, CreateSetsChildrenLimits) {
+  EXPECT_CALL(*mock_controller1_, SetChildrenLimit(12))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_controller2_, SetChildrenLimit(12))
+      .WillOnce(Return(Status::OK));
+
+  ContainerSpec spec;
+  spec.set_children_limit(12);
+
+  EXPECT_OK(handler_->CreateResource(spec));
+}
+
+class UpdateTemplateTestHelperMock : public CgroupResourceHandler {
+ public:
+  UpdateTemplateTestHelperMock(const string &container_name,
+                               ResourceType resource_type,
+                               const KernelApi *kernel,
+                               const vector<CgroupController *> &controllers)
+      : CgroupResourceHandler(container_name, resource_type, kernel,
+                              controllers) {}
+  MOCK_CONST_METHOD2(Stats, Status(Container::StatsType, ContainerStats *));
+  MOCK_METHOD2(RegisterNotification, StatusOr<Container::NotificationId>(
+      const EventSpec &, Callback1<Status> *callback));
+  MOCK_CONST_METHOD1(Spec, Status(ContainerSpec *s));
+  MOCK_METHOD1(DoUpdate, Status(const ContainerSpec &));
+  MOCK_CONST_METHOD1(RecursiveFillDefaults,
+                     void(ContainerSpec *s));
+  MOCK_CONST_METHOD1(VerifyFullSpec, Status(const ContainerSpec &));
+};
+
+class CgroupResourceHandlerUpdateTest : public ::testing::Test {
+ public:
+  virtual void SetUp() {
+    mock_kernel_.reset(new StrictMock<KernelAPIMock>());
+    mock_controller1_ =
+        new StrictMockCgroupController(CGROUP_CPU, kMountPoint, true);
+    mock_controller2_ =
+        new StrictMockCgroupController(CGROUP_CPUACCT, kMountPoint, true);
+    handler_.reset(new UpdateTemplateTestHelperMock(
+        kContainerName, RESOURCE_CPU, mock_kernel_.get(),
+        {mock_controller1_, mock_controller2_}));
+  }
+
+ protected:
+  MockCgroupController *mock_controller1_;
+  MockCgroupController *mock_controller2_;
+  unique_ptr<KernelAPIMock> mock_kernel_;
+  unique_ptr<UpdateTemplateTestHelperMock> handler_;
+};
+
+TEST_F(CgroupResourceHandlerUpdateTest, UpdateDiff) {
+  ContainerSpec spec;
+
+  ContainerSpec state_spec;
+  state_spec.mutable_filesystem()->set_fd_limit(10);
+
+  EXPECT_CALL(*handler_, Spec(NotNull()))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->filesystem().has_fd_limit())
+          spec->mutable_filesystem()->set_fd_limit(10);
+        return Status::OK;
+      }));
+  EXPECT_CALL(*handler_, VerifyFullSpec(EqualsInitializedProto(state_spec)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*handler_, DoUpdate(EqualsInitializedProto(spec)))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_EQ(Status::OK,
+            handler_->Update(spec, Container::UpdatePolicy::UPDATE_DIFF));
+}
+
+TEST_F(CgroupResourceHandlerUpdateTest, UpdateDiffSpecError) {
+  ContainerSpec spec;
+
+  EXPECT_CALL(*handler_, Spec(NotNull()))
+      .WillOnce(Return(Status(NOT_FOUND, "")));
+
+  EXPECT_ERROR_CODE(NOT_FOUND,
+                    handler_->Update(spec,
+                                     Container::UpdatePolicy::UPDATE_DIFF));
+}
+
+TEST_F(CgroupResourceHandlerUpdateTest, UpdateDiffVerifyError) {
+  ContainerSpec spec;
+
+  ContainerSpec state_spec;
+  state_spec.mutable_filesystem()->set_fd_limit(10);
+
+  EXPECT_CALL(*handler_, Spec(NotNull()))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->filesystem().has_fd_limit())
+          spec->mutable_filesystem()->set_fd_limit(10);
+        return Status::OK;
+      }));
+  EXPECT_CALL(*handler_, VerifyFullSpec(EqualsInitializedProto(state_spec)))
+      .WillOnce(Return(Status(INVALID_ARGUMENT, "")));
+
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT,
+                    handler_->Update(spec,
+                                     Container::UpdatePolicy::UPDATE_DIFF));
+}
+
+TEST_F(CgroupResourceHandlerUpdateTest, UpdateDiffUpdateError) {
+  ContainerSpec spec;
+
+  ContainerSpec state_spec;
+  state_spec.mutable_filesystem()->set_fd_limit(10);
+
+  EXPECT_CALL(*handler_, Spec(NotNull()))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->filesystem().has_fd_limit())
+          spec->mutable_filesystem()->set_fd_limit(10);
+        return Status::OK;
+      }));
+  EXPECT_CALL(*handler_, VerifyFullSpec(EqualsInitializedProto(state_spec)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*handler_, DoUpdate(EqualsInitializedProto(spec)))
+      .WillOnce(Return(Status(NOT_FOUND, "")));
+
+  EXPECT_ERROR_CODE(NOT_FOUND,
+                    handler_->Update(spec,
+                                     Container::UpdatePolicy::UPDATE_DIFF));
+}
+
+TEST_F(CgroupResourceHandlerUpdateTest, UpdateReplace) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_limit(100);
+
+  ContainerSpec spec_with_defaults;
+  spec_with_defaults.CopyFrom(spec);
+  spec_with_defaults.mutable_memory()->set_reservation(33);
+
+  EXPECT_CALL(*handler_, RecursiveFillDefaults(NotNull()))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->mutable_memory()->has_reservation())
+          spec->mutable_memory()->set_reservation(33);
+      }));
+  EXPECT_CALL(*handler_, Spec(NotNull()))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->mutable_memory()->has_limit())
+          spec->mutable_memory()->set_limit(50);
+        if (!spec->mutable_memory()->has_reservation())
+          spec->mutable_memory()->set_reservation(1);
+        return Status::OK;
+      }));
+  EXPECT_CALL(*handler_,
+              VerifyFullSpec(EqualsInitializedProto(spec_with_defaults)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*handler_, DoUpdate(EqualsInitializedProto(spec_with_defaults)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UpdatePolicy::UPDATE_REPLACE));
+}
+
+TEST_F(CgroupResourceHandlerUpdateTest, UpdateReplaceVerifyError) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_limit(100);
+
+  ContainerSpec spec_with_defaults;
+  spec_with_defaults.CopyFrom(spec);
+  spec_with_defaults.mutable_memory()->set_reservation(33);
+
+  EXPECT_CALL(*handler_, RecursiveFillDefaults(_))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->mutable_memory()->has_reservation())
+          spec->mutable_memory()->set_reservation(33);
+      }));
+  EXPECT_CALL(*handler_, Spec(NotNull()))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->mutable_memory()->has_limit())
+          spec->mutable_memory()->set_limit(50);
+        if (!spec->mutable_memory()->has_reservation())
+          spec->mutable_memory()->set_reservation(1);
+        return Status::OK;
+      }));
+  EXPECT_CALL(*handler_,
+              VerifyFullSpec(EqualsInitializedProto(spec_with_defaults)))
+      .WillOnce(Return(Status(INVALID_ARGUMENT, "")));
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT,
+                    handler_->Update(spec,
+                                     Container::UpdatePolicy::UPDATE_REPLACE));
+}
+
+TEST_F(CgroupResourceHandlerUpdateTest, UpdateReplaceUpdateError) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_limit(100);
+
+  ContainerSpec spec_with_defaults;
+  spec_with_defaults.CopyFrom(spec);
+  spec_with_defaults.mutable_memory()->set_reservation(33);
+
+  EXPECT_CALL(*handler_, RecursiveFillDefaults(_))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->mutable_memory()->has_reservation())
+          spec->mutable_memory()->set_reservation(33);
+      }));
+  EXPECT_CALL(*handler_, Spec(NotNull()))
+      .WillOnce(Invoke([](ContainerSpec *spec) {
+        if (!spec->mutable_memory()->has_limit())
+          spec->mutable_memory()->set_limit(50);
+        if (!spec->mutable_memory()->has_reservation())
+          spec->mutable_memory()->set_reservation(1);
+        return Status::OK;
+      }));
+  EXPECT_CALL(*handler_,
+              VerifyFullSpec(EqualsInitializedProto(spec_with_defaults)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*handler_, DoUpdate(EqualsInitializedProto(spec_with_defaults)))
+      .WillOnce(Return(Status(NOT_FOUND, "")));
+  EXPECT_ERROR_CODE(NOT_FOUND,
+                    handler_->Update(spec,
+                                     Container::UpdatePolicy::UPDATE_REPLACE));
 }
 
 }  // namespace

@@ -38,6 +38,8 @@ class MockEventfdListener : public EventfdListener {
                          const string &, EventReceiverInterface *er));
   MOCK_METHOD0(Start, void());
   MOCK_METHOD0(Stop, void());
+  MOCK_METHOD0(IsNotRunning, bool());
+  MOCK_METHOD0(WaitUntilStopped, void());
 };
 
 class MockEventfdListenerFactory : public EventfdListenerFactory {

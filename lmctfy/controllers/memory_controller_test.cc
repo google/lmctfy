@@ -138,7 +138,7 @@ TEST_F(MemoryControllerTest, SetInfiniteSoftLimit) {
   EXPECT_TRUE(controller_->SetSoftLimit(Bytes(kint64max)).ok());
 }
 
-TEST_F(MemoryControllerTest, SetSoftLimitFailes) {
+TEST_F(MemoryControllerTest, SetSoftLimitFails) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kSoftLimitInBytes);
 
@@ -147,6 +147,28 @@ TEST_F(MemoryControllerTest, SetSoftLimitFailes) {
       .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
 
   EXPECT_FALSE(controller_->SetSoftLimit(Bytes(42)).ok());
+}
+
+TEST_F(MemoryControllerTest, SetStalePageAge) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kStalePageAge);
+
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
+                                                       NotNull(), NotNull()))
+      .WillOnce(Return(0));
+
+  EXPECT_OK(controller_->SetStalePageAge(42));
+}
+
+TEST_F(MemoryControllerTest, SetStalePageAgeFails) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kStalePageAge);
+
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
+                                                       NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+
+  EXPECT_NOT_OK(controller_->SetStalePageAge(42));
 }
 
 TEST_F(MemoryControllerTest, GetLimit) {
@@ -219,6 +241,42 @@ TEST_F(MemoryControllerTest, GetSoftLimitFails) {
       .WillOnce(Return(false));
 
   EXPECT_FALSE(controller_->GetSoftLimit().ok());
+}
+
+TEST_F(MemoryControllerTest, GetStalePageAge) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kStalePageAge);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("42"), Return(true)));
+
+  StatusOr<unsigned int> statusor = controller_->GetStalePageAge();
+  ASSERT_TRUE(statusor.ok());
+  EXPECT_EQ(42, statusor.ValueOrDie());
+}
+
+TEST_F(MemoryControllerTest, GetStalePageAgeNotFound) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kStalePageAge);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+
+  EXPECT_ERROR_CODE(NOT_FOUND, controller_->GetStalePageAge());
+}
+
+TEST_F(MemoryControllerTest, GetStalePageAgeFails) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kStalePageAge);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(Return(false));
+
+  EXPECT_NOT_OK(controller_->GetStalePageAge());
 }
 
 TEST_F(MemoryControllerTest, GetUsage) {

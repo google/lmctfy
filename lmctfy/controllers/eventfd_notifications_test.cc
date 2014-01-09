@@ -55,6 +55,8 @@ class EventfdNotificationsTest : public ::testing::Test {
         *mock_kernel_, "test", nullptr, true, 0);
     EXPECT_CALL(*mock_eventfd_listener_, Stop())
         .WillRepeatedly(Return());
+    EXPECT_CALL(*mock_eventfd_listener_, IsNotRunning())
+        .WillRepeatedly(Return(true));
 
     notifications_.reset(new EventFdNotifications(active_notifications_.get(),
                                                   mock_eventfd_listener_));

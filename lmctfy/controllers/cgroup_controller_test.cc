@@ -22,6 +22,9 @@
 #include "file/base/path.h"
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
+#include "lmctfy/kernel_files.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "util/file_lines_test_util.h"
 #include "gmock/gmock.h"
@@ -33,6 +36,10 @@ using ::system_api::KernelAPIMock;
 using ::file::JoinPath;
 using ::util::FileLines;
 using ::util::FileLinesTestUtil;
+using ::util::UnixGid;
+using ::util::UnixGidValue;
+using ::util::UnixUid;
+using ::util::UnixUidValue;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::testing::ContainerEq;
@@ -88,7 +95,10 @@ static const char kCgroupMemoryLimitPath[] =
 
 class CgroupControllerFactoryTest : public ::testing::Test {
  public:
-  CgroupControllerFactoryTest() : kBools({true, false}) {}
+  CgroupControllerFactoryTest()
+      : kBools({true, false}),
+        root_uid_(UnixUidValue::Root()),
+        root_gid_(UnixGidValue::Root()) {}
 
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
@@ -109,6 +119,8 @@ class CgroupControllerFactoryTest : public ::testing::Test {
 
  protected:
   const vector<bool> kBools;
+  const UnixUid root_uid_;
+  const UnixGid root_gid_;
 
   unique_ptr<MockEventFdNotifications> mock_eventfd_notifications_;
   unique_ptr<KernelAPIMock> mock_kernel_;
@@ -147,11 +159,12 @@ TEST_F(CgroupControllerFactoryTest, CreateSuccess) {
   for (bool owns_cgroup : kBools) {
     SetupFactory(owns_cgroup);
 
-    EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
+    EXPECT_CALL(*mock_cgroup_factory_,
+                Create(kType, kContainerName, root_uid_, root_gid_))
         .WillRepeatedly(Return(string(kCgroupPath)));
 
     StatusOr<TestMemoryController *> statusor =
-        factory_->Create(kContainerName);
+        factory_->Create(kContainerName, root_uid_, root_gid_);
     ASSERT_TRUE(statusor.ok());
     EXPECT_NE(nullptr, statusor.ValueOrDie());
     unique_ptr<CgroupController> controller(statusor.ValueOrDie());
@@ -164,10 +177,12 @@ TEST_F(CgroupControllerFactoryTest, CreateCgroupFactoryCreateFails) {
   for (bool owns_cgroup : kBools) {
     SetupFactory(owns_cgroup);
 
-    EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
+    EXPECT_CALL(*mock_cgroup_factory_,
+                Create(kType, kContainerName, root_uid_, root_gid_))
         .WillRepeatedly(Return(Status::CANCELLED));
 
-    EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainerName).status());
+    EXPECT_EQ(Status::CANCELLED,
+              factory_->Create(kContainerName, root_uid_, root_gid_).status());
   }
 }
 
@@ -214,6 +229,12 @@ class CgroupControllerTest : public ::testing::Test {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
     controller_.reset(NewCgroupController(kType, kCgroupPath, true,
+                                          mock_kernel_.get(),
+                                          mock_eventfd_notifications_.get()));
+  }
+
+  void ReSetUpWithUnownedResource() {
+    controller_.reset(NewCgroupController(kType, kCgroupPath, false,
                                           mock_kernel_.get(),
                                           mock_eventfd_notifications_.get()));
   }
@@ -733,6 +754,78 @@ TEST_F(CgroupControllerTest, RegisterNotificationBadCallback) {
   EXPECT_DEATH(
       CallRegisterNotification("", "", cb.get()).status().IgnoreError(),
       "not a repeatable callback");
+}
+
+TEST_F(CgroupControllerTest, SetLimit) {
+  const string kResFile =
+      JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
+
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
+                                                       NotNull(), NotNull()))
+      .WillOnce(Return(0));
+
+  EXPECT_OK(controller_->SetChildrenLimit(42));
+}
+
+TEST_F(CgroupControllerTest, SetChildrenLimitFails) {
+  const string kResFile =
+      JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
+
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
+                                                       NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+
+  EXPECT_NOT_OK(controller_->SetChildrenLimit(42));
+}
+
+TEST_F(CgroupControllerTest, UnownedSetChildrenLimitIgnored) {
+  ReSetUpWithUnownedResource();
+  const string kResFile =
+      JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
+
+  // If unowned, don't set the children limit.
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
+                                                       NotNull(), NotNull()))
+      .Times(0);
+
+  EXPECT_OK(controller_->SetChildrenLimit(42));
+}
+
+
+TEST_F(CgroupControllerTest, GetChildrenLimit) {
+  const string kResFile =
+      JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("42"), Return(true)));
+
+  StatusOr<int64> statusor = controller_->GetChildrenLimit();
+  ASSERT_OK(statusor);
+  EXPECT_EQ(42, statusor.ValueOrDie());
+}
+
+TEST_F(CgroupControllerTest, GetChildrenLimitNotFound) {
+  const string kResFile =
+      JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+
+  EXPECT_ERROR_CODE(NOT_FOUND, controller_->GetChildrenLimit());
+}
+
+TEST_F(CgroupControllerTest, GetChildrenLimitFails) {
+  const string kResFile =
+      JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(Return(false));
+
+  EXPECT_NOT_OK(controller_->GetChildrenLimit());
 }
 
 class GetSubdirectoriesTest : public ::testing::Test {

@@ -32,8 +32,10 @@ class MockFreezerControllerFactory : public FreezerControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<FreezerController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD1(Create, ::util::StatusOr<FreezerController *>(
-                                 const string &hierarchy_path));
+  MOCK_CONST_METHOD3(Create, ::util::StatusOr<FreezerController *>(
+                                 const string &hierarchy_path,
+                                 ::util::UnixUid uid,
+                                 ::util::UnixGid gid));
   MOCK_CONST_METHOD1(Exists, bool(const string &hierarchy_path));
 };
 

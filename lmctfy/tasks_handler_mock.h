@@ -24,8 +24,9 @@ namespace lmctfy {
 
 class MockTasksHandlerFactory : public TasksHandlerFactory {
  public:
-  MOCK_CONST_METHOD1(Create, ::util::StatusOr<TasksHandler *>(
-      const string &container_name));
+  MOCK_CONST_METHOD2(
+      Create, ::util::StatusOr<TasksHandler *>(const string &container_name,
+                                               const ContainerSpec &spec));
   MOCK_CONST_METHOD1(Get, ::util::StatusOr<TasksHandler *>(
       const string &container_name));
   MOCK_CONST_METHOD1(Exists, bool(const string &container_name));

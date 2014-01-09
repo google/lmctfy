@@ -25,6 +25,8 @@
 #include "lmctfy/controllers/cgroup_controller_mock.h"
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/job_controller_mock.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "strings/stringpiece.h"
 #include "strings/substitute.h"
 #include "gmock/gmock.h"
@@ -33,6 +35,8 @@
 
 using ::system_api::KernelAPIMock;
 using ::file::JoinPath;
+using ::util::UnixGid;
+using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::strings::SubstituteAndAppend;
 using ::testing::Contains;
@@ -56,6 +60,9 @@ static const char kContainerCgroupPath[] = "/dev/cgroup/job/test";
 
 class CgroupTasksHandlerFactoryTest : public ::testing::Test {
  public:
+  CgroupTasksHandlerFactoryTest()
+      : owner_uid_(UnixUid(10)), owner_gid_(UnixGid(11)) {}
+
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     unique_ptr<MockCgroupFactory> mock_cgroup_factory(
@@ -67,6 +74,9 @@ class CgroupTasksHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
+  const UnixUid owner_uid_;
+  const UnixGid owner_gid_;
+
   MockJobControllerFactory *mock_cgroup_controller_factory_;
 
   unique_ptr<KernelAPIMock> mock_kernel_;
@@ -74,20 +84,30 @@ class CgroupTasksHandlerFactoryTest : public ::testing::Test {
 };
 
 TEST_F(CgroupTasksHandlerFactoryTest, CreateSuccess) {
-  EXPECT_CALL(*mock_cgroup_controller_factory_, Create(kContainer))
+  ContainerSpec spec;
+  spec.set_owner(owner_uid_.value());
+  spec.set_owner_group(owner_gid_.value());
+
+  EXPECT_CALL(*mock_cgroup_controller_factory_,
+              Create(kContainer, owner_uid_, owner_gid_))
       .WillOnce(Return(new StrictMockJobController()));
 
-  StatusOr<TasksHandler *> statusor = factory_->Create(kContainer);
+  StatusOr<TasksHandler *> statusor = factory_->Create(kContainer, spec);
   ASSERT_TRUE(statusor.ok());
   EXPECT_NE(nullptr, statusor.ValueOrDie());
   delete statusor.ValueOrDie();
 }
 
 TEST_F(CgroupTasksHandlerFactoryTest, CreateFails) {
-  EXPECT_CALL(*mock_cgroup_controller_factory_, Create(kContainer))
+  ContainerSpec spec;
+  spec.set_owner(owner_uid_.value());
+  spec.set_owner_group(owner_gid_.value());
+
+  EXPECT_CALL(*mock_cgroup_controller_factory_,
+              Create(kContainer, owner_uid_, owner_gid_))
       .WillOnce(Return(Status::CANCELLED));
 
-  EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainer).status());
+  EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainer, spec).status());
 }
 
 TEST_F(CgroupTasksHandlerFactoryTest, GetSuccess) {

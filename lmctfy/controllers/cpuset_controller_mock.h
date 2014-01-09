@@ -17,8 +17,8 @@
 
 #include "lmctfy/controllers/cpuset_controller.h"
 
+#include "util/cpu_mask.h"
 #include "gmock/gmock.h"
-#include "util/os/core/cpu_set.h"
 
 namespace containers {
 namespace lmctfy {
@@ -33,8 +33,10 @@ class MockCpusetControllerFactory : public CpusetControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<CpusetController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD1(Create, ::util::StatusOr<CpusetController *>(
-                                 const string &hierarchy_path));
+  MOCK_CONST_METHOD3(Create, ::util::StatusOr<CpusetController *>(
+                                 const string &hierarchy_path,
+                                 ::util::UnixUid uid,
+                                 ::util::UnixGid gid));
 };
 
 typedef ::testing::StrictMock<MockCpusetControllerFactory>
@@ -50,10 +52,12 @@ class MockCpusetController : public CpusetController {
                          reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
   }
 
-  MOCK_METHOD1(SetCpuMask, ::util::Status(cpu_set_t cpuset));
+  MOCK_METHOD1(SetCpuMask, ::util::Status(
+      const ::util::CpuMask &mask));
   MOCK_METHOD1(SetMemoryNodes,
                ::util::Status(const util::ResSet &memory_nodes));
-  MOCK_CONST_METHOD0(GetCpuMask, ::util::StatusOr<cpu_set_t>());
+  MOCK_CONST_METHOD0(GetCpuMask,
+                     ::util::StatusOr<::util::CpuMask>());
   MOCK_CONST_METHOD0(GetMemoryNodes, ::util::StatusOr<util::ResSet>());
   MOCK_METHOD0(EnableCloneChildren, ::util::Status());
   MOCK_METHOD0(DisableCloneChildren, ::util::Status());

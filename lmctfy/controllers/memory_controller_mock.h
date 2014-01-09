@@ -32,8 +32,10 @@ class MockMemoryControllerFactory : public MemoryControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<MemoryController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD1(Create, ::util::StatusOr<MemoryController *>(
-                                 const string &hierarchy_path));
+  MOCK_CONST_METHOD3(Create, ::util::StatusOr<MemoryController *>(
+                                 const string &hierarchy_path,
+                                 ::util::UnixUid uid,
+                                 ::util::UnixGid gid));
 };
 
 typedef ::testing::StrictMock<MockMemoryControllerFactory>
@@ -51,6 +53,7 @@ class MockMemoryController : public MemoryController {
 
   MOCK_METHOD1(SetLimit, ::util::Status(::util::Bytes limit));
   MOCK_METHOD1(SetSoftLimit, ::util::Status(::util::Bytes limit));
+  MOCK_METHOD1(SetStalePageAge, ::util::Status(uint64 scan_cycles));
 
   MOCK_CONST_METHOD0(GetWorkingSet, ::util::StatusOr< ::util::Bytes>());
   MOCK_CONST_METHOD0(GetUsage, ::util::StatusOr< ::util::Bytes>());
@@ -58,6 +61,7 @@ class MockMemoryController : public MemoryController {
   MOCK_CONST_METHOD0(GetLimit, ::util::StatusOr< ::util::Bytes>());
   MOCK_CONST_METHOD0(GetEffectiveLimit, ::util::StatusOr< ::util::Bytes>());
   MOCK_CONST_METHOD0(GetSoftLimit, ::util::StatusOr< ::util::Bytes>());
+  MOCK_CONST_METHOD0(GetStalePageAge, ::util::StatusOr<uint64>());
   MOCK_METHOD2(RegisterUsageThresholdNotification,
                ::util::StatusOr<ActiveNotifications::Handle>(
                    ::util::Bytes usage_threshold,

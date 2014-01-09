@@ -27,6 +27,8 @@ using ::std::string;
 #include "lmctfy/controllers/cgroup_factory.h"
 #include "lmctfy/controllers/eventfd_notifications.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/file_lines.h"
 #include "util/task/statusor.h"
 
@@ -63,11 +65,14 @@ class CgroupControllerFactoryInterface {
   //   hierarchy_path: The path in the cgroup hierarchy that this controller
   //       will manage. i.e.: /test is the hierarchy path for a CPU controller
   //       that manages /dev/cgroup/cpu/test
+  //   uid: The UnixUid of the user to chown the new cgroup to.
+  //   gid: The UnixGid of the group to chown the new cgroup to.
   // Return:
   //   StatusOr<ControllerType *>: Status of the operation. Iff OK, returns a
   //       new CgroupController. Caller owns the pointer.
   virtual ::util::StatusOr<ControllerType *> Create(
-      const string &hierarchy_path) const = 0;
+      const string &hierarchy_path, ::util::UnixUid uid,
+      ::util::UnixGid gid) const = 0;
 
   // Determines whether the specified hierarchy path exists in this cgroup
   // hierarchy.
@@ -129,10 +134,11 @@ class CgroupControllerFactory
   }
 
   virtual ::util::StatusOr<ControllerType *> Create(
-      const string &hierarchy_path) const {
+      const string &hierarchy_path, ::util::UnixUid uid,
+      ::util::UnixGid gid) const {
     // Create the cgroup.
     ::util::StatusOr<string> statusor =
-        cgroup_factory_->Create(hierarchy_type, hierarchy_path);
+        cgroup_factory_->Create(hierarchy_type, hierarchy_path, uid, gid);
     if (!statusor.ok()) {
       return statusor.status();
     }
@@ -209,6 +215,14 @@ class CgroupController {
   //   Status: Status of the operation. Iff OK, the operation was successful.
   virtual ::util::Status Enter(pid_t tid);
 
+  // Sets the limit in the number of children for this cgroup
+  //
+  // Arguments:
+  //   limit: The max number of children allowed
+  // Return:
+  //   Status: Status of the operation. Iff OK, the operation was successful.
+  virtual ::util::Status SetChildrenLimit(int64 limit);
+
   // Gets the threads in this cgroup.
   //
   // Return:
@@ -231,6 +245,13 @@ class CgroupController {
   //       subcontainers is populated. These names are relative to the current
   //       container.
   virtual ::util::StatusOr< ::std::vector<string>> GetSubcontainers() const;
+
+  // Gets the number of children allowed for this cgroup
+  //
+  // Return:
+  //   StatusOr<vector<string>>: Status of the operation. Iff OK, the number of
+  //       allowable is populated.
+  virtual ::util::StatusOr<int64> GetChildrenLimit() const;
 
   // Whether to enable or disable cloning the parent's configuration into the
   // children's cgroups.

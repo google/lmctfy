@@ -54,8 +54,9 @@ class SubProcess {
   // How to handle standard input/output channels in the new process.
   virtual void SetChannelAction(Channel chan, ChannelAction action);
 
-  // Sets the shell command to run.
-  virtual void SetShellCommand(const char *command);
+  // Set up a program and argument list for execution. The first argument is the
+  // program that will be executed.
+  virtual void SetArgv(const ::std::vector<::std::string> &argv);
 
   // Starts process.
   virtual bool Start();
@@ -71,7 +72,7 @@ class SubProcess {
   bool inherit_higher_fds_;
 
   pid_t pid_;
-  ::std::string command_;
+  ::std::vector<::std::string> argv_;
   sigset_t old_signals_;
   ::std::vector<ChannelAction> actions_;
 };

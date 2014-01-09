@@ -27,6 +27,9 @@ message ContainerSpec {
   // assumed to be the same as the caller at creation time.
   optional int64 owner_group = 8;
 
+  // The limit on allowed children for this container
+  optional int64 children_limit = 9;
+
   // Commonly used resources
   optional CpuSpec cpu = 2;
   optional MemorySpec memory = 3;
@@ -34,9 +37,9 @@ message ContainerSpec {
   optional NetworkSpec network = 5;
 
   optional MonitoringSpec monitoring = 6;
-  optional GlobalSpec global = 7;
+  optional FilesystemSpec filesystem = 7;
 
-  // Next ID: 9
+  // Next ID: 10
 }
 
 // Specification for supported notification events.
@@ -61,6 +64,24 @@ message EventSpec {
   message ContainerEmpty {
   }
   optional ContainerEmpty container_empty = 3;
+}
+
+message RunSpec {
+  // How to handle the file descriptors for the new process.
+  enum FdPolicy {
+    // Invalid policy.
+    UNKNOWN = 0;
+
+    // Run the command with all file descriptors inherited from the parent
+    // process.
+    INHERIT = 1;
+
+    // Run the command with all file descriptors detached from the parent
+    // process (redirected to /dev/null).
+    DETACHED = 2;
+  }
+  // If missing defaults to INHERIT.
+  optional FdPolicy fd_policy = 1;
 }
 
 enum SchedulingLatency {
@@ -91,10 +112,12 @@ message CpuSpec {
   // Units: CPU milliseconds per second.
   optional uint64 max_limit = 3;
 
-  // TODO(vmarmol): Use a repeated uint64 field for cpu_set_t.
-  // Mask of CPU cores which can be used by this container. If not specified,
-  // inherits the parent's mask.
-  optional uint64 mask = 4;
+  // Mask of CPU cores on which this container will be allowed to run. If not
+  // specified, inherits the parent's mask.
+  message Mask {
+    repeated uint64 data = 1;
+  }
+  optional Mask mask = 4;
 }
 
 message MemorySpec {
@@ -102,7 +125,7 @@ message MemorySpec {
   // TODO(vmarmol): Make more concrete.
   optional int64 eviction_priority = 1;
 
-  // The amount of memory requested. Default is "unlimited".
+  // The amount of memory requested. Default is unlimited (-1).
   // Units: bytes.
   optional int64 limit = 2;
 
@@ -122,8 +145,11 @@ message MemorySpec {
   optional string hugetlbfs_path = 5;
 
   // UNIMPLEMENTED
-  // Absolute path.
-  repeated string tmpfs_path = 6;
+  message TmpfsSpec {
+    // Absolute path.
+    repeated string path = 1;
+  }
+  optional TmpfsSpec tmpfs = 6;
 
   // UNIMPLEMENTED
   // Units: bytes.
@@ -146,7 +172,10 @@ message DiskIoSpec {
   }
 
   // UNIMPLEMENTED
-  repeated DiskConfig diskio_spec = 1;
+  message DiskSpec {
+    repeated DiskConfig config = 1;
+  }
+  optional DiskSpec disk_spec = 1;
 
   enum Priority {
     // Only use shared disk time. Not allowed to reserve any time slices.
@@ -171,7 +200,7 @@ message MonitoringSpec {
   optional bool enable_perf_counters = 1;
 }
 
-message GlobalSpec {
+message FilesystemSpec {
   // UNIMPLEMENTED
   optional uint64 fd_limit = 1;
 }
@@ -213,7 +242,7 @@ message InitSpec {
   optional NetworkInitSpec network = 4;
 
   optional MonitoringInitSpec monitoring = 5;
-  optional GlobalInitSpec global = 6;
+  optional FilesystemInitSpec filesystem = 6;
 
   // The mount locations of the cgroup hierarchies.
   repeated CgroupMount cgroup_mount = 7;
@@ -234,7 +263,7 @@ message NetworkInitSpec {
 message MonitoringInitSpec {
 }
 
-message GlobalInitSpec {
+message FilesystemInitSpec {
 }
 
 // Statistics for a Container and its resource usage.
@@ -246,7 +275,7 @@ message ContainerStats {
   optional NetworkStats network = 4;
 
   optional MonitoringStats monitoring = 5;
-  optional GlobalStats global = 6;
+  optional FilesystemStats filesystem = 6;
 }
 
 // Type of scheduling histograms exported by kernel.
@@ -327,7 +356,7 @@ message MemoryStats {
   // Units: Bytes.
   optional int64 usage = 4;
 
-  // Max memory usage iobserved in container's lifetime.
+  // Max memory usage observed in container's lifetime.
   // Units: Bytes.
   optional int64 max_usage = 5;
 
@@ -346,5 +375,5 @@ message NetworkStats {
 message MonitoringStats {
 }
 
-message GlobalStats {
+message FilesystemStats {
 }

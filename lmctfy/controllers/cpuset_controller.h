@@ -24,7 +24,7 @@ using ::std::string;
 #include "util/resset.h"
 #include "lmctfy/controllers/cgroup_controller.h"
 #include "include/lmctfy.pb.h"
-#include "util/os/core/cpu_set.h"
+#include "util/cpu_mask.h"
 #include "util/task/statusor.h"
 
 namespace containers {
@@ -62,7 +62,8 @@ class CpusetController : public CgroupController {
   virtual ~CpusetController() {}
 
   // Set/inherit cpu mask for this cgroup.
-  virtual ::util::Status SetCpuMask(cpu_set_t cpuset);
+  virtual ::util::Status SetCpuMask(
+      const ::util::CpuMask &mask);
 
   // Set/inherit memory nodes accessible to this container.
   virtual ::util::Status SetMemoryNodes(
@@ -73,7 +74,8 @@ class CpusetController : public CgroupController {
   // Retrieve affinity mask for the container.
   // TODO(jnagal): Returning ResSet here would make it more consistent with
   // GetMemoryNodes(), but Memory node manipulation should go away soon.
-  virtual ::util::StatusOr<cpu_set_t> GetCpuMask() const;
+  virtual ::util::StatusOr<::util::CpuMask> GetCpuMask()
+      const;
 
   // Retrieve memory nodes setting for this container.
   virtual ::util::StatusOr<util::ResSet> GetMemoryNodes() const;

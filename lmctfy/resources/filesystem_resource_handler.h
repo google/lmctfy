@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef SRC_RESOURCES_MEMORY_RESOURCE_HANDLER_H_
-#define SRC_RESOURCES_MEMORY_RESOURCE_HANDLER_H_
+#ifndef SRC_RESOURCES_FILESYSTEM_RESOURCE_HANDLER_H_
+#define SRC_RESOURCES_FILESYSTEM_RESOURCE_HANDLER_H_
 
 #include <memory>
 #include <string>
@@ -21,44 +21,37 @@ using ::std::string;
 
 #include "base/macros.h"
 #include "system_api/kernel_api.h"
-#include "lmctfy/controllers/memory_controller.h"
+#include "lmctfy/controllers/rlimit_controller.h"
 #include "lmctfy/resources/cgroup_resource_handler.h"
 #include "include/lmctfy.h"
+#include "util/errors.h"
 #include "util/task/statusor.h"
 
 namespace containers {
 namespace lmctfy {
 
-class CgroupFactory;
 class ContainerSpec;
 class ContainerStats;
 class EventFdNotifications;
-class ResourceHandler;
 
 typedef ::system_api::KernelAPI KernelApi;
 
-
-// Factory for MemoryResourceHandlers.
-//
-// Memory has a 1:1 mapping from container name to cgroup hierarchy.
-//
-// Class is thread-safe.
-class MemoryResourceHandlerFactory : public CgroupResourceHandlerFactory {
+class FilesystemResourceHandlerFactory : public CgroupResourceHandlerFactory {
  public:
   // Create an instance of this factory. If the resource is not supported on
   // this machine a NOT_FOUND error is returned. Does not take ownership of
   // any argument.
-  static ::util::StatusOr<MemoryResourceHandlerFactory *> New(
+  static ::util::StatusOr<FilesystemResourceHandlerFactory *> New(
       CgroupFactory *cgroup_factory, const KernelApi *kernel,
       EventFdNotifications *eventfd_notifications);
 
-  // Takes ownership of memory_controller_factory. Does not own cgroup_factory
-  // or kernel.
-  MemoryResourceHandlerFactory(
-      const MemoryControllerFactory *memory_controller_factory,
+  // Takes ownership of rlimit_controller_factory. Does not own
+  // cgroup_factory or kernel.
+  FilesystemResourceHandlerFactory(
+      const RLimitControllerFactory *rlimit_controller_factory,
       CgroupFactory *cgroup_factory,
       const KernelApi *kernel);
-  virtual ~MemoryResourceHandlerFactory() {}
+  virtual ~FilesystemResourceHandlerFactory() {}
 
  protected:
   virtual ::util::StatusOr<ResourceHandler *> GetResourceHandler(
@@ -67,45 +60,42 @@ class MemoryResourceHandlerFactory : public CgroupResourceHandlerFactory {
       const string &container_name, const ContainerSpec &spec) const;
 
  private:
-  // Controller factory for memory cgroup controllers.
-  const ::std::unique_ptr<const MemoryControllerFactory>
-      memory_controller_factory_;
+  string GetEffectiveContainerName(const string &container_name) const;
 
-  friend class MemoryResourceHandlerFactoryTest;
+  // Controller factory for rlimit cgroup controllers.
+  const ::std::unique_ptr<const RLimitControllerFactory>
+      rlimit_controller_factory_;
 
-  DISALLOW_COPY_AND_ASSIGN(MemoryResourceHandlerFactory);
+  friend class FilesystemResourceHandlerFactoryTest;
+  DISALLOW_COPY_AND_ASSIGN(FilesystemResourceHandlerFactory);
 };
 
-// Resource handler for memory. Currently only does simple memory management
-// used for subcontainers and only uses the memory cgroup hierarchy.
-//
-// Class is thread-safe.
-class MemoryResourceHandler : public CgroupResourceHandler {
+class FilesystemResourceHandler : public CgroupResourceHandler {
  public:
-  // Does not own kernel. Takes ownership of memory_controller.
-  MemoryResourceHandler(
+  // Does not own kernel. Takes ownership of rlimit_controller.
+  FilesystemResourceHandler(
       const string &container_name,
       const KernelApi *kernel,
-      MemoryController *memory_controller);
-  virtual ~MemoryResourceHandler() {}
+      RLimitController *rlimit_controller);
+  virtual ~FilesystemResourceHandler() {}
 
-  virtual ::util::Status CreateOnlySetup(const ContainerSpec &spec);
-  virtual ::util::Status Update(const ContainerSpec &spec,
-                                Container::UpdatePolicy policy);
   virtual ::util::Status Stats(Container::StatsType type,
                                ContainerStats *output) const;
   virtual ::util::Status Spec(ContainerSpec *spec) const;
   virtual ::util::StatusOr<Container::NotificationId> RegisterNotification(
       const EventSpec &spec, Callback1< ::util::Status> *callback);
 
- private:
-  // The Memory cgroup controller, it is owned by controllers.
-  MemoryController *memory_controller_;
+  virtual ::util::Status DoUpdate(const ContainerSpec &spec);
+  virtual void RecursiveFillDefaults(ContainerSpec *spec) const;
+  virtual ::util::Status VerifyFullSpec(const ContainerSpec &spec) const;
 
-  DISALLOW_COPY_AND_ASSIGN(MemoryResourceHandler);
+ private:
+  RLimitController *rlimit_controller_;
+
+  DISALLOW_COPY_AND_ASSIGN(FilesystemResourceHandler);
 };
 
 }  // namespace lmctfy
 }  // namespace containers
 
-#endif  // SRC_RESOURCES_MEMORY_RESOURCE_HANDLER_H_
+#endif  // SRC_RESOURCES_FILESYSTEM_RESOURCE_HANDLER_H_

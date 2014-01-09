@@ -27,16 +27,22 @@ using ::std::string;
 #include "lmctfy/controllers/cpu_controller.h"
 #include "lmctfy/controllers/cpuacct_controller.h"
 #include "lmctfy/controllers/cpuset_controller.h"
-#include "lmctfy/controllers/cpuset_controller_stub.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
+#include "util/cpu_mask.h"
 #include "util/errors.h"
 #include "strings/substitute.h"
 #include "util/gtl/stl_util.h"
-#include "util/os/core/cpu_set.h"
 #include "util/task/codes.pb.h"
 
 using ::file::JoinPath;
+using ::util::UnixGid;
+using ::util::UnixGidValue;
+using ::util::UnixUid;
+using ::util::UnixUidValue;
+using ::util::CpuMask;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::strings::Substitute;
@@ -52,7 +58,7 @@ const char kBatchSubsystem[] = "/batch";
 StatusOr<CpuResourceHandlerFactory *> CpuResourceHandlerFactory::New(
     CgroupFactory *cgroup_factory, const KernelApi *kernel,
     EventFdNotifications *eventfd_notifications) {
-  // Cpu, CpuAcct, and cpuset hierarchies must be mounted.
+  // Cpu and CpuAcct hierarchies must be mounted.
   if (!cgroup_factory->IsMounted(CpuControllerFactory::HierarchyType())) {
     return Status(::util::error::NOT_FOUND,
                   "CPU resource depends on the cpu cgroup hierarchy");
@@ -61,41 +67,104 @@ StatusOr<CpuResourceHandlerFactory *> CpuResourceHandlerFactory::New(
     return Status(::util::error::NOT_FOUND,
                   "CPU resource depends on the cpuacct cgroup hierarchy");
   }
-  if (!cgroup_factory->IsMounted(CpusetControllerFactory::HierarchyType())) {
-    return Status(::util::error::NOT_FOUND,
-                  "CPU resource depends on the cpuset cgroup hierarchy");
-  }
 
-  // Create controllers.
+  // Create Cpu and CpuAcct controller factories.
   CpuControllerFactory *cpu_controller =
       new CpuControllerFactory(cgroup_factory, kernel, eventfd_notifications);
   CpuAcctControllerFactory *cpuacct_controller = new CpuAcctControllerFactory(
       cgroup_factory, kernel, eventfd_notifications);
-  CpusetControllerFactory *cpuset_controller = new CpusetControllerFactory(
-      cgroup_factory, kernel, eventfd_notifications);
+
+  // Cpuset is only used if available.
+  CpusetControllerFactory *cpuset_controller = nullptr;
+  if (cgroup_factory->IsMounted(CpusetControllerFactory::HierarchyType())) {
+    cpuset_controller = new CpusetControllerFactory(cgroup_factory, kernel,
+                                                    eventfd_notifications);
+  }
 
   return new CpuResourceHandlerFactory(cpu_controller, cpuacct_controller,
                                        cpuset_controller, cgroup_factory,
                                        kernel);
 }
 
-// Gets the CPU hierarchy path of the specified controller and container. This
-// may be /batch/<container name> or /<container name> depending on how the
-// container was set up.
+// Gets the CPU hierarchy path of the specified container.
+// In the hierarchical CPU world:
+// For LS containers:
+// - /alloc          -> /alloc
+// - /alloc/task     -> /alloc/task
+// - /alloc/task/sub -> /alloc/task/sub
+// - /task           -> /task
+// - /task/sub       -> /task/sub
+// For Batch containers:
+// - /alloc          -> /batch/alloc
+// - /alloc/task     -> /batch/task
+// - /alloc/task/sub -> /batch/task/sub
+// - /task           -> /batch/task
+// - /task/sub       -> /batch/task/sub
+//
+// In the non-hierarchical CPU world:
+// For LS containers:
+// - /alloc          -> /alloc
+// - /alloc/task     -> /task
+// - /alloc/task/sub -> /task/sub
+// - /task           -> /task
+// - /task/sub       -> /task/sub
+// For Batch containers:
+// - /alloc          -> /batch/alloc
+// - /alloc/task     -> /batch/task
+// - /alloc/task/sub -> /batch/task/sub
+// - /task           -> /batch/task
+// - /task/sub       -> /batch/task/sub
+//
+// Note that batch's behavior does not change as hierarchical CPU only applies
+// to LS tasks. Batch is always non-hierarchical except for subcontainers which
+// are *always* under their parent.
 StatusOr<string> GetCpuHierarchyPath(const CpuControllerFactory *controller,
                                      const string &container_name) {
-  // Check if the container exists under either /batch or /.
-  const string batch_path = JoinPath(kBatchSubsystem, container_name);
+  // The above configurations are handled by 2 mappings:
+  // 1. Identity map the container name to / or /batch.
+  // 2. Remove the base container and map to / or /batch).
+  //    The base container is "/foo" in "/foo/bar/baz".
+
+  // Mapping 1.
+  //
+  // We first check whether the full container is at / or /batch. This happens
+  // for top-level tasks, their subcontainers, allocs, LS tasks inside allocs
+  // when hierarchical CPU is enabled, and their subcontainers.
   if (controller->Exists(container_name)) {
     return container_name;
-  } else if (controller->Exists(batch_path)) {
-    return batch_path;
-  } else {
-    return Status(
-        ::util::error::NOT_FOUND,
-        Substitute("Did not find container \"$0\" in cpu cgroup hierarchy",
-                   container_name));
   }
+  const string batch_path = JoinPath(kBatchSubsystem, container_name);
+  if (controller->Exists(batch_path)) {
+    return batch_path;
+  }
+
+  // Mapping 2.
+  //
+  // The remaining possibilities are the things that are non-hierarchical. This
+  // is comprised of tasks inside allocs and their subcontainers. They are
+  // either LS (although non-hierarchical as those are handled above) or batch.
+  // Since these are non-hierarchical, we must first strip the base container.
+  size_t second_slash = container_name.find_first_of('/', 1);
+  if (second_slash != string::npos) {
+    // TODO(vmarmol): Remove this first when Hierarchical CPU is enabled. The
+    // second batch check should remain.
+    const string base_container_name = container_name.substr(second_slash);
+    if (controller->Exists(base_container_name)) {
+      return base_container_name;
+    }
+
+    const string base_batch_path =
+        JoinPath(kBatchSubsystem, base_container_name);
+    if (controller->Exists(base_batch_path)) {
+      return base_batch_path;
+    }
+  }
+
+  // The container was not found under any path, it must not exist.
+  return Status(
+      ::util::error::NOT_FOUND,
+      Substitute("Did not find container \"$0\" in cpu cgroup hierarchy",
+                 container_name));
 }
 
 CpuResourceHandlerFactory::CpuResourceHandlerFactory(
@@ -124,42 +193,24 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::GetResourceHandler(
   RETURN_IF_ERROR(cpuacct_controller_factory_->Get(cpu_hierarchy_path),
                   &cpuacct_controller);
 
-  // Cpuset is flat.
-  StatusOr<CpusetController *> cpuset_statusor =
-      cpuset_controller_factory_->Get(
-          JoinPath("/", file::Basename(container_name).ToString()));
-  CpusetController *cpuset_controller;
-  if (!cpuset_statusor.ok()) {
-    // cpuset hierarchy might not exist in case of subcontainers.
-    // Use a stub instead.
-    cpuset_controller = new CpusetControllerStub(container_name);
-  } else {
-    cpuset_controller = cpuset_statusor.ValueOrDie();
+  // Only create cpuset if available.
+  CpusetController *cpuset_controller = nullptr;
+  if (cpuset_controller_factory_ != nullptr) {
+    // Cpuset is flat.
+    cpuset_controller = XRETURN_IF_ERROR(cpuset_controller_factory_->Get(
+        JoinPath("/", file::Basename(container_name).ToString())));
   }
 
   return new CpuResourceHandler(container_name, kernel_, cpu_controller,
                                 cpuacct_controller, cpuset_controller);
 }
 
-StatusOr<ResourceHandler *> CpuResourceHandlerFactory::Create(
-    const string &container_name, const ContainerSpec &spec) {
-  // cpu resource handler does not use the default
-  // CgroupResourceHandlerFactory::Create().
-  // Some operations need to be performed only at Create. We need to sanitize
-  // update config in case of UPDATE_REPLACE, but not for Create.
-  // Some of the container parameters like scheduling latency cannot be changed.
-  // A real update needs to verify those.
-  unique_ptr<ResourceHandler> cpu_handler;
-  RETURN_IF_ERROR(CreateResourceHandler(container_name, spec), &cpu_handler);
-  RETURN_IF_ERROR(cpu_handler->Create(spec));
-
-  return cpu_handler.release();
-}
-
+// TODO(vmarmol): Be able to create non-hierarchical LS CPU if that is
+// specified.
 StatusOr<ResourceHandler *> CpuResourceHandlerFactory::CreateResourceHandler(
     const string &container_name, const ContainerSpec &spec) const {
   const string base_container_name = file::Basename(container_name).ToString();
-  const string parent_name = File::StripBasename(container_name);
+  const string parent_name = file::Dirname(container_name).ToString();
 
   // TODO(vmarmol): Support creation of batch subcontainers under non-batch
   // top-level containers.
@@ -178,7 +229,7 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::CreateResourceHandler(
       cpu_hierarchy_path = container_name;
     }
   } else {
-    // For subcontaines the following logic always creates cpu and cpuacct
+    // For subcontainers the following logic always creates cpu and cpuacct
     // cgroups under the parent path irrespective of latency setting.
     RETURN_IF_ERROR(
         GetCpuHierarchyPath(cpu_controller_factory_.get(), parent_name),
@@ -186,22 +237,25 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::CreateResourceHandler(
     cpu_hierarchy_path = JoinPath(cpu_hierarchy_path, base_container_name);
   }
 
+  const UnixUid kOwner(spec.owner());
+  const UnixGid kOwnerGroup(spec.owner_group());
+
   CpuController *cpu_controller = nullptr;
-  RETURN_IF_ERROR(cpu_controller_factory_->Create(cpu_hierarchy_path),
-                  &cpu_controller);
+  RETURN_IF_ERROR(
+      cpu_controller_factory_->Create(cpu_hierarchy_path, kOwner, kOwnerGroup),
+      &cpu_controller);
   CpuAcctController *cpuacct_controller = nullptr;
-  RETURN_IF_ERROR(cpuacct_controller_factory_->Create(cpu_hierarchy_path),
+  RETURN_IF_ERROR(cpuacct_controller_factory_->Create(cpu_hierarchy_path,
+                                                      kOwner, kOwnerGroup),
                   &cpuacct_controller);
 
-  // Cpuset is a flat hierarchy. Use a stub if creation failed.
-  string name = JoinPath("/", base_container_name);
-  StatusOr<CpusetController *> cpuset_statusor =
-      cpuset_controller_factory_->Create(name);
+  // Only create cpuset if available.
   CpusetController *cpuset_controller = nullptr;
-  if (!cpuset_statusor.ok()) {
-    cpuset_controller = new CpusetControllerStub(name);
-  } else {
-    cpuset_controller = cpuset_statusor.ValueOrDie();
+  if (cpuset_controller_factory_ != nullptr) {
+    // Cpuset is flat.
+    cpuset_controller = XRETURN_IF_ERROR(cpuset_controller_factory_->Create(
+        JoinPath("/", file::Basename(base_container_name).ToString()), kOwner,
+        kOwnerGroup));
   }
 
   return new CpuResourceHandler(container_name, kernel_, cpu_controller,
@@ -213,12 +267,15 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
   // Create NUMA cpuset cgroups based on InitSpec.
   // Initialize histograms: CpuAcctController::EnableSchedulerHistograms()
 
+  const UnixUid kRoot(UnixUidValue::Root());
+  const UnixGid kRootGroup(UnixGidValue::Root());
+
   // Create the batch subsystem in cpu and cpuacct. It is okay if they already
   // exist since InitMachine() should be idempotent.
   unique_ptr<CpuController> cpu_controller;
   {
     StatusOr<CpuController *> statusor =
-        cpu_controller_factory_->Create(kBatchSubsystem);
+        cpu_controller_factory_->Create(kBatchSubsystem, kRoot, kRootGroup);
     if (statusor.ok()) {
       cpu_controller.reset(statusor.ValueOrDie());
     } else if (statusor.status().error_code() !=
@@ -232,7 +289,7 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
   unique_ptr<CpuAcctController> cpuacct_controller;
   {
     StatusOr<CpuAcctController *> statusor =
-        cpuacct_controller_factory_->Create(kBatchSubsystem);
+        cpuacct_controller_factory_->Create(kBatchSubsystem, kRoot, kRootGroup);
     if (statusor.ok()) {
       cpuacct_controller.reset(statusor.ValueOrDie());
     } else if (statusor.status().error_code() !=
@@ -254,13 +311,26 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
     return status;
   }
 
-  // Set cpuset to inherit from the parent. We do this for root and that is
-  // inherited by its children.
-  unique_ptr<CpusetController> cpuset_controller;
-  RETURN_IF_ERROR(cpuset_controller_factory_->Get("/"), &cpuset_controller);
-  RETURN_IF_ERROR(cpuset_controller->EnableCloneChildren());
+  // If available, set cpuset to inherit from the parent. We do this for root
+  // and that is inherited by its children.
+  if (cpuset_controller_factory_ != nullptr) {
+    unique_ptr<CpusetController> cpuset_controller;
+    RETURN_IF_ERROR(cpuset_controller_factory_->Get("/"), &cpuset_controller);
+    RETURN_IF_ERROR(cpuset_controller->EnableCloneChildren());
+  }
 
   return Status::OK;
+}
+
+// Creates a vector with only the available controllers.
+vector<CgroupController *> PackControllers(
+    CpuController *cpu_controller, CpuAcctController *cpuacct_controller,
+    CpusetController *cpuset_controller) {
+  if (cpuset_controller == nullptr) {
+    return {cpu_controller, cpuacct_controller};
+  }
+
+  return {cpu_controller, cpuacct_controller, cpuset_controller};
 }
 
 CpuResourceHandler::CpuResourceHandler(const string &container_name,
@@ -269,14 +339,13 @@ CpuResourceHandler::CpuResourceHandler(const string &container_name,
                                        CpuAcctController *cpuacct_controller,
                                        CpusetController *cpuset_controller)
     : CgroupResourceHandler(container_name, RESOURCE_CPU, kernel,
-                            vector<CgroupController *>({cpu_controller,
-                                                        cpuacct_controller,
-                                                        cpuset_controller})),
+                            PackControllers(cpu_controller, cpuacct_controller,
+                                            cpuset_controller)),
       cpu_controller_(CHECK_NOTNULL(cpu_controller)),
       cpuacct_controller_(CHECK_NOTNULL(cpuacct_controller)),
-      cpuset_controller_(CHECK_NOTNULL(cpuset_controller)) {}
+      cpuset_controller_(cpuset_controller) {}
 
-Status CpuResourceHandler::Create(const ContainerSpec &spec) {
+Status CpuResourceHandler::CreateOnlySetup(const ContainerSpec &spec) {
   // Setup latency before calling update. Ignore if latency is not supported.
   if (spec.has_cpu() && spec.cpu().has_scheduling_latency()) {
     Status status =
@@ -293,7 +362,7 @@ Status CpuResourceHandler::Create(const ContainerSpec &spec) {
   }
 
   // TODO(jnagal): Set placement strategy.
-  return Update(spec, Container::UPDATE_REPLACE);
+  return Status::OK;
 }
 
 Status CpuResourceHandler::Update(const ContainerSpec &spec,
@@ -349,8 +418,13 @@ Status CpuResourceHandler::Update(const ContainerSpec &spec,
 
   // Set affinity mask.
   if (cpu_spec.has_mask()) {
-    RETURN_IF_ERROR(cpuset_controller_->SetCpuMask(
-        ::util_os_core::UInt64ToCpuSet(cpu_spec.mask())));
+    if (cpuset_controller_ == nullptr) {
+      return Status(::util::error::INVALID_ARGUMENT,
+                    "Setting CPU masks is not supported on this configuration");
+    }
+
+    RETURN_IF_ERROR(
+        cpuset_controller_->SetCpuMask(CpuMask(cpu_spec.mask().data())));
   }
 
   return Status::OK;
@@ -422,8 +496,12 @@ Status CpuResourceHandler::Spec(ContainerSpec *spec) const {
     RETURN_IF_ERROR(cpu_controller_->GetMaxMilliCpus(), &max_milli_cpus);
     spec->mutable_cpu()->set_max_limit(max_milli_cpus);
   }
-  // TODO(jonathanw): Populate cpu mask; util_os_core doesn't appear to have
-  // an inverse for UInt64ToCpuSet, making this more difficult.
+  if (cpuset_controller_ != nullptr) {
+    CpuMask cpu_mask;
+    RETURN_IF_ERROR(cpuset_controller_->GetCpuMask(), &cpu_mask);
+    cpu_mask.WriteToProtobuf(
+        spec->mutable_cpu()->mutable_mask()->mutable_data());
+  }
   return Status::OK;
 }
 

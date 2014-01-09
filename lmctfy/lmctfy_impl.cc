@@ -95,7 +95,7 @@ static void GetUsedResourceHandlers(
   EXTRACT_RESOURCE(diskio, RESOURCE_DISKIO);
   EXTRACT_RESOURCE(network, RESOURCE_NETWORK);
   EXTRACT_RESOURCE(monitoring, RESOURCE_MONITORING);
-  EXTRACT_RESOURCE(global, RESOURCE_GLOBAL);
+  EXTRACT_RESOURCE(filesystem, RESOURCE_FILESYSTEM);
 
 #undef EXTRACT_RESOURCE
 }
@@ -262,11 +262,8 @@ ContainerApiImpl::~ContainerApiImpl() { STLDeleteValues(&resource_factories_); }
 
 StatusOr<Container *> ContainerApiImpl::Get(StringPiece container_name) const {
   // Resolve the container name.
-  StatusOr<string> status_or_resolved = ResolveContainerName(container_name);
-  if (!status_or_resolved.ok()) {
-    return status_or_resolved.status();
-  }
-  const string resolved_name = status_or_resolved.ValueOrDie();
+  const string resolved_name =
+      XRETURN_IF_ERROR(ResolveContainerName(container_name));
 
   // Ensure it exists.
   if (!Exists(resolved_name)) {
@@ -276,12 +273,8 @@ StatusOr<Container *> ContainerApiImpl::Get(StringPiece container_name) const {
   }
 
   // Get the tasks handler for this container.
-  StatusOr<TasksHandler *> statusor_tasks_handler =
-      tasks_handler_factory_->Get(resolved_name);
-  if (!statusor_tasks_handler.ok()) {
-    return statusor_tasks_handler.status();
-  }
-  unique_ptr<TasksHandler> tasks_handler(statusor_tasks_handler.ValueOrDie());
+  unique_ptr<TasksHandler> tasks_handler(
+      XRETURN_IF_ERROR(tasks_handler_factory_->Get(resolved_name)));
 
   return new ContainerImpl(
       resolved_name, tasks_handler.release(), resource_factories_, this,
@@ -301,11 +294,8 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
   GetUsedResourceHandlers(spec, resource_factories_, &used_handler_factories);
 
   // Resolve the container name.
-  StatusOr<string> status_or_resolved = ResolveContainerName(container_name);
-  if (!status_or_resolved.ok()) {
-    return status_or_resolved.status();
-  }
-  const string resolved_name = status_or_resolved.ValueOrDie();
+  const string resolved_name =
+      XRETURN_IF_ERROR(ResolveContainerName(container_name));
 
   // Ensure the container doesn't already exist.
   if (Exists(resolved_name)) {
@@ -315,19 +305,15 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
   }
 
   // Create the tasks handler for this container
-  StatusOr<TasksHandler *> statusor_tasks_handler =
-      tasks_handler_factory_->Create(resolved_name);
-  if (!statusor_tasks_handler.ok()) {
-    return statusor_tasks_handler.status();
-  }
-  unique_ptr<TasksHandler> tasks_handler(statusor_tasks_handler.ValueOrDie());
+  unique_ptr<TasksHandler> tasks_handler(
+      XRETURN_IF_ERROR(tasks_handler_factory_->Create(resolved_name, spec)));
 
   // We will locally create the resource handlers we need.
   vector<ResourceHandler *> resource_handlers;
   ElementDeleter d(&resource_handlers);
 
   // Create resource handlers for this container.
-  const string kParentName = ::File::StripBasename(resolved_name);
+  const string kParentName = file::Dirname(resolved_name).ToString();
   StatusOr<ResourceHandler *> statusor;
   for (auto type_handler_pair : resource_factories_) {
     // Don't create resources that were not specified.
@@ -365,12 +351,8 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
 
 Status ContainerApiImpl::Destroy(Container *container) const {
   // Get all subcontainers to destroy them.
-  StatusOr<vector<Container *>> statusor =
-      container->ListSubcontainers(Container::LIST_RECURSIVE);
-  if (!statusor.ok()) {
-    return statusor.status();
-  }
-  vector<Container *> subcontainers = statusor.ValueOrDie();
+  vector<Container *> subcontainers =
+      XRETURN_IF_ERROR(container->ListSubcontainers(Container::LIST_RECURSIVE));
 
   // Destroy the subcontainers
   // Subcontainers are sorted by container name so that the children of a
@@ -391,10 +373,7 @@ Status ContainerApiImpl::Destroy(Container *container) const {
 
 Status ContainerApiImpl::DestroyDeleteContainer(Container *container) const {
   // Destroy all resources.
-  Status status = container->Destroy();
-  if (!status.ok()) {
-    return status;
-  }
+  RETURN_IF_ERROR(container->Destroy());
 
   delete container;
   return Status::OK;
@@ -430,11 +409,8 @@ StatusOr<string> ContainerApiImpl::ResolveContainerName(
 
   // Make absolute.
   if (!::file::IsAbsolutePath(resolved_name)) {
-    StatusOr<string> statusor = Detect(0);
-    if (!statusor.ok()) {
-      return statusor;
-    }
-    resolved_name = ::file::JoinPath(statusor.ValueOrDie(), resolved_name);
+    const string detected_name = XRETURN_IF_ERROR(Detect(0));
+    resolved_name = ::file::JoinPath(detected_name, resolved_name);
   }
 
   resolved_name = ::File::CleanPath(resolved_name);
@@ -471,12 +447,8 @@ Status ContainerImpl::Update(const ContainerSpec &spec, UpdatePolicy policy) {
   RETURN_IF_ERROR(Exists());
 
   // Get all resources and map them by type.
-  StatusOr<vector<ResourceHandler *>> statusor_handlers = GetResourceHandlers();
-  if (!statusor_handlers.ok()) {
-    return statusor_handlers.status();
-  }
   map<ResourceType, ResourceHandler *> all_handlers;
-  for (ResourceHandler *handler : statusor_handlers.ValueOrDie()) {
+  for (ResourceHandler *handler : XRETURN_IF_ERROR(GetResourceHandlers())) {
     all_handlers[handler->type()] = handler;
   }
   ValueDeleter d(&all_handlers);
@@ -485,39 +457,36 @@ Status ContainerImpl::Update(const ContainerSpec &spec, UpdatePolicy policy) {
   set<ResourceHandler *> used_handlers;
   GetUsedResourceHandlers(spec, all_handlers, &used_handlers);
 
-  // Get existing resources (those that are attached to the current container)
-  // and get the intersection of the used and existing resources.
-  set<ResourceHandler *> existing_handlers;
-  set<ResourceHandler *> existing_used_intersection;
+  // We need to ensure that all used resources are being isolated. To do this we
+  // count the resources that are being isolated and the number that are
+  // isolated and being used.
+  int isolated_count = 0;
+  int isolated_and_used_count = 0;
   for (const auto &type_handler_pair : all_handlers) {
     if (name_ == type_handler_pair.second->container_name()) {
-      existing_handlers.insert(type_handler_pair.second);
+      isolated_count++;
 
-      // If this resource is also used, store in the intersection
+      // Count the resources that are both existing and used.
       if (used_handlers.find(type_handler_pair.second) != used_handlers.end()) {
-        existing_used_intersection.insert(type_handler_pair.second);
+        isolated_and_used_count++;
       }
     }
   }
 
-  if (policy == Container::UPDATE_REPLACE) {
-    // If replace was specified, ensure that all existing resources were
-    // specified. We check this by verifying that used, existing, and their
-    // intersections are the same size.
-    if (!(used_handlers.size() == existing_handlers.size() &&
-          used_handlers.size() == existing_used_intersection.size())) {
-      return Status(::util::error::INVALID_ARGUMENT,
-                    "Must specify all isolated resources in a replace update");
-    }
-  } else {
-    // Ensure that only existing resource handlers were specified.
-    if (existing_used_intersection.size() != used_handlers.size()) {
-      return Status(::util::error::INVALID_ARGUMENT,
-                    Substitute(
-                        "Specified resource that is not already being "
-                        "isolated in container \"$0\"",
-                        name_));
-    }
+  // Ensure that all specified resources are also being isolated. If this is not
+  // the case, a used resource would not be in the isolated_and_used set.
+  if (isolated_and_used_count != used_handlers.size()) {
+    return Status(
+        ::util::error::INVALID_ARGUMENT,
+        "Must not specify an update to a resource not being isolated");
+  }
+
+  // If this is an update, all isolated resources must also be used.
+  if ((policy == Container::UPDATE_REPLACE) &&
+      (isolated_count != used_handlers.size())) {
+    return Status(
+        ::util::error::INVALID_ARGUMENT,
+        "A replace update must specify all resources being isolated.");
   }
 
   // Apply the update to all specified handlers.
@@ -532,17 +501,10 @@ Status ContainerImpl::Destroy() {
   RETURN_IF_ERROR(Exists());
 
   // Ensure the container is empty (no tasks).
-  Status status = KillAll();
-  if (!status.ok()) {
-    return status;
-  }
+  RETURN_IF_ERROR(KillAll());
 
   // Get and destroy all resources.
-  StatusOr<vector<ResourceHandler *>> statusor = GetResourceHandlers();
-  if (!statusor.ok()) {
-    return statusor.status();
-  }
-  vector<ResourceHandler *> handlers = statusor.ValueOrDie();
+  vector<ResourceHandler *> handlers = XRETURN_IF_ERROR(GetResourceHandlers());
   ElementDeleter d(&handlers);
   while (!handlers.empty()) {
     ResourceHandler *handler = handlers.back();
@@ -551,10 +513,7 @@ Status ContainerImpl::Destroy() {
     if (name_ == handler->container_name()) {
       // Destroy deletes the element on success, on failure ElementDeleter
       // does.
-      status = handler->Destroy();
-      if (!status.ok()) {
-        return status;
-      }
+      RETURN_IF_ERROR(handler->Destroy());
     } else {
       delete handler;
     }
@@ -562,13 +521,8 @@ Status ContainerImpl::Destroy() {
     handlers.pop_back();
   }
 
-  // Destroy tasks handler.
-  status = tasks_handler_->Destroy();
-  if (!status.ok()) {
-    return status;
-  }
-
-  // The handler was deleted in Destroy(), just release it.
+  // Destroy tasks handler. Destroy() deleted the pointer so just release it.
+  RETURN_IF_ERROR(tasks_handler_->Destroy());
   tasks_handler_.release();
 
   return Status::OK;
@@ -618,16 +572,26 @@ void ContainerImpl::EnterAndRun(SubProcess *sp, Status *status) {
   *status = Status::OK;
 }
 
-StatusOr<pid_t> ContainerImpl::Run(StringPiece command, FdPolicy policy) {
+StatusOr<pid_t> ContainerImpl::Run(const vector<string> &command,
+                                   const RunSpec &spec) {
   RETURN_IF_ERROR(Exists());
+
+  // Check usage.
+  if (spec.has_fd_policy() && spec.fd_policy() == RunSpec::UNKNOWN) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "Invalid FD policy: UNKNOWN");
+  }
+  if (command.empty()) {
+    return Status(::util::error::INVALID_ARGUMENT, "Command must not be empty");
+  }
 
   Status status;
   unique_ptr<SubProcess> sp(subprocess_factory_->Run());
 
-  // Get ready to run the command as a shell command.
-  sp->SetShellCommand(command.ToString().c_str());
+  // Get ready to run the command.
+  sp->SetArgv(command);
 
-  if (policy == FDS_INHERITED) {
+  if (!spec.has_fd_policy() || spec.fd_policy() == RunSpec::INHERIT) {
     // Retain all file descriptors.
     sp->SetChannelAction(CHAN_STDIN, ACTION_DUPPARENT);
     sp->SetChannelAction(CHAN_STDOUT, ACTION_DUPPARENT);
@@ -652,9 +616,7 @@ StatusOr<pid_t> ContainerImpl::Run(StringPiece command, FdPolicy policy) {
   thread.Join();
 
   // Ensure that EnterAndRun() succeeded.
-  if (!status.ok()) {
-    return status;
-  }
+  RETURN_IF_ERROR(status);
 
   return sp->pid();
 }
@@ -666,10 +628,12 @@ StatusOr<ContainerSpec> ContainerImpl::Spec() const {
   vector<ResourceHandler *> handlers = XRETURN_IF_ERROR(GetResourceHandlers());
   ElementDeleter d(&handlers);
 
-  // Get the spec from each ResourceHandler.
+  // Get the spec from each ResourceHandler attached to this container..
   ContainerSpec spec;
   for (ResourceHandler *handler : handlers) {
-    RETURN_IF_ERROR(handler->Spec(&spec));
+    if (name_ == handler->container_name()) {
+      RETURN_IF_ERROR(handler->Spec(&spec));
+    }
   }
 
   return spec;
@@ -709,13 +673,9 @@ StatusOr<vector<Container *>> ContainerImpl::ListSubcontainers(
     ListPolicy policy) const {
   RETURN_IF_ERROR(Exists());
 
-  StatusOr<vector<Container *>> statusor = ListSubcontainersUnsorted(policy);
-  if (!statusor.ok()) {
-    return statusor.status();
-  }
-
   // Sort the containers by name.
-  vector<Container *> containers = statusor.ValueOrDie();
+  vector<Container *> containers =
+      XRETURN_IF_ERROR(ListSubcontainersUnsorted(policy));
   sort(containers.begin(), containers.end(), CompareContainerByName);
   return containers;
 }
@@ -731,21 +691,15 @@ StatusOr<vector<Container *>> ContainerImpl::ListSubcontainersUnsorted(
 
   if (policy == Container::LIST_SELF) {
     // Get the subcontainer names.
-    StatusOr<vector<string>> statusor_names =
-        tasks_handler_->ListSubcontainers();
-    if (!statusor_names.ok()) {
-      return statusor_names.status();
+    StatusOr<vector<string>> statusor = tasks_handler_->ListSubcontainers();
+    if (!statusor.ok()) {
+      return statusor.status();
     }
 
     // Attach to those containers.
-    StatusOr<Container *> statusor;
-    for (const string &subcontainer_name : statusor_names.ValueOrDie()) {
-      statusor = lmctfy_->Get(subcontainer_name);
-      if (!statusor.ok()) {
-        return statusor.status();
-      }
-
-      subcontainers.push_back(statusor.ValueOrDie());
+    for (const string &subcontainer_name : statusor.ValueOrDie()) {
+      subcontainers.push_back(
+          XRETURN_IF_ERROR(lmctfy_->Get(subcontainer_name)));
     }
   } else {
     queue<const Container *> to_check;
@@ -807,22 +761,14 @@ StatusOr<ContainerStats> ContainerImpl::Stats(StatsType stats_type) const {
   ContainerStats stats;
 
   // Get all resource handlers.
-  StatusOr<vector<ResourceHandler *>> statusor = GetResourceHandlers();
-  if (!statusor.ok()) {
-    return statusor.status();
-  }
-  vector<ResourceHandler *> handlers = statusor.ValueOrDie();
+  vector<ResourceHandler *> handlers = XRETURN_IF_ERROR(GetResourceHandlers());
   ElementDeleter d(&handlers);
 
   // Get stats from each resource.
-  Status status;
   for (ResourceHandler *handler : handlers) {
     // Only get stats for the resources attached to this container.
     if (name_ == handler->container_name()) {
-      status = handler->Stats(stats_type, &stats);
-      if (!status.ok()) {
-        return status;
-      }
+      RETURN_IF_ERROR(handler->Stats(stats_type, &stats));
     }
   }
 
@@ -890,20 +836,12 @@ Status ContainerImpl::UnregisterNotification(NotificationId notification_id) {
 Status ContainerImpl::KillAll() {
   RETURN_IF_ERROR(Exists());
 
-  Status status;
-
   // Send a SIGKILL to all processes.
-  status = KillTasks(LIST_PROCESSES);
-  if (!status.ok()) {
-    return status;
-  }
+  RETURN_IF_ERROR(KillTasks(LIST_PROCESSES));
 
   // At this point all the processes in the container have been killed. Any
   // remaining threads are "tourist threads." Kill the tourist threads.
-  status = KillTasks(LIST_THREADS);
-  if (!status.ok()) {
-    return status;
-  }
+  RETURN_IF_ERROR(KillTasks(LIST_THREADS));
 
   return Status::OK;
 }
@@ -935,7 +873,7 @@ StatusOr<vector<ResourceHandler *>> ContainerImpl::GetResourceHandlers() const {
 
       // This resource was not found in this container, try to use the parent
       // (if there is one).
-      name = ::File::StripBasename(name);
+      name = file::Dirname(name).ToString();
     } while (has_parent);
 
     handlers.push_back(statusor.ValueOrDie());
@@ -951,18 +889,13 @@ StatusOr<vector<pid_t>> ContainerImpl::ListProcessesOrThreads(
     ListPolicy policy, ListType type) const {
   RETURN_IF_ERROR(Exists());
 
-  StatusOr<vector<pid_t>> statusor;
-
   // Get the processes/threads of this container.
+  vector<pid_t> output;
   if (type == ContainerImpl::LIST_PROCESSES) {
-    statusor = tasks_handler_->ListProcesses();
+    output = XRETURN_IF_ERROR(tasks_handler_->ListProcesses());
   } else {
-    statusor = tasks_handler_->ListThreads();
+    output = XRETURN_IF_ERROR(tasks_handler_->ListThreads());
   }
-  if (!statusor.ok()) {
-    return statusor.status();
-  }
-  vector<pid_t> output = statusor.ValueOrDie();
 
   // Get the processes/threads of subcontainers if asked.
   if (policy == Container::LIST_RECURSIVE) {
@@ -974,6 +907,7 @@ StatusOr<vector<pid_t>> ContainerImpl::ListProcessesOrThreads(
     }
 
     // Get processes/threads list from each of the subcontainers
+    StatusOr<vector<pid_t>> statusor;
     set<pid_t> unique_pids(output.begin(), output.end());
     for (const Container *subcontainer : statusor_containers.ValueOrDie()) {
       if (type == ContainerImpl::LIST_PROCESSES) {

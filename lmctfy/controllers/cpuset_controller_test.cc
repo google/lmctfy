@@ -21,11 +21,11 @@
 #include "file/base/path.h"
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
 #include "lmctfy/kernel_files.h"
+#include "util/cpu_mask.h"
+#include "util/cpu_mask_test_util.h"
 #include "util/errors_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "util/os/core/cpu_set.h"
-#include "util/os/core/cpu_set_test_util.h"
 
 using ::system_api::KernelAPIMock;
 using ::util::ResSet;
@@ -42,6 +42,8 @@ using ::util::error::NOT_FOUND;
 
 namespace containers {
 namespace lmctfy {
+
+using ::util::CpuMask;
 
 static const char kParentMountPoint[] = "/dev/cgroup/cpuset";
 static const char kMountPoint[] = "/dev/cgroup/cpuset/test";
@@ -68,26 +70,24 @@ TEST_F(CpusetControllerTest, Type) {
 
 TEST_F(CpusetControllerTest, SetsCpuMask) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kCPUs);
-  uint64 cpumask = 0xF40FF;
-  cpu_set_t cpu_set = ::util_os_core::UInt64ToCpuSet(cpumask);
+  CpuMask cpu_mask(0xF40FF);
   string expected_cpu_string = "0-7,14,16-19";
   EXPECT_CALL(*mock_kernel_,
               SafeWriteResFileWithRetry(_, expected_cpu_string, kResFile,
                                         NotNull(), NotNull()))
       .WillOnce(Return(0));
-  EXPECT_OK(controller_->SetCpuMask(cpu_set));
+  EXPECT_OK(controller_->SetCpuMask(cpu_mask));
 }
 
 TEST_F(CpusetControllerTest, SetCpuMaskFails) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kCPUs);
-  uint64 cpumask = 0xF40FF;
-  cpu_set_t cpu_set = ::util_os_core::UInt64ToCpuSet(cpumask);
+  CpuMask cpu_mask(0xF40FF);
   string expected_cpu_string = "0-7,14,16-19";
   EXPECT_CALL(*mock_kernel_,
               SafeWriteResFileWithRetry(_, expected_cpu_string, kResFile,
                                         NotNull(), NotNull()))
       .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
-  EXPECT_NOT_OK(controller_->SetCpuMask(cpu_set));
+  EXPECT_NOT_OK(controller_->SetCpuMask(cpu_mask));
 }
 
 TEST_F(CpusetControllerTest, GetsCpuMask) {
@@ -96,10 +96,10 @@ TEST_F(CpusetControllerTest, GetsCpuMask) {
       .WillRepeatedly(Return(0));
   EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
       .WillOnce(DoAll(SetArgPointee<1>("0-4,7,10,12-15"), Return(true)));
-  StatusOr<cpu_set_t> statusor = controller_->GetCpuMask();
+  StatusOr<CpuMask> statusor = controller_->GetCpuMask();
   ASSERT_OK(statusor);
-  cpu_set_t cpu_set = statusor.ValueOrDie();
-  EXPECT_EQ(0xF49F, cpu_set);
+  CpuMask cpu_mask = statusor.ValueOrDie();
+  EXPECT_EQ(0xF49F, cpu_mask);
 }
 
 TEST_F(CpusetControllerTest, GetCpuMaskNotFound) {

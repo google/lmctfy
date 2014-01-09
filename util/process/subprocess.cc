@@ -22,9 +22,14 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <string>
+#include <vector>
 
 #include "base/linux_syscall_support.h"
 #include "base/logging.h"
+
+using ::std::string;
+using ::std::vector;
 
 int getdents(unsigned int fd, struct kernel_dirent* dirp, unsigned int count) {
   return syscall(__NR_getdents, fd, dirp, count);
@@ -57,9 +62,10 @@ void SubProcess::SetChannelAction(Channel chan, ChannelAction action) {
   actions_[chan] = action;
 }
 
-void SubProcess::SetShellCommand(const char *command) {
-  CHECK(!running_);
-  command_ = command;
+void SubProcess::SetArgv(const vector<string> &argv) {
+  CHECK(argv_.empty());
+  CHECK(!argv.empty());
+  argv_ = argv;
 }
 
 void SubProcess::BlockSignals() {
@@ -133,14 +139,14 @@ void SubProcess::ChildFork() {
     CloseNonChannelFds();
   }
 
-  // Exec the new command under a shell.
-  char *file = strdup("/bin/sh");
-  char **argv = new char *[4];
-  argv[0] = strdup(file);
-  argv[1] = strdup("-c");
-  argv[2] = strdup(command_.c_str());
-  argv[3] = nullptr;
-  execv(file, argv);
+  // Build a vector of C-compatible strings.
+  vector<const char *> cargv;
+  for (const string &s : argv_) {
+    cargv.push_back(s.c_str());
+  }
+  cargv.push_back(nullptr);
+
+  execvp(argv_[0].c_str(), const_cast<char *const *>(&cargv.front()));
   exit(1);
 }
 

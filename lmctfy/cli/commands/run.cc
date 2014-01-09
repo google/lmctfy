@@ -51,7 +51,12 @@ Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
                   "See help for supported options.");
   }
   const string container_name = argv[1];
-  const string command = argv[2];
+
+  // Run the specified command through /bin/sh.
+  vector<string> args;
+  args.push_back("/bin/sh");
+  args.push_back("-c");
+  args.push_back(argv[2]);
 
   // Ensure the container exists.
   unique_ptr<Container> container;
@@ -59,16 +64,13 @@ Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
 
   // If no wait, run and output the PID, else exec the command.
   if (FLAGS_lmctfy_no_wait) {
+    RunSpec spec;
+    spec.set_fd_policy(RunSpec::DETACHED);
+
     pid_t pid =
-        XRETURN_IF_ERROR(container->Run(command, Container::FDS_DETACHED));
+        XRETURN_IF_ERROR(container->Run(args, spec));
     output->push_back(OutputMap("pid", Substitute("$0", pid)));
   } else {
-    // Run the specified command through /bin/sh.
-    vector<string> args;
-    args.push_back("/bin/sh");
-    args.push_back("-c");
-    args.push_back(command);
-
     RETURN_IF_ERROR(container->Exec(args));
   }
 

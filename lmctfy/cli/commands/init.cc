@@ -47,7 +47,7 @@ namespace cli {
 Status InitContainers(const vector<string> &argv, const ContainerApi *lmctfy,
                       vector<OutputMap> *output) {
   // Args: init <container spec>
-  if (argv.size() != 2) {
+  if (argv.size() != 2 && argv.size() != 1) {
     return Status(::util::error::INVALID_ARGUMENT, "See help for options.");
   }
 
@@ -96,7 +96,7 @@ void RegisterInitCommand() {
           "config file using the -c flag. The spec can be an ASCII or binary "
           "proto in either case.",
           "<spec proto in ASCII or binary mode>  | -c <config file>",
-          CMD_TYPE_INIT, 1 /* min arguments */, 1 /* max arguments */,
+          CMD_TYPE_INIT, 0 /* min arguments */, 1 /* max arguments */,
           &InitContainers));
 }
 

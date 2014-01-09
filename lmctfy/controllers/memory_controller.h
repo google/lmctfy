@@ -67,6 +67,10 @@ class MemoryController : public CgroupController {
   // Set the reserved memory or "soft limit" of this cgroup.
   virtual ::util::Status SetSoftLimit(::util::Bytes limit);
 
+  // Set the age at which pages are considered stale in this cgroup. The age is
+  // counted in kstaled scan cycles.
+  virtual ::util::Status SetStalePageAge(uint64 scan_cycles);
+
   // All statistics return NOT_FOUND if they were not found or available.
 
   // Gets the working set of this cgroup. This is the currently hot memory.
@@ -88,6 +92,9 @@ class MemoryController : public CgroupController {
 
   // Gets the reserved memory or "soft limit" for this cgroup.
   virtual ::util::StatusOr< ::util::Bytes> GetSoftLimit() const;
+
+  // Get the age at which pages are considered stale in this cgroup.
+  virtual ::util::StatusOr<uint64> GetStalePageAge() const;
 
   // Register a notification for an OOM event. The handler for the event is
   // returned on success.

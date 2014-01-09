@@ -111,7 +111,7 @@ class ContainerApiImplTest : public ::testing::Test {
     mock_handler_factory2_ = new NiceMockResourceHandlerFactory(
         RESOURCE_MEMORY);
     mock_handler_factory3_ = new NiceMockResourceHandlerFactory(
-        RESOURCE_GLOBAL);
+        RESOURCE_FILESYSTEM);
     vector<ResourceHandlerFactory *> resource_factories = {
       mock_handler_factory1_, mock_handler_factory2_, mock_handler_factory3_
     };
@@ -413,6 +413,11 @@ TEST_F(ContainerApiImplTest, GetBadContainerName) {
 TEST_F(ContainerApiImplTest, CreateSuccess) {
   const string kName = "/test";
 
+  ContainerSpec spec;
+  spec.mutable_cpu();
+  spec.mutable_memory();
+  spec.mutable_filesystem();
+
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
 
@@ -424,15 +429,11 @@ TEST_F(ContainerApiImplTest, CreateSuccess) {
           new StrictMockResourceHandler(kName, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_handler_factory3_, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_GLOBAL))));
-  EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
-
-  ContainerSpec spec;
-  spec.mutable_cpu();
-  spec.mutable_memory();
-  spec.mutable_global();
+          new StrictMockResourceHandler(kName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(
+           Return(StatusOr<TasksHandler *>(new StrictMockTasksHandler(kName))));
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_TRUE(status.ok());
@@ -442,6 +443,15 @@ TEST_F(ContainerApiImplTest, CreateSuccess) {
 
 TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   const string kName = "/test";
+
+  ContainerSpec spec;
+  spec.mutable_cpu();
+  spec.mutable_memory();
+  spec.mutable_diskio();
+  spec.mutable_network();
+  spec.mutable_monitoring();
+  spec.mutable_filesystem();
+
   MockResourceHandlerFactory *cpu_handler =
       new StrictMockResourceHandlerFactory(RESOURCE_CPU);
   MockResourceHandlerFactory *memory_handler =
@@ -452,12 +462,12 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
       new StrictMockResourceHandlerFactory(RESOURCE_NETWORK);
   MockResourceHandlerFactory *monitoring_handler =
       new StrictMockResourceHandlerFactory(RESOURCE_MONITORING);
-  MockResourceHandlerFactory *global_handler =
-      new StrictMockResourceHandlerFactory(RESOURCE_GLOBAL);
+  MockResourceHandlerFactory *filesystem_handler =
+      new StrictMockResourceHandlerFactory(RESOURCE_FILESYSTEM);
 
   const vector<ResourceHandlerFactory *> resource_factories = {
     cpu_handler, memory_handler, diskio_handler, network_handler,
-    monitoring_handler, global_handler
+    monitoring_handler, filesystem_handler
   };
 
   MockTasksHandlerFactory *mock_tasks_handler_factory =
@@ -486,20 +496,13 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   EXPECT_CALL(*monitoring_handler, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kName, RESOURCE_MONITORING))));
-  EXPECT_CALL(*global_handler, Create(kName, _))
+  EXPECT_CALL(*filesystem_handler, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_GLOBAL))));
-  EXPECT_CALL(*mock_tasks_handler_factory, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
-
-  ContainerSpec spec;
-  spec.mutable_cpu();
-  spec.mutable_memory();
-  spec.mutable_diskio();
-  spec.mutable_network();
-  spec.mutable_monitoring();
-  spec.mutable_global();
+          new StrictMockResourceHandler(kName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_tasks_handler_factory,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(
+           Return(StatusOr<TasksHandler *>(new StrictMockTasksHandler(kName))));
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_TRUE(status.ok());
@@ -511,24 +514,25 @@ TEST_F(ContainerApiImplTest, CreateOnlySpecCpuSuccess) {
   const string kParentName = "/";
   const string kName = "/test";
 
+  ContainerSpec spec;
+  spec.mutable_cpu();
+
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
 
   EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kName, RESOURCE_CPU))));
-  EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(
+           Return(StatusOr<TasksHandler *>(new StrictMockTasksHandler(kName))));
 
   // Memory and Global were not spec'd so they should not be created
   EXPECT_CALL(*mock_handler_factory2_, Create(_, _))
       .Times(0);
   EXPECT_CALL(*mock_handler_factory3_, Create(_, _))
       .Times(0);
-
-  ContainerSpec spec;
-  spec.mutable_cpu();
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_TRUE(status.ok());
@@ -539,6 +543,8 @@ TEST_F(ContainerApiImplTest, CreateOnlySpecCpuSuccess) {
 TEST_F(ContainerApiImplTest, CreateNoResourcesSpecified) {
   const string kParentName = "/";
   const string kName = "/test";
+
+  ContainerSpec spec;
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -552,11 +558,10 @@ TEST_F(ContainerApiImplTest, CreateNoResourcesSpecified) {
       .Times(0);
 
   // TasksHandler is always created
-  EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
-
-  ContainerSpec spec;
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(
+           Return(StatusOr<TasksHandler *>(new StrictMockTasksHandler(kName))));
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_TRUE(status.ok());
@@ -566,6 +571,11 @@ TEST_F(ContainerApiImplTest, CreateNoResourcesSpecified) {
 
 TEST_F(ContainerApiImplTest, CreateTasksHandlerCreationFails) {
   const string kName = "/test";
+
+  ContainerSpec spec;
+  spec.mutable_cpu();
+  spec.mutable_memory();
+  spec.mutable_network();
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -578,16 +588,11 @@ TEST_F(ContainerApiImplTest, CreateTasksHandlerCreationFails) {
           new StrictMockResourceHandler(kName, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_handler_factory3_, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kName, RESOURCE_FILESYSTEM))));
 
-  EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          Status::CANCELLED)));
-
-  ContainerSpec spec;
-  spec.mutable_cpu();
-  spec.mutable_memory();
-  spec.mutable_network();
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(Return(StatusOr<TasksHandler *>(Status::CANCELLED)));
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_FALSE(status.ok());
@@ -597,6 +602,10 @@ TEST_F(ContainerApiImplTest, CreateTasksHandlerCreationFails) {
 TEST_F(ContainerApiImplTest, CreateResourceCreationFails) {
   const string kParentName = "/";
   const string kName = "/test";
+
+  ContainerSpec spec;
+  spec.mutable_cpu();
+  spec.mutable_filesystem();
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -612,17 +621,14 @@ TEST_F(ContainerApiImplTest, CreateResourceCreationFails) {
           new StrictMockResourceHandler(kParentName, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_handler_factory3_, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(Status::CANCELLED)));
-  EXPECT_CALL(*mock_tasks_handler_factory_, Create(kName))
-      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
-          new StrictMockTasksHandler(kName))));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(
+           Return(StatusOr<TasksHandler *>(new StrictMockTasksHandler(kName))));
 
   // The partially created resources will be destroyed
   EXPECT_CALL(*cpu_handler, Destroy())
       .WillRepeatedly(Return(Status::OK));
-
-  ContainerSpec spec;
-  spec.mutable_cpu();
-  spec.mutable_global();
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_FALSE(status.ok());
@@ -1041,7 +1047,7 @@ class ContainerImplTest : public ::testing::Test {
     mock_resource_factory2_.reset(
         new StrictMockResourceHandlerFactory(RESOURCE_MEMORY));
     mock_resource_factory3_.reset(
-        new StrictMockResourceHandlerFactory(RESOURCE_GLOBAL));
+        new StrictMockResourceHandlerFactory(RESOURCE_FILESYSTEM));
 
     mock_lmctfy_.reset(new StrictMock<MockContainerApiImpl>(
         new StrictMockTasksHandlerFactory(), new StrictMockCgroupFactory(),
@@ -1055,7 +1061,7 @@ class ContainerImplTest : public ::testing::Test {
     factory_map.insert(make_pair(RESOURCE_CPU, mock_resource_factory1_.get()));
     factory_map.insert(make_pair(RESOURCE_MEMORY,
                                  mock_resource_factory2_.get()));
-    factory_map.insert(make_pair(RESOURCE_GLOBAL,
+    factory_map.insert(make_pair(RESOURCE_FILESYSTEM,
                                  mock_resource_factory3_.get()));
 
     container_.reset(new ContainerImpl(
@@ -1181,7 +1187,7 @@ class ContainerImplTest : public ::testing::Test {
     }
 
     MockResourceHandler *mock_handler3 = new StrictMockResourceHandler(
-        kParentContainer, RESOURCE_GLOBAL);
+        kParentContainer, RESOURCE_FILESYSTEM);
     EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
         .WillRepeatedly(Return(Status(::util::error::NOT_FOUND, "")));
     EXPECT_CALL(*mock_resource_factory3_, Get(kParentContainer))
@@ -1656,7 +1662,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersSuccess) {
           new StrictMockResourceHandler(kContainerName, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kContainerName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
   ASSERT_TRUE(statusor.ok());
@@ -1679,7 +1685,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersAttachToParent) {
           new StrictMockResourceHandler(kContainerName, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kContainerName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
   ASSERT_TRUE(statusor.ok());
@@ -1705,7 +1711,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersAttachToRoot) {
           new StrictMockResourceHandler(kContainerName, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kContainerName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
   ASSERT_TRUE(statusor.ok());
@@ -1723,7 +1729,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersErrorAttaching) {
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(Status::CANCELLED)));
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kContainerName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1739,7 +1745,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersErrorAttachingToParent) {
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(Status::CANCELLED)));
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kContainerName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1758,7 +1764,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersErrorAttachingToRoot) {
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(Status::CANCELLED)));
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kContainerName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1778,7 +1784,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersRootNotFound) {
           Status(::util::error::NOT_FOUND, ""))));
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kContainerName, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1794,7 +1800,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersOnRootContainerSuccess) {
           new StrictMockResourceHandler(kRootContainer, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_resource_factory3_, Get(kRootContainer))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kRootContainer, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kRootContainer, RESOURCE_FILESYSTEM))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
   ASSERT_TRUE(statusor.ok());
@@ -1815,7 +1821,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersOnRootContainerNotFound) {
           Status(::util::error::NOT_FOUND, ""))));
   EXPECT_CALL(*mock_resource_factory3_, Get(kRootContainer))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kRootContainer, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kRootContainer, RESOURCE_FILESYSTEM))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1830,7 +1836,7 @@ TEST_F(ContainerImplTest, GetResourceHandlersOnRootContainerError) {
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(Status::CANCELLED)));
   EXPECT_CALL(*mock_resource_factory3_, Get(kRootContainer))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kRootContainer, RESOURCE_GLOBAL))));
+          new StrictMockResourceHandler(kRootContainer, RESOURCE_FILESYSTEM))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1878,7 +1884,7 @@ TEST_F(ContainerImplTest, StatsSuccess) {
     EXPECT_FALSE(stats.has_diskio());
     EXPECT_FALSE(stats.has_network());
     EXPECT_FALSE(stats.has_monitoring());
-    EXPECT_FALSE(stats.has_global());
+    EXPECT_FALSE(stats.has_filesystem());
   }
 }
 
@@ -1900,7 +1906,7 @@ TEST_F(ContainerImplTest, StatsEmpty) {
     EXPECT_FALSE(stats.has_diskio());
     EXPECT_FALSE(stats.has_network());
     EXPECT_FALSE(stats.has_monitoring());
-    EXPECT_FALSE(stats.has_global());
+    EXPECT_FALSE(stats.has_filesystem());
   }
 }
 
@@ -2401,7 +2407,7 @@ TEST_F(ContainerImplTest, DestroySuccess) {
       ExpectGetResourceHandlers(Status::OK);
   vector<MockResourceHandler *> to_delete;
   for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() != RESOURCE_GLOBAL) {
+    if (mock_handler->type() != RESOURCE_FILESYSTEM) {
       EXPECT_CALL(*mock_handler, Destroy())
           .WillOnce(Return(Status::OK));
       to_delete.push_back(mock_handler);
@@ -2434,7 +2440,7 @@ TEST_F(ContainerImplTest, DestroyOnlyDestroyResourcesAttachedToContainer) {
   EXPECT_CALL(*mock_resource_factory2_, Get(kParentContainer))
       .WillRepeatedly(Return(mock_handler2));
   MockResourceHandler *mock_handler3 = new StrictMockResourceHandler(
-      kContainerName, RESOURCE_GLOBAL);
+      kContainerName, RESOURCE_FILESYSTEM);
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(mock_handler3));
 
@@ -2490,7 +2496,7 @@ TEST_F(ContainerImplTest, DestroyTasksHandlerDestroyFails) {
       ExpectGetResourceHandlers(Status::OK);
   vector<MockResourceHandler *> to_delete;
   for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() != RESOURCE_GLOBAL) {
+    if (mock_handler->type() != RESOURCE_FILESYSTEM) {
       EXPECT_CALL(*mock_handler, Destroy())
           .WillOnce(Return(Status::OK));
       to_delete.push_back(mock_handler);
@@ -2507,23 +2513,51 @@ TEST_F(ContainerImplTest, DestroyTasksHandlerDestroyFails) {
 
 // Tests for Run().
 
-static const char kCmd[] = "echo hi";
 static const pid_t kTid = 42;
 static const pid_t kPid = 22;
 
+TEST_F(ContainerImplTest, RunNoCommand) {
+  const vector<string> kCmd = {};
+  const vector<RunSpec::FdPolicy> kFdPolicies = {RunSpec::INHERIT,
+                                                 RunSpec::DETACHED};
+
+  for (const auto &fd_policy : kFdPolicies) {
+    ExpectExists(true);
+
+    RunSpec spec;
+    spec.set_fd_policy(fd_policy);
+    EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                      container_->Run(kCmd, spec));
+  }
+}
+
+TEST_F(ContainerImplTest, RunUnknownFdPolicy) {
+  ExpectExists(true);
+
+  RunSpec spec;
+  spec.set_fd_policy(RunSpec::UNKNOWN);
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    container_->Run({"/bin/true"}, spec));
+}
+
 TEST_F(ContainerImplTest, RunNoContainer) {
-  const vector<Container::FdPolicy> kFdPolicies = {Container::FDS_DETACHED,
-                                                   Container::FDS_INHERITED};
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+  const vector<RunSpec::FdPolicy> kFdPolicies = {RunSpec::INHERIT,
+                                                 RunSpec::DETACHED};
 
   for (const auto &fd_policy : kFdPolicies) {
     ExpectExists(false);
 
-    EXPECT_ERROR_CODE(NOT_FOUND, container_->Run(kCmd, fd_policy));
+    RunSpec spec;
+    spec.set_fd_policy(fd_policy);
+    EXPECT_ERROR_CODE(NOT_FOUND, container_->Run(kCmd, spec));
   }
 }
 
 TEST_F(ContainerImplTest, RunSuccessBackground) {
-  EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_, SetUseSession())
       .Times(1);
@@ -2537,13 +2571,17 @@ TEST_F(ContainerImplTest, RunSuccessBackground) {
 
   ExpectEnter(kTid, Status::OK);
 
-  StatusOr<pid_t> statusor = container_->Run(kCmd, Container::FDS_DETACHED);
+  RunSpec spec;
+  spec.set_fd_policy(RunSpec::DETACHED);
+  StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
   ASSERT_TRUE(statusor.ok());
   EXPECT_EQ(kPid, statusor.ValueOrDie());
 }
 
 TEST_F(ContainerImplTest, RunSuccessForeground) {
-  EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_,
               SetChannelAction(CHAN_STDIN, ACTION_DUPPARENT))
@@ -2564,13 +2602,48 @@ TEST_F(ContainerImplTest, RunSuccessForeground) {
 
   ExpectEnter(kTid, Status::OK);
 
-  StatusOr<pid_t> statusor = container_->Run(kCmd, Container::FDS_INHERITED);
+  RunSpec spec;
+  spec.set_fd_policy(RunSpec::INHERIT);
+  StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
+  ASSERT_TRUE(statusor.ok());
+  EXPECT_EQ(kPid, statusor.ValueOrDie());
+}
+
+TEST_F(ContainerImplTest, RunSuccessDefaultPolicy) {
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
+      .Times(1);
+  EXPECT_CALL(*mock_subprocess_,
+              SetChannelAction(CHAN_STDIN, ACTION_DUPPARENT))
+      .Times(1);
+  EXPECT_CALL(*mock_subprocess_,
+              SetChannelAction(CHAN_STDOUT, ACTION_DUPPARENT))
+      .Times(1);
+  EXPECT_CALL(*mock_subprocess_,
+              SetChannelAction(CHAN_STDERR, ACTION_DUPPARENT))
+      .Times(1);
+  EXPECT_CALL(*mock_subprocess_, Start())
+      .WillOnce(Return(true));
+  EXPECT_CALL(*mock_subprocess_, pid())
+      .WillRepeatedly(Return(kPid));
+
+  EXPECT_CALL(mock_kernel_.Mock(), GetTID())
+      .WillRepeatedly(Return(kTid));
+
+  ExpectEnter(kTid, Status::OK);
+
+  // Inherit is the default policy.
+  RunSpec spec;
+  StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
   ASSERT_TRUE(statusor.ok());
   EXPECT_EQ(kPid, statusor.ValueOrDie());
 }
 
 TEST_F(ContainerImplTest, RunEnterFails) {
-  EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_, SetUseSession())
       .Times(1);
@@ -2580,12 +2653,15 @@ TEST_F(ContainerImplTest, RunEnterFails) {
 
   ExpectEnter(kTid, Status::CANCELLED);
 
-  EXPECT_EQ(Status::CANCELLED,
-            container_->Run(kCmd, Container::FDS_DETACHED).status());
+  RunSpec spec;
+  spec.set_fd_policy(RunSpec::DETACHED);
+  EXPECT_EQ(Status::CANCELLED, container_->Run(kCmd, spec).status());
 }
 
 TEST_F(ContainerImplTest, RunStartProcessFails) {
-  EXPECT_CALL(*mock_subprocess_, SetShellCommand(StrEq(kCmd)))
+  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
+
+  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
       .Times(1);
   EXPECT_CALL(*mock_subprocess_, SetUseSession())
       .Times(1);
@@ -2597,7 +2673,9 @@ TEST_F(ContainerImplTest, RunStartProcessFails) {
 
   ExpectEnter(kTid, Status::OK);
 
-  StatusOr<pid_t> statusor = container_->Run(kCmd, Container::FDS_DETACHED);
+  RunSpec spec;
+  spec.set_fd_policy(RunSpec::DETACHED);
+  StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
   EXPECT_FALSE(statusor.ok());
   EXPECT_EQ(::util::error::FAILED_PRECONDITION, statusor.status().error_code());
 }
@@ -2621,14 +2699,14 @@ TEST_F(ContainerImplTest, UpdateDiffSuccess) {
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
-  // Expect all resources of this container to be updated (global is not in
+  // Expect all resources of this container to be updated (filesystem is not in
   // this container).
   for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() != RESOURCE_GLOBAL) {
+    if (mock_handler->type() != RESOURCE_FILESYSTEM) {
       EXPECT_CALL(*mock_handler,
                   Update(EqualsInitializedProto(spec), Container::UPDATE_DIFF))
           .WillOnce(Return(Status::OK));
@@ -2642,7 +2720,7 @@ TEST_F(ContainerImplTest, UpdateDiffOnlyMemoryUpdated) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(100);
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2661,7 +2739,7 @@ TEST_F(ContainerImplTest, UpdateDiffOnlyMemoryUpdated) {
 TEST_F(ContainerImplTest, UpdateDiffEmptySpec) {
   ContainerSpec spec;
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2673,10 +2751,10 @@ TEST_F(ContainerImplTest, UpdateDiffEmptySpec) {
 TEST_F(ContainerImplTest, UpdateDiffNonExistingResource) {
   ContainerSpec spec;
 
-  // Specify global which is not attached to this container.
-  spec.mutable_global()->set_fd_limit(100);
+  // Specify filesystem which is not attached to this container.
+  spec.mutable_filesystem()->set_fd_limit(100);
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   ExpectGetResourceHandlers(Status::OK);
 
   Status status = container_->Update(spec, Container::UPDATE_DIFF);
@@ -2698,7 +2776,7 @@ TEST_F(ContainerImplTest, UpdateDiffUpdateFails) {
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2718,14 +2796,14 @@ TEST_F(ContainerImplTest, UpdateReplaceSuccess) {
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
-  // Expect all resources of this container to be updated (global is not in
+  // Expect all resources of this container to be updated (filesystem is not in
   // this container).
   for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() != RESOURCE_GLOBAL) {
+    if (mock_handler->type() != RESOURCE_FILESYSTEM) {
       EXPECT_CALL(*mock_handler, Update(EqualsInitializedProto(spec),
                                         Container::UPDATE_REPLACE))
           .WillOnce(Return(Status::OK));
@@ -2739,7 +2817,7 @@ TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesMissing) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2750,9 +2828,9 @@ TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesExtra) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
-  spec.mutable_global();
+  spec.mutable_filesystem();
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2762,9 +2840,9 @@ TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesExtra) {
 TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesExtraAndSomeMissing) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
-  spec.mutable_global();
+  spec.mutable_filesystem();
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2785,14 +2863,14 @@ TEST_F(ContainerImplTest, UpdateReplaceUpdateFails) {
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
-  // Expect all resources of this container to be updated (global is not in
+  // Expect all resources of this container to be updated (filesystem is not in
   // this container).
   for (MockResourceHandler *mock_handler : mock_handlers) {
-    if (mock_handler->type() != RESOURCE_GLOBAL) {
+    if (mock_handler->type() != RESOURCE_FILESYSTEM) {
       EXPECT_CALL(*mock_handler, Update(EqualsInitializedProto(spec),
                                         Container::UPDATE_REPLACE))
           .WillRepeatedly(Return(Status::CANCELLED));
@@ -2830,7 +2908,7 @@ TEST_F(ContainerImplTest, RegisterNotificationSuccess) {
   EventSpec spec;
   spec.mutable_oom();
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2871,7 +2949,7 @@ TEST_F(ContainerImplTest, RegisterNotificationGetResourceHandlersFails) {
   EventSpec spec;
   spec.mutable_oom();
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::CANCELLED);
 
@@ -2884,7 +2962,7 @@ TEST_F(ContainerImplTest, RegisterNotificationFailureWhileRegistering) {
   EventSpec spec;
   spec.mutable_oom();
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2912,7 +2990,7 @@ TEST_F(ContainerImplTest, RegisterNotificationNoHandlerForEvent) {
   EventSpec spec;
   spec.mutable_oom();
 
-  // Returns CPU, MEMORY, and GLOBAL ResourceHandlers.
+  // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
 
@@ -2978,17 +3056,14 @@ TEST_F(ContainerImplTest, SpecSuccess) {
   vector<MockResourceHandler *> mock_handlers =
       ExpectGetResourceHandlers(Status::OK);
 
-  // Add Spec() to CPU and memory.
+  // Add Spec() to CPU and memory, others are not attached to this container..
   for (MockResourceHandler *mock_handler : mock_handlers) {
     if (mock_handler->type() == RESOURCE_CPU) {
       EXPECT_CALL(*mock_handler, Spec(NotNull()))
-          .WillRepeatedly(DoAll(Invoke(&AppendCpuSpec), Return(Status::OK)));
+          .WillOnce(DoAll(Invoke(&AppendCpuSpec), Return(Status::OK)));
     } else if (mock_handler->type() == RESOURCE_MEMORY) {
       EXPECT_CALL(*mock_handler, Spec(NotNull()))
-          .WillRepeatedly(DoAll(Invoke(&AppendMemorySpec), Return(Status::OK)));
-    } else {
-      EXPECT_CALL(*mock_handler, Spec(NotNull()))
-          .WillRepeatedly(Return(Status::OK));
+          .WillOnce(DoAll(Invoke(&AppendMemorySpec), Return(Status::OK)));
     }
   }
 
@@ -3000,7 +3075,7 @@ TEST_F(ContainerImplTest, SpecSuccess) {
   EXPECT_FALSE(stats.has_diskio());
   EXPECT_FALSE(stats.has_network());
   EXPECT_FALSE(stats.has_monitoring());
-  EXPECT_FALSE(stats.has_global());
+  EXPECT_FALSE(stats.has_filesystem());
 }
 
 TEST_F(ContainerImplTest, SpecEmpty) {
@@ -3008,8 +3083,11 @@ TEST_F(ContainerImplTest, SpecEmpty) {
       ExpectGetResourceHandlers(Status::OK);
 
   for (MockResourceHandler *mock_handler : mock_handlers) {
-    EXPECT_CALL(*mock_handler, Spec(NotNull()))
-        .WillRepeatedly(Return(Status::OK));
+    if ((mock_handler->type() == RESOURCE_CPU) ||
+        (mock_handler->type() == RESOURCE_MEMORY)) {
+      EXPECT_CALL(*mock_handler, Spec(NotNull()))
+          .WillOnce(Return(Status::OK));
+    }
   }
 
   StatusOr<ContainerSpec> statusor = container_->Spec();
@@ -3020,7 +3098,7 @@ TEST_F(ContainerImplTest, SpecEmpty) {
   EXPECT_FALSE(stats.has_diskio());
   EXPECT_FALSE(stats.has_network());
   EXPECT_FALSE(stats.has_monitoring());
-  EXPECT_FALSE(stats.has_global());
+  EXPECT_FALSE(stats.has_filesystem());
 }
 
 TEST_F(ContainerImplTest, SpecGetResourceHandlersFails) {

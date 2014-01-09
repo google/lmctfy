@@ -32,8 +32,10 @@ class MockJobControllerFactory : public JobControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<JobController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD1(
-      Create, ::util::StatusOr<JobController *>(const string &hierarchy_path));
+  MOCK_CONST_METHOD3(Create, ::util::StatusOr<JobController *>(
+                                 const string &hierarchy_path,
+                                 ::util::UnixUid uid,
+                                 ::util::UnixGid gid));
   MOCK_CONST_METHOD1(Exists, bool(const string &hierarchy_path));
   MOCK_CONST_METHOD0(HierarchyName, string());
 };

@@ -16,48 +16,47 @@
 
 #include "lmctfy/kernel_files.h"
 #include "include/lmctfy.pb.h"
+#include "util/cpu_mask.h"
 #include "util/errors.h"
 #include "strings/substitute.h"
-#include "util/os/core/cpu_set.h"
 #include "util/task/status.h"
 
 using ::util::ResSet;
 using ::strings::Substitute;
-using ::util_os_core::CpuSetInsert;
-using ::util_os_core::CpuSetContains;
-using ::util_os_core::CpuSetMakeEmpty;
 using ::util::Status;
 using ::util::StatusOr;
 
 namespace containers {
 namespace lmctfy {
 
-// TODO(jnagal): Add formatting support directly to cpu_set_t or
+using ::util::CpuMask;
+
+// TODO(jnagal): Add formatting support directly to CpuMask or
 // implement the logic here rather than borrowing from ResSet.
-static ResSet ResSetFromCpuSet(const cpu_set_t &cpu_set) {
+static ResSet ResSetFromCpuMask(const CpuMask &cpu_mask) {
   ResSet res;
   for (int i = 0; i < CPU_SETSIZE; i++) {
-    if (CpuSetContains(i, &cpu_set)) {
+    if (cpu_mask.IsSet(i)) {
       res.insert(i);
     }
   }
   return res;
 }
 
-static string FormatCPUs(const cpu_set_t &cpu_set) {
-  ResSet res_set = ResSetFromCpuSet(cpu_set);
+static string FormatCPUs(const CpuMask &cpu_mask) {
+  ResSet res_set = ResSetFromCpuMask(cpu_mask);
   string cpu_str;
   res_set.Format(&cpu_str);
   return cpu_str;
 }
 
-static cpu_set_t ResSetToCpuSet(const ResSet &res) {
-  cpu_set_t cpu_set(CpuSetMakeEmpty());
+static CpuMask ResSetToCpuMask(const ResSet &res) {
+  CpuMask cpu_mask;
   for (auto it : res) {
     CHECK_LT(it, CPU_SETSIZE);
-    CpuSetInsert(it, &cpu_set);
+    cpu_mask.Set(it);
   }
-  return cpu_set;
+  return cpu_mask;
 }
 
 CpusetController::CpusetController(const string &cgroup_path, bool owns_cgroup,
@@ -66,17 +65,17 @@ CpusetController::CpusetController(const string &cgroup_path, bool owns_cgroup,
     : CgroupController(CGROUP_CPUSET, cgroup_path, owns_cgroup, kernel,
                        eventfd_notifications) {}
 
-Status CpusetController::SetCpuMask(cpu_set_t cpuset) {
-  string cpu_string = FormatCPUs(cpuset);
+Status CpusetController::SetCpuMask(const CpuMask &mask) {
+  string cpu_string = FormatCPUs(mask);
   return SetParamString(KernelFiles::CPUSet::kCPUs, cpu_string);
 }
 
-StatusOr<cpu_set_t> CpusetController::GetCpuMask() const {
+StatusOr<CpuMask> CpusetController::GetCpuMask() const {
   string cpu_string;
   RETURN_IF_ERROR(GetParamString(KernelFiles::CPUSet::kCPUs), &cpu_string);
   ResSet res_set;
   res_set.ReadSetString(cpu_string, ",");
-  return ResSetToCpuSet(res_set);
+  return ResSetToCpuMask(res_set);
 }
 
 Status CpusetController::SetMemoryNodes(const ResSet& memory_nodes) {

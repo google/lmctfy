@@ -34,7 +34,7 @@ The lmctfy code abstracts system interactions with the system API found in `/sys
 
 At the core of lmctfy is the public C++ library API (the CLI is a thin wrapper around this). The public API has the `ContainerApi` which functions as a factory of `Container` objects (both of these are in [lmctfy.h](/include/lmctfy.h)). These make heavy use of different specifications found in [lmctfy.proto](/include/lmctfy.proto). All of these specifications are split into **resources** that lmctfy supports. The aim is for these to not change significantly over time and to be high level enough to adapt to underlying kernel changes. 
 
-The C++ library is implemented by some logic wrapping a set of **handlers**. The most prevalent of these are the **resource handlers** which each implements the support and policies of a single resource (their interface is in [resource_handler.h](/lmctfy/resource_handler.h)). One other top-level handlers are the **tasks handler** which manages tracking of tasks (interface at [tasks_handler.h](/lmctfy/tasks_handler.h)).
+The C++ library is implemented by some logic wrapping a set of **handlers**. The most prevalent of these are the **resource handlers** which each implements the support and policies of a single resource (their interface is in [resource_handler.h](/lmctfy/resource_handler.h)). One other top-level handler is the **tasks handler** which manages tracking of tasks (interface at [tasks_handler.h](/lmctfy/tasks_handler.h)).
 
 ### Resource Handlers
 

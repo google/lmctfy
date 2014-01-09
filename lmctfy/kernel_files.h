@@ -61,7 +61,7 @@ struct KernelFiles {
     static const char kHistogram[];
   };
 
-  // File related to Memory subsystem.
+  // Files related to Memory subsystem.
   struct Memory {
    public:
     static const char kCompressionEnabled[];
@@ -72,16 +72,14 @@ struct KernelFiles {
     static const char kDirtyLimitInBytes[];
     static const char kIdlePageStats[];
     static const char kLimitInBytes[];
-    static const char kMaxLimitInBytes[];
     static const char kMaxUsageInBytes[];
     static const char kOomControl[];
     static const char kOomScoreBadness[];
-    static const char kOomScoreBadnessOverlimitBias[];
     static const char kShmId[];
     static const char kSlabinfo[];
     static const char kSoftLimitInBytes[];
+    static const char kStalePageAge[];
     static const char kStat[];
-    static const char kStepSizeInBytes[];
     static const char kSwapfile[];
     static const char kUsageInBytes[];
     static const char kForceEmpty[];
@@ -100,6 +98,14 @@ struct KernelFiles {
     };
   };
 
+  // Files related to the Rlimit subsystem.
+  struct RLimit {
+    static const char kFdFailCount[];
+    static const char kFdLimit[];
+    static const char kFdMaxUsage[];
+    static const char kFdUsage[];
+  };
+
   struct CGroup {
    public:
     struct Children {
@@ -112,6 +118,7 @@ struct KernelFiles {
     static const char kProcesses[];
     static const char kEventfdInterface[];
     static const char kTasks[];
+    static const char kTracingEnabled[];
   };
 
   // TODO(jonathanw): Describe (and organize?) these properly

@@ -32,6 +32,11 @@ inline string JoinPath(StringPiece p1, StringPiece p2) {
   return JoinPath(p1, p2, "");
 }
 
+// Returns the part of the path before the final "/".  If there is a single
+// // leading "/" in the path, the result will be the leading "/".  If there is
+// // no "/" in the path, the result is the empty prefix of the input.
+StringPiece Dirname(StringPiece path);
+
 // Return the "basename" for "fname".  I.e. strip out everything up to and
 // including the last "/" in the name.
 StringPiece Basename(StringPiece path);
