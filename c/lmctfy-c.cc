@@ -36,7 +36,7 @@ struct status *lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec) {
 }
 
 struct status *lmctfy_new_container_api(struct container_api **api) {
-  *api = new container_api();
+  *api = (struct container_api *)malloc(sizeof(struct container_api));
   (*api)->container_api_ = NULL;
   StatusOr<ContainerApi *> statusor_container_api = ContainerApi::New();
   RETURN_IF_ERROR_PTR(statusor_container_api, &((*api)->container_api_));
@@ -48,7 +48,17 @@ void lmctfy_release_container_api(struct container_api *api) {
     if (api->container_api_ != NULL) {
       // TODO(monnand): delete api->container_api_?
     }
-    delete api;
+    free(api);
   }
 }
 
+struct status *lmctfy_get_container(struct container_api *api,
+                                    struct container **container,
+                                    const char *container_name) {
+  *container = (struct container *)malloc(sizeof(struct container));
+  (*container)->container_ = NULL;
+
+  StatusOr<Container *> statusor = api->container_api_->Get(container_name);
+  RETURN_IF_ERROR_PTR(statusor, &((*container)->container_));
+  return &status_ok;
+}

@@ -13,6 +13,9 @@ struct container_api;
 struct status *lmctfy_init_machine_raw(const void *spec, const int spec_size);
 struct status *lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec);
 struct status *lmctfy_new_container_api(struct container_api **api);
+struct status *lmctfy_get_container(struct container_api *api,
+                                    struct container **container,
+                                    const char *container_name);
 
 void lmctfy_release_container_api(struct container_api *api);
 
