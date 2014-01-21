@@ -14,6 +14,8 @@ struct status *lmctfy_init_machine_raw(const void *spec, const int spec_size);
 struct status *lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec);
 struct status *lmctfy_new_container_api(struct container_api **api);
 
+void lmctfy_release_container_api(struct container_api *api);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
