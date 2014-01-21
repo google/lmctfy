@@ -7,9 +7,16 @@ PWD = $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 
 LMCTFY_ROOT = $(shell dirname ${PWD})
 
-INCLUDE= ${PWD}/include
+INCLUDE = ${PWD}/include
 
-all: ${INCLUDE}/codes.pb-c.h ${INCLUDE}/lmctfy.pb-c.h
+CXX = g++
+
+CXXFLAGS = -I${INCLUDE} -I${LMCTFY_ROOT}/include -I${LMCTFY_ROOT}
+
+all: status-c.o ${INCLUDE}/lmctfy.pb-c.h
+
+status-c.o: ${PWD}/status-c.cc ${INCLUDE}/status-c.h ${INCLUDE}/codes.pb-c.h ${LMCTFY_ROOT}/util/task/status.h
+	${CXX} ${CXXFLAGS} -c -o $@ $<
 
 ${INCLUDE}/codes.pb-c.h: ${LMCTFY_ROOT}/util/task/codes.proto
 	${PROTOC_C} --c_out=${INCLUDE} --proto_path=${LMCTFY_ROOT}/util/task $<
@@ -19,6 +26,7 @@ ${INCLUDE}/lmctfy.pb-c.h: ${LMCTFY_ROOT}/include/lmctfy.proto
 
 clean:
 	rm -f ${INCLUDE}/*.pb-c.[ch]
+	rm -f *.o
 
 .PHONY: clean all
 
