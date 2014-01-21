@@ -16,7 +16,7 @@ CXXFLAGS += -std=c++0x -fpermissive
 
 all: lmctfy-c.o status-c.o ${INCLUDE}/lmctfy.pb-c.h
 
-lmctfy-c.o: ${PWD}/lmctfy-c.cc ${INCLUDE}/lmctfy-c.h ${PWD}/status-internal.h ${INCLUDE}/status-c.h
+lmctfy-c.o: ${PWD}/lmctfy-c.cc ${INCLUDE}/lmctfy-c.h ${PWD}/status-internal.h ${INCLUDE}/status-c.h ${INCLUDE}/lmctfy.pb-c.h ${INCLUDE}/codes.pb-c.h
 	${CXX} ${CXXFLAGS} -c -o $@ $<
 status-c.o: ${PWD}/status-c.cc ${INCLUDE}/status-c.h ${INCLUDE}/codes.pb-c.h ${LMCTFY_ROOT}/util/task/status.h ${PWD}/status-internal.h
 	${CXX} ${CXXFLAGS} -c -o $@ $<
