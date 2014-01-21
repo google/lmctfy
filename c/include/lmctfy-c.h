@@ -10,9 +10,9 @@ extern "C" {
 struct container;
 struct container_api;
 
-struct status *lmctfy_init_machine_raw(void *spec, int spec_size);
-struct status *lmctfy_init_machine(Containers__Lmctfy__InitSpec *spec);
-struct statuc *lmctfy_new_container_api(struct container_api **api);
+struct status *lmctfy_init_machine_raw(const void *spec, const int spec_size);
+struct status *lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec);
+struct status *lmctfy_new_container_api(struct container_api **api);
 
 #ifdef __cplusplus
 }

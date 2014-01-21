@@ -9,9 +9,9 @@ extern "C" {
 
 struct status;
 
-int status_is_ok(struct status *);
-int status_get_code(struct status *);
-const char *status_get_message(struct status *);
+int status_is_ok(const struct status *);
+int status_get_code(const struct status *);
+const char *status_get_message(const struct status *);
 void status_release(struct status *);
 
 #ifdef __cplusplus
