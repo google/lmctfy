@@ -52,9 +52,9 @@ void lmctfy_release_container_api(struct container_api *api) {
   }
 }
 
-struct status *lmctfy_get_container(struct container_api *api,
-                                    struct container **container,
-                                    const char *container_name) {
+struct status *lmctfy_container_api_get_container(const struct container_api *api,
+                                                  struct container **container,
+                                                  const char *container_name) {
   *container = (struct container *)malloc(sizeof(struct container));
   (*container)->container_ = NULL;
 
