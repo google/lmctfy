@@ -16,14 +16,14 @@ extern struct status status_ok;
     do {                                                            \
       const ::util::Status _status =                                \
         ::util::errors_internal::PerformSideEffects(__VA_ARGS__);   \
-      if (PREDICT_FALSE(!_status.ok())) return status_new(_status); \
+      if (PREDICT_FALSE(!_status.ok())) return status_copy(_status); \
     } while (0)
 
 namespace util {
 namespace internal {
 
 // We don't want users to instantiate the status structure.
-struct status *status_new(const Status &s);
+struct status *status_copy(const Status &s);
 
 } // namespace internal
 } // namespace util

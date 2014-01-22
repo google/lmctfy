@@ -7,7 +7,7 @@
 #include "lmctfy.pb.h"
 
 using namespace ::containers::lmctfy;
-using ::util::internal::status_new;
+using ::util::internal::status_copy;
 using ::util::Status;
 using ::util::StatusOr;
 
@@ -23,7 +23,7 @@ struct status *lmctfy_init_machine_raw(const void *spec, const int spec_size) {
   InitSpec init_spec;
   init_spec.ParseFromArray(spec, spec_size);
   Status s = ContainerApi::InitMachine(init_spec);
-  return status_new(s);
+  return status_copy(s);
 }
 
 struct status *lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec) {
