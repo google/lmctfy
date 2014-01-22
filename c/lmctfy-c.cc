@@ -19,20 +19,24 @@ struct container_api {
   ContainerApi *container_api_;
 };
 
-struct status *lmctfy_init_machine_raw(const void *spec, const int spec_size) {
+int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_size) {
   InitSpec init_spec;
   init_spec.ParseFromArray(spec, spec_size);
-  Status s = ContainerApi::InitMachine(init_spec);
-  return status_copy(s);
+  Status v = ContainerApi::InitMachine(init_spec);
+  if (s != NULL) {
+    s->status_ = v;
+  }
+  return v.error_code();
 }
 
-struct status *lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec) {
+int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec) {
   size_t sz = containers__lmctfy__init_spec__get_packed_size(spec);
   void *buf = malloc(sz);
+  int ret = 0;
   containers__lmctfy__init_spec__pack(spec, (uint8_t *)buf);
-  struct status *s = lmctfy_init_machine_raw(buf, sz);
+  ret = lmctfy_init_machine_raw(s, buf, sz);
   free(buf);
-  return s;
+  return ret;
 }
 
 struct status *lmctfy_new_container_api(struct container_api **api) {

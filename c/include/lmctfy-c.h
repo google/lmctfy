@@ -10,8 +10,29 @@ extern "C" {
 struct container;
 struct container_api;
 
-struct status *lmctfy_init_machine_raw(const void *spec, const int spec_size);
-struct status *lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec);
+// InitMachine
+//
+// Arguments:
+//  - s: s will be used as output. It contains the error code/message.
+//  - spec: Serialized data (protobuf format) containing the specification.
+//  - spec_size: Size of the serialized data.
+//
+// Returns:
+//  Returns the error code. 0 on success. The return code is same as
+//  status_get_code(s).
+int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_size);
+
+
+// InitMachine
+//
+// Arguments:
+//  - s: s will be used as output. It contains the error code/message.
+//  - spec: The specification.
+//
+// Returns:
+//  Returns the error code. 0 on success. The return code is same as
+//  status_get_code(s).
+int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec);
 
 struct status *lmctfy_new_container_api(struct container_api **api);
 void lmctfy_release_container_api(struct container_api *api);
