@@ -70,3 +70,19 @@ int lmctfy_container_api_get_container(struct status *s,
   RETURN_IF_ERROR_PTR(s, statusor, &((*container)->container_));
   return STATUS_OK;
 }
+
+int lmctfy_container_api_create_container_raw(struct status *s,
+                                       struct container **container,
+                                       const struct container_api *api,
+                                       const char *container_name,
+                                       const void *spec,
+                                       const int spec_size) {
+  ContainerSpec container_spec;
+  *container = (struct container *)malloc(sizeof(struct container));
+  (*container)->container_ = NULL;
+  container_spec.ParseFromArray(spec, spec_size);
+
+  StatusOr<Container *> statusor = api->container_api_->Create(container_name, container_spec);
+  RETURN_IF_ERROR_PTR(s, statusor, &((*container)->container_));
+  return STATUS_OK;
+}

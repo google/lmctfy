@@ -67,6 +67,13 @@ int lmctfy_container_api_get_container(
     const struct container_api *api,
     const char *container_name);
 
+int lmctfy_container_api_create_container_raw(
+    struct status *s,
+    struct container **container,
+    const struct container_api *api,
+    const char *container_name,
+    const void *spec,
+    const int spec_size);
 #ifdef __cplusplus
 }
 #endif // __cplusplus
