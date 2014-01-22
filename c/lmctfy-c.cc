@@ -5,6 +5,9 @@
 #include "util/task/statusor.h"
 #include "status-internal.h"
 #include "lmctfy.pb.h"
+#include "codes.pb-c.h"
+
+#define STATUS_OK UTIL__ERROR__CODE__OK
 
 using namespace ::containers::lmctfy;
 using ::util::internal::status_copy;
@@ -39,12 +42,12 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
   return ret;
 }
 
-struct status *lmctfy_new_container_api(struct container_api **api) {
+int lmctfy_new_container_api(struct status *s, struct container_api **api) {
   *api = (struct container_api *)malloc(sizeof(struct container_api));
   (*api)->container_api_ = NULL;
   StatusOr<ContainerApi *> statusor_container_api = ContainerApi::New();
-  RETURN_IF_ERROR_PTR(statusor_container_api, &((*api)->container_api_));
-  return &status_ok;
+  RETURN_IF_ERROR_PTR(s, statusor_container_api, &((*api)->container_api_));
+  return STATUS_OK;
 }
 
 void lmctfy_release_container_api(struct container_api *api) {
@@ -56,13 +59,14 @@ void lmctfy_release_container_api(struct container_api *api) {
   }
 }
 
-struct status *lmctfy_container_api_get_container(const struct container_api *api,
-                                                  struct container **container,
-                                                  const char *container_name) {
+int lmctfy_container_api_get_container(struct status *s,
+                                       const struct container_api *api,
+                                       struct container **container,
+                                       const char *container_name) {
   *container = (struct container *)malloc(sizeof(struct container));
   (*container)->container_ = NULL;
 
   StatusOr<Container *> statusor = api->container_api_->Get(container_name);
-  RETURN_IF_ERROR_PTR(statusor, &((*container)->container_));
-  return &status_ok;
+  RETURN_IF_ERROR_PTR(s, statusor, &((*container)->container_));
+  return STATUS_OK;
 }

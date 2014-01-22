@@ -22,7 +22,6 @@ struct container_api;
 //  status_get_code(s).
 int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_size);
 
-
 // InitMachine
 //
 // Arguments:
@@ -34,9 +33,11 @@ int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_s
 //  status_get_code(s).
 int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec);
 
-struct status *lmctfy_new_container_api(struct container_api **api);
+int lmctfy_new_container_api(struct status *s, struct container_api **api);
 void lmctfy_release_container_api(struct container_api *api);
-struct status *lmctfy_container_api_get_container(
+
+int lmctfy_container_api_get_container(
+    struct status *s,
     const struct container_api *api,
     struct container **container,
     const char *container_name);

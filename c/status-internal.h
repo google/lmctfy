@@ -12,11 +12,14 @@ struct status {
 
 extern struct status status_ok;
 
-#define RETURN_IF_ERROR_PTR(...)                                    \
+#define RETURN_IF_ERROR_PTR(s, ...)                                 \
     do {                                                            \
       const ::util::Status _status =                                \
         ::util::errors_internal::PerformSideEffects(__VA_ARGS__);   \
-      if (PREDICT_FALSE(!_status.ok())) return status_copy(_status); \
+      if (PREDICT_FALSE(!_status.ok())) {                           \
+        if (s != NULL) s->status_ = _status;                        \
+        return _status.error_code();                                \
+      }                                                             \
     } while (0)
 
 namespace util {
