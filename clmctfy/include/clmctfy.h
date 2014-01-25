@@ -53,7 +53,7 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
 int lmctfy_new_container_api(struct status *s, struct container_api **api);
 
 // Release the container api.
-void lmctfy_release_container_api(struct container_api *api);
+void lmctfy_delete_container_api(struct container_api *api);
 
 // Get a container
 //
