@@ -14,6 +14,7 @@
 
 #include "lmctfy/resources/filesystem_resource_handler.h"
 
+#include <limits>
 #include <memory>
 
 #include "base/callback.h"
@@ -26,15 +27,16 @@
 #include "gtest/gtest.h"
 
 using ::system_api::KernelAPIMock;
-using ::util::UnixGid;
-using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::std::vector;
+#include "util/testing/equals_initialized_proto.h"
+using ::testing::EqualsInitializedProto;
 using ::testing::Return;
 using ::testing::StrictMock;
 using ::testing::_;
 using ::util::Status;
 using ::util::StatusOr;
+using ::util::error::INTERNAL;
 using ::util::error::INVALID_ARGUMENT;
 using ::util::error::NOT_FOUND;
 
@@ -46,10 +48,7 @@ static const char kHierarchicalContainerName[] = "/alloc/test";
 
 class FilesystemResourceHandlerFactoryTest : public ::testing::Test {
  public:
-  FilesystemResourceHandlerFactoryTest()
-      : owner_uid_(UnixUid(10)), owner_gid_(UnixGid(11)) {}
-
-  virtual void SetUp() {
+  void SetUp() override {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_controller_ = new StrictMockRLimitController();
     mock_cgroup_factory_.reset(new NiceMockCgroupFactory());
@@ -73,9 +72,6 @@ class FilesystemResourceHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
-  const UnixUid owner_uid_;
-  const UnixGid owner_gid_;
-
   MockRLimitController *mock_controller_;
   MockRLimitControllerFactory *mock_controller_factory_;
   unique_ptr<MockCgroupFactory> mock_cgroup_factory_;
@@ -160,11 +156,8 @@ TEST_F(FilesystemResourceHandlerFactoryTest, HierarchicalGetSuccess) {
 
 TEST_F(FilesystemResourceHandlerFactoryTest, CreateSuccess) {
   ContainerSpec spec;
-  spec.set_owner(owner_uid_.value());
-  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_,
-              Create(kContainerName, owner_uid_, owner_gid_))
+  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(mock_controller_));
 
   StatusOr<ResourceHandler *> statusor =
@@ -178,11 +171,8 @@ TEST_F(FilesystemResourceHandlerFactoryTest, CreateSuccess) {
 
 TEST_F(FilesystemResourceHandlerFactoryTest, CreateFails) {
   ContainerSpec spec;
-  spec.set_owner(owner_uid_.value());
-  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_,
-              Create(kContainerName, owner_uid_, owner_gid_))
+  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED,
@@ -195,11 +185,8 @@ TEST_F(FilesystemResourceHandlerFactoryTest, CreateFails) {
 // Hierarchical container name is passed in. Controller sees a flat name.
 TEST_F(FilesystemResourceHandlerFactoryTest, CreateHierarchicalSuccess) {
   ContainerSpec spec;
-  spec.set_owner(owner_uid_.value());
-  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_,
-              Create(kContainerName, owner_uid_, owner_gid_))
+  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(mock_controller_));
 
   StatusOr<ResourceHandler *> statusor =
@@ -212,20 +199,14 @@ TEST_F(FilesystemResourceHandlerFactoryTest, CreateHierarchicalSuccess) {
 }
 
 class FilesystemResourceHandlerTest : public ::testing::Test {
- public:
-  FilesystemResourceHandlerTest()
-      : kStatTypes({Container::STATS_SUMMARY, Container::STATS_FULL}) {}
-
-  virtual void SetUp() {
+ protected:
+  void SetUp() override {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_rlimit_controller_ = new StrictMockRLimitController();
     handler_.reset(new FilesystemResourceHandler(
         kContainerName, mock_kernel_.get(),
         mock_rlimit_controller_));
   }
-
- protected:
-  const vector<Container::StatsType> kStatTypes;
 
   MockRLimitController *mock_rlimit_controller_;
   unique_ptr<KernelAPIMock> mock_kernel_;
@@ -280,6 +261,116 @@ TEST_F(FilesystemResourceHandlerTest, VerifyFullSpecOk) {
 TEST_F(FilesystemResourceHandlerTest, VerifyFullSpecNoLimit) {
   ContainerSpec spec;
   EXPECT_ERROR_CODE(INVALID_ARGUMENT, handler_->VerifyFullSpec(spec));
+}
+
+TEST_F(FilesystemResourceHandlerTest, RecursiveFillDefaultsEmpty) {
+  ContainerSpec spec;
+  ContainerSpec expected_spec;
+  expected_spec.mutable_filesystem()->set_fd_limit(
+      ::std::numeric_limits<int64>::max());
+
+  handler_->RecursiveFillDefaults(&spec);
+  EXPECT_THAT(spec, EqualsInitializedProto(expected_spec));
+}
+
+TEST_F(FilesystemResourceHandlerTest, RecursiveFillDefaultsFilled) {
+  ContainerSpec spec;
+  spec.mutable_filesystem()->set_fd_limit(222);
+  ContainerSpec expected_spec = spec;
+
+  handler_->RecursiveFillDefaults(&spec);
+  EXPECT_THAT(spec, EqualsInitializedProto(expected_spec));
+}
+
+class FilesystemResourceHandlerStatsTest :
+  public FilesystemResourceHandlerTest,
+  public ::testing::WithParamInterface<Container::StatsType> {
+ protected:
+  virtual void SetUp() {
+    FilesystemResourceHandlerTest::SetUp();
+    EXPECT_CALL(*mock_rlimit_controller_, GetFdUsage())
+        .WillRepeatedly(Return(2));
+    EXPECT_CALL(*mock_rlimit_controller_, GetMaxFdUsage())
+        .WillRepeatedly(Return(10));
+    EXPECT_CALL(*mock_rlimit_controller_, GetFdFailCount())
+        .WillRepeatedly(Return(3));
+
+    FilesystemStats *filesystem = expected_stats_.mutable_filesystem();
+    filesystem->set_fd_usage(2);
+    filesystem->set_fd_max_usage(10);
+    filesystem->set_fd_fail_count(3);
+  }
+
+  ContainerStats expected_stats_;
+};
+
+INSTANTIATE_TEST_CASE_P(FilesystemResourceHandlerStatsTest,
+                        FilesystemResourceHandlerStatsTest,
+                        ::testing::Values(Container::STATS_SUMMARY,
+                                          Container::STATS_FULL));
+
+TEST_P(FilesystemResourceHandlerStatsTest, StatsSuccess) {
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(GetParam(), &stats));
+
+  EXPECT_THAT(stats, EqualsInitializedProto(expected_stats_));
+}
+
+TEST_P(FilesystemResourceHandlerStatsTest, StatsNotFoundGetFdUsage) {
+  EXPECT_CALL(*mock_rlimit_controller_, GetFdUsage())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.mutable_filesystem()->clear_fd_usage();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(GetParam(), &stats));
+
+  EXPECT_THAT(stats, EqualsInitializedProto(expected_stats_));
+}
+
+TEST_P(FilesystemResourceHandlerStatsTest, StatsNotFoundGetMaxFdUsage) {
+  EXPECT_CALL(*mock_rlimit_controller_, GetMaxFdUsage())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.mutable_filesystem()->clear_fd_max_usage();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(GetParam(), &stats));
+
+  EXPECT_THAT(stats, EqualsInitializedProto(expected_stats_));
+}
+
+TEST_P(FilesystemResourceHandlerStatsTest, StatsNotFoundGetFailFdCount) {
+  EXPECT_CALL(*mock_rlimit_controller_, GetFdFailCount())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.mutable_filesystem()->clear_fd_fail_count();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(GetParam(), &stats));
+
+  EXPECT_THAT(stats, EqualsInitializedProto(expected_stats_));
+}
+
+TEST_P(FilesystemResourceHandlerStatsTest, StatsErrorGetFdUsage) {
+  EXPECT_CALL(*mock_rlimit_controller_, GetFdUsage())
+      .WillRepeatedly(Return(Status(INTERNAL, "")));
+
+  ContainerStats stats;
+  EXPECT_ERROR_CODE(INTERNAL, handler_->Stats(GetParam(), &stats));
+}
+
+TEST_P(FilesystemResourceHandlerStatsTest, StatsErrorGetMaxFdUsage) {
+  EXPECT_CALL(*mock_rlimit_controller_, GetMaxFdUsage())
+      .WillRepeatedly(Return(Status(INTERNAL, "")));
+
+  ContainerStats stats;
+  EXPECT_ERROR_CODE(INTERNAL, handler_->Stats(GetParam(), &stats));
+}
+
+TEST_P(FilesystemResourceHandlerStatsTest, StatsErrorGetFdFailCount) {
+  EXPECT_CALL(*mock_rlimit_controller_, GetFdFailCount())
+      .WillRepeatedly(Return(Status(INTERNAL, "")));
+
+  ContainerStats stats;
+  EXPECT_ERROR_CODE(INTERNAL, handler_->Stats(GetParam(), &stats));
 }
 
 }  // namespace lmctfy

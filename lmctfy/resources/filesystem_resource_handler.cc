@@ -14,18 +14,15 @@
 
 #include "lmctfy/resources/filesystem_resource_handler.h"
 
+#include <limits>
 #include <vector>
 
 #include "file/base/path.h"
-#include "util/safe_types/unix_gid.h"
-#include "util/safe_types/unix_uid.h"
 #include "util/errors.h"
 #include "util/task/codes.pb.h"
 
 using ::file::Basename;
 using ::file::JoinPath;
-using ::util::UnixGid;
-using ::util::UnixUid;
 using ::std::vector;
 using ::util::Status;
 using ::util::StatusOr;
@@ -80,9 +77,7 @@ FilesystemResourceHandlerFactory::CreateResourceHandler(
   RLimitController *controller;
   const string effective_container_name =
       GetEffectiveContainerName(container_name);
-  RETURN_IF_ERROR(rlimit_controller_factory_->Create(
-      effective_container_name, UnixUid(spec.owner()),
-      UnixGid(spec.owner_group())),
+  RETURN_IF_ERROR(rlimit_controller_factory_->Create(effective_container_name),
                   &controller);
 
   return new FilesystemResourceHandler(container_name, kernel_, controller);
@@ -98,7 +93,13 @@ FilesystemResourceHandler::FilesystemResourceHandler(
 
 Status FilesystemResourceHandler::Stats(Container::StatsType type,
                                         ContainerStats *output) const {
-  // TODO(kyurtsever) Expose FilesystemResource stats.
+  FilesystemStats *filesystem_stats = output->mutable_filesystem();
+  SET_IF_PRESENT(rlimit_controller_->GetFdUsage(),
+                 filesystem_stats->set_fd_usage);
+  SET_IF_PRESENT(rlimit_controller_->GetMaxFdUsage(),
+                 filesystem_stats->set_fd_max_usage);
+  SET_IF_PRESENT(rlimit_controller_->GetFdFailCount(),
+                 filesystem_stats->set_fd_fail_count);
   return Status::OK;
 }
 
@@ -128,7 +129,10 @@ Status FilesystemResourceHandler::DoUpdate(const ContainerSpec &spec) {
 
 void FilesystemResourceHandler::RecursiveFillDefaults(
     ContainerSpec *spec) const {
-  // TODO(kyurtsever) Define default value for fd_limit.
+  FilesystemSpec *filesystem = spec->mutable_filesystem();
+  if (!filesystem->has_fd_limit()) {
+    filesystem->set_fd_limit(::std::numeric_limits<int64>::max());
+  }
 }
 
 Status FilesystemResourceHandler::VerifyFullSpec(

@@ -33,10 +33,8 @@ class MockCpusetControllerFactory : public CpusetControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<CpusetController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD3(Create, ::util::StatusOr<CpusetController *>(
-                                 const string &hierarchy_path,
-                                 ::util::UnixUid uid,
-                                 ::util::UnixGid gid));
+  MOCK_CONST_METHOD1(Create, ::util::StatusOr<CpusetController *>(
+                                 const string &hierarchy_path));
 };
 
 typedef ::testing::StrictMock<MockCpusetControllerFactory>

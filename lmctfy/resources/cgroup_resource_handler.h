@@ -59,20 +59,19 @@ class CgroupResourceHandlerFactory : public ResourceHandlerFactory {
       ResourceType resource_type,
       CgroupFactory *cgroup_factory,
       const KernelApi *kernel);
-  virtual ~CgroupResourceHandlerFactory() {}
+  ~CgroupResourceHandlerFactory() override {}
 
   // Default implementation uses GetResourceHandler().
-  virtual ::util::StatusOr<ResourceHandler *> Get(
-      const string &container_name);
+  ::util::StatusOr<ResourceHandler *> Get(const string &container_name)
+      override;
 
   // Default implementation uses CreateResourceHandler() and then sets the
   // container spec through ResourceHandler's Update().
-  virtual ::util::StatusOr<ResourceHandler *> Create(
-      const string &container_name,
-      const ContainerSpec &spec);
+  ::util::StatusOr<ResourceHandler *> Create(
+      const string &container_name, const ContainerSpec &spec) override;
 
   // Default implementation is a no-op.
-  virtual ::util::Status InitMachine(const InitSpec &spec) {
+  ::util::Status InitMachine(const InitSpec &spec) override {
     return ::util::Status::OK;
   }
 
@@ -184,9 +183,9 @@ class CgroupResourceHandler : public ResourceHandler {
       ResourceType resource_type,
       const KernelApi *kernel,
       const ::std::vector<CgroupController *> &controllers);
-  virtual ~CgroupResourceHandler();
+  ~CgroupResourceHandler() override;
 
-  virtual ::util::Status CreateResource(const ContainerSpec &spec) final;
+  ::util::Status CreateResource(const ContainerSpec &spec) final;
 
   // TODO(kyurtsever) Make this method final and make DoUpdate,
   // FillWithDefaults and VerifyFullSpec methods pure virtual.
@@ -195,8 +194,8 @@ class CgroupResourceHandler : public ResourceHandler {
   // If you don't override Update you _have_ to override DoUpdate,
   // FillWithDefaults and VerifyFullSpec, and also your Spec _has_ to conform
   // to semantic described below (writing only to unset fields).
-  virtual ::util::Status Update(const ContainerSpec &spec,
-                                Container::UpdatePolicy policy);
+  ::util::Status Update(const ContainerSpec &spec,
+                        Container::UpdatePolicy policy) override;
   virtual ::util::Status Stats(Container::StatsType type,
                                ContainerStats *output) const = 0;
   // Fills all unset fields of @spec with values read from the machine.
@@ -206,10 +205,13 @@ class CgroupResourceHandler : public ResourceHandler {
       const EventSpec &spec, Callback1< ::util::Status> *callback) = 0;
 
   // Destroys all controllers and iff OK deletes this object.
-  virtual ::util::Status Destroy();
+  ::util::Status Destroy() override;
 
   // Enter the specified TIDs into all controllers.
-  virtual ::util::Status Enter(const ::std::vector<pid_t> &tids);
+  ::util::Status Enter(const ::std::vector<pid_t> &tids) override;
+
+  ::util::Status Delegate(::util::UnixUid uid,
+                          ::util::UnixGid gid) override;
 
  protected:
   // Perform any setup that only occurs at container creation time. This setup

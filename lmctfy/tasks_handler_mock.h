@@ -44,6 +44,8 @@ class MockTasksHandler : public TasksHandler {
 
   MOCK_METHOD0(Destroy, ::util::Status());
   MOCK_METHOD1(TrackTasks, ::util::Status(const ::std::vector<pid_t> &tids));
+  MOCK_METHOD2(Delegate, ::util::Status(::util::UnixUid uid,
+                                        ::util::UnixGid gid));
   MOCK_CONST_METHOD0(ListSubcontainers,
                      ::util::StatusOr< ::std::vector<string>>());
   MOCK_CONST_METHOD0(ListProcesses, ::util::StatusOr< ::std::vector<pid_t>>());

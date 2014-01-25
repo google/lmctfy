@@ -20,6 +20,8 @@ using ::std::string;
 #include <vector>
 
 #include "base/macros.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/task/statusor.h"
 #include "util/task/status.h"
 
@@ -76,6 +78,12 @@ class TasksHandler {
   // TrackTasks() where only some of the TIDs were successfully tracked leaves
   // a container in an undefined state.
   virtual ::util::Status TrackTasks(const ::std::vector<pid_t> &tids) = 0;
+
+  // Delegates ownership of this handler to the specified UNIX user and group.
+  // After this operation, the user/group can now TrackTasks and create children
+  // TasksHandlers.
+  virtual ::util::Status Delegate(::util::UnixUid uid,
+                                  ::util::UnixGid gid) = 0;
 
   // Lists the children containers present in this resource. This list is not
   // recursive (i.e.: it does not include the children of the children).

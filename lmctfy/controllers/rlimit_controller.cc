@@ -44,5 +44,9 @@ StatusOr<int64> RLimitController::GetMaxFdUsage() const {
   return GetParamInt(KernelFiles::RLimit::kFdMaxUsage);
 }
 
+StatusOr<int64> RLimitController::GetFdFailCount() const {
+  return GetParamInt(KernelFiles::RLimit::kFdFailCount);
+}
+
 }  // namespace lmctfy
 }  // namespace containers

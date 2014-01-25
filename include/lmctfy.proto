@@ -39,7 +39,10 @@ message ContainerSpec {
   optional MonitoringSpec monitoring = 6;
   optional FilesystemSpec filesystem = 7;
 
-  // Next ID: 10
+  // Virtual host environment.
+  optional VirtualHostSpec virtual_host = 10;
+
+  // Next ID: 11
 }
 
 // Specification for supported notification events.
@@ -84,6 +87,38 @@ message RunSpec {
   optional FdPolicy fd_policy = 1;
 }
 
+// VirtualHostSpec configures a host environment for the container.
+// An empty VirtualHostSpec is invalid.
+message VirtualHostSpec {
+  // UNIMPLEMENTED
+  // Hostname visible to the tasks running inside container.
+  optional string virtual_hostname = 1;
+
+  // TODO(jnagal) : virtual_hostname controls enabling of pid, uts, and user
+  // namespace. Spec details under discussion:
+  // 1. userid and groupid mappings - We want to control the uids and gids
+  // visible inside the host. We already have an owner and owner group which
+  // corresponds with the physical host uid/gid. Do we need another spec on what
+  // uid/gid does the task run as inside the host? The default would be owner
+  // uid and gid.
+  //
+  // 2. Mount config can go here too? We currently don't have chroot path as a
+  // spec. If we move chroot path to lmctfy spec, it has to be supported for
+  // the non-namespace case too. We can get around it by adding hosting type
+  // here [None, Namespaces].
+  //
+  // 3. Network config for namespaces can go here. But we need a way to
+  // distinguish it from the existing NetworkSpec. Putting network namespace
+  // config here makes it obvious that its the configuration for the virtual
+  // host. We might want to rename NetworkSpec to indicate that it is
+  // controlling the resources on physical host.
+  //
+  // 4. Do we need an option to have a network config without setting up a
+  // virtual host environment. We'll hold that back till we have a valid
+  // use-case for it. For now, virtual_hostname is required for specifying
+  // a network namespace config.
+}
+
 enum SchedulingLatency {
   // No latency guarantee.
   BEST_EFFORT = 1;
@@ -121,9 +156,9 @@ message CpuSpec {
 }
 
 message MemorySpec {
-  // UNIMPLEMENTED
-  // TODO(vmarmol): Make more concrete.
-  optional int64 eviction_priority = 1;
+  // Relative eviction priority in range of 0 - 10000. Higher value means
+  // higher priority and less likely to get evicted. Default value is 5000.
+  optional int32 eviction_priority = 1;
 
   // The amount of memory requested. Default is unlimited (-1).
   // Units: bytes.
@@ -366,6 +401,7 @@ message MemoryStats {
   optional int64 working_set = 6;
 }
 
+
 message DiskIoStats {
 }
 
@@ -376,4 +412,12 @@ message MonitoringStats {
 }
 
 message FilesystemStats {
+  // Number of fds in use.
+  optional int64 fd_usage = 1;
+
+  // Max fd usage observed in container's lifetime.
+  optional int64 fd_max_usage = 2;
+
+  // Number of times container failed to get an fd because it hit the limit.
+  optional int64 fd_fail_count = 3;
 }

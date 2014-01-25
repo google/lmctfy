@@ -58,6 +58,11 @@ Status CgroupTasksHandler::TrackTasks(const vector<pid_t> &tids) {
   return Status::OK;
 }
 
+Status CgroupTasksHandler::Delegate(::util::UnixUid uid,
+                                    ::util::UnixGid gid) {
+  return cgroup_controller_->Delegate(uid, gid);
+}
+
 StatusOr<vector<string>> CgroupTasksHandler::ListSubcontainers() const {
   vector<string> subdirs;
   RETURN_IF_ERROR(cgroup_controller_->GetSubcontainers(), &subdirs);
@@ -72,7 +77,23 @@ StatusOr<vector<string>> CgroupTasksHandler::ListSubcontainers() const {
 }
 
 StatusOr<vector<pid_t>> CgroupTasksHandler::ListProcesses() const {
-  return cgroup_controller_->GetProcesses();
+  // Get threads.
+  set<pid_t> tids;
+  for (pid_t tid : XRETURN_IF_ERROR(cgroup_controller_->GetThreads())) {
+    tids.insert(tid);
+  }
+
+  // Do not add the PIDs of visitor threads. Visitor threads show up in
+  // GetThreads() and its correspoding PID shows up in GetProcesses() even
+  // though it is not actually in the container.
+  vector<pid_t> pids;
+  for (pid_t pid : XRETURN_IF_ERROR(cgroup_controller_->GetProcesses())) {
+    if (tids.find(pid) != tids.end()) {
+      pids.push_back(pid);
+    }
+  }
+
+  return pids;
 }
 
 StatusOr<vector<pid_t>> CgroupTasksHandler::ListThreads() const {

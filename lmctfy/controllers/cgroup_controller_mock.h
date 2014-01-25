@@ -35,6 +35,8 @@ class MockCgroupController : public CgroupController {
 
   MOCK_METHOD0(Destroy, ::util::Status());
   MOCK_METHOD1(Enter, ::util::Status(pid_t tid));
+  MOCK_METHOD2(Delegate, ::util::Status(::util::UnixUid uid,
+                                        ::util::UnixGid gid));
   MOCK_METHOD1(SetChildrenLimit, ::util::Status(int64 limit));
   MOCK_CONST_METHOD0(GetThreads, ::util::StatusOr< ::std::vector<pid_t>>());
   MOCK_CONST_METHOD0(GetProcesses, ::util::StatusOr< ::std::vector<pid_t>>());

@@ -40,6 +40,8 @@
 #include "lmctfy/resources/monitoring_resource_handler.h"
 #include "lmctfy/tasks_handler.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors.h"
 #include "strings/split.h"
 #include "strings/substitute.h"
@@ -60,6 +62,10 @@ DEFINE_int32(lmctfy_ms_delay_between_kills, 250,
              "The number of milliseconds to wait between kill attempts.");
 
 using ::util::EventfdListener;
+using ::util::UnixGid;
+using ::util::UnixGidValue;
+using ::util::UnixUid;
+using ::util::UnixUidValue;
 using ::std::make_pair;
 using ::std::map;
 using ::std::queue;
@@ -327,21 +333,30 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
       // Destroy the resource handlers we already created.
       for (auto it = resource_handlers.begin(); it != resource_handlers.end();
            ++it) {
-        // Only destroy the resources we just created, not those we attached to
-        // one of our ancestors.
-        if (resolved_name == (*it)->container_name()) {
-          // A successful destroy deletes the handler so remove it from
-          // resource_handlers since that will delete all its elements..
-          if ((*it)->Destroy().ok()) {
-            it = resource_handlers.erase(it);
-            --it;
-          }
+        // A successful destroy deletes the handler so remove it from
+        // resource_handlers since that will delete all its elements..
+        if ((*it)->Destroy().ok()) {
+          it = resource_handlers.erase(it);
+          --it;
         }
       }
       return statusor.status();
     }
 
     resource_handlers.push_back(statusor.ValueOrDie());
+  }
+
+  // Delegate the container if it was specified.
+  UnixUid uid(spec.has_owner() ? UnixUid(spec.owner())
+                               : UnixUidValue::Invalid());
+  UnixGid gid(spec.has_owner_group() ? UnixGid(spec.owner_group())
+                                     : UnixGidValue::Invalid());
+  if (uid != UnixUidValue::Invalid() || gid != UnixGidValue::Invalid()) {
+    // Delegate the tasks handler and each of the resources.
+    RETURN_IF_ERROR(tasks_handler->Delegate(uid, gid));
+    for (ResourceHandler *handler : resource_handlers) {
+      RETURN_IF_ERROR(handler->Delegate(uid, gid));
+    }
   }
 
   return StatusOr<Container *>(new ContainerImpl(
@@ -623,6 +638,8 @@ StatusOr<pid_t> ContainerImpl::Run(const vector<string> &command,
 
 StatusOr<ContainerSpec> ContainerImpl::Spec() const {
   RETURN_IF_ERROR(Exists());
+
+  // TODO(vmarmol): Fill in the non-resource-specific parts of the spec.
 
   // Generate resource handlers.
   vector<ResourceHandler *> handlers = XRETURN_IF_ERROR(GetResourceHandlers());

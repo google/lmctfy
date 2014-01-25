@@ -31,18 +31,12 @@ using ::strings::Substitute;
 namespace util {
 namespace proc_mounts_internal {
 
-void ProcMountsParseLine(const char *line, ProcMountsData *data) {
+bool ProcMountsParseLine(const char *line, ProcMountsData *data) {
   // Ensure we have the number of elements we expect.
   const vector<string> elements = Split(line, " ");
   if (elements.size() != 6) {
     LOG(WARNING) << "Could not parse invalid mount line \"" << line << "\"";
-    data->device = "unknown";
-    data->mountpoint = "unknown";
-    data->type = "unknown";
-    data->options.clear();
-    data->fs_freq = 0;
-    data->fs_passno = 0;
-    return;
+    return false;
   }
 
   // Fill in information about this mount point.
@@ -58,6 +52,8 @@ void ProcMountsParseLine(const char *line, ProcMountsData *data) {
     LOG(WARNING) << "Unable to parse fs_passno from \"" << elements[5] << "\"";
     data->fs_passno = 0;
   }
+
+  return true;
 }
 
 }  // namespace proc_mounts_internal

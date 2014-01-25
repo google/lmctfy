@@ -72,9 +72,8 @@ TEST_F(CpusetControllerTest, SetsCpuMask) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kCPUs);
   CpuMask cpu_mask(0xF40FF);
   string expected_cpu_string = "0-7,14,16-19";
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, expected_cpu_string, kResFile,
-                                        NotNull(), NotNull()))
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile(expected_cpu_string, kResFile,
+                                              NotNull(), NotNull()))
       .WillOnce(Return(0));
   EXPECT_OK(controller_->SetCpuMask(cpu_mask));
 }
@@ -83,10 +82,9 @@ TEST_F(CpusetControllerTest, SetCpuMaskFails) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kCPUs);
   CpuMask cpu_mask(0xF40FF);
   string expected_cpu_string = "0-7,14,16-19";
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, expected_cpu_string, kResFile,
-                                        NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile(expected_cpu_string, kResFile,
+                                              NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   EXPECT_NOT_OK(controller_->SetCpuMask(cpu_mask));
 }
 
@@ -121,9 +119,8 @@ TEST_F(CpusetControllerTest, GetCpuMaskFails) {
 TEST_F(CpusetControllerTest, SetsMemoryNodes) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kMemNodes);
   string expected_memory_nodes_string = "0-1";
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, expected_memory_nodes_string,
-                                        kResFile, NotNull(), NotNull()))
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile(expected_memory_nodes_string,
+                                              kResFile, NotNull(), NotNull()))
       .WillOnce(Return(0));
   ResSet memory_nodes;
   memory_nodes.ReadSetString(expected_memory_nodes_string, ",");
@@ -133,10 +130,9 @@ TEST_F(CpusetControllerTest, SetsMemoryNodes) {
 TEST_F(CpusetControllerTest, SetMemoryNodesFails) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::CPUSet::kMemNodes);
   string expected_memory_nodes_string = "0-1";
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, expected_memory_nodes_string,
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile(expected_memory_nodes_string,
+                                              kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   ResSet memory_nodes;
   memory_nodes.ReadSetString(expected_memory_nodes_string, ",");
   EXPECT_NOT_OK(controller_->SetMemoryNodes(memory_nodes));

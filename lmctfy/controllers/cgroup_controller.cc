@@ -28,6 +28,8 @@
 
 using ::file::JoinPath;
 using ::util::FileLines;
+using ::util::UnixGid;
+using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::strings::SkipEmpty;
@@ -66,7 +68,40 @@ Status CgroupController::Destroy() {
 }
 
 Status CgroupController::Enter(pid_t tid) {
+  // No-op if the underlying cgroup is not owned by this controller.
+  if (!owns_cgroup_) {
+    return Status::OK;
+  }
+
   return SetParamInt(KernelFiles::CGroup::kTasks, tid);
+}
+
+Status CgroupController::Delegate(UnixUid uid, UnixGid gid) {
+  // No-op if the underlying cgroup is not owned by this controller.
+  if (!owns_cgroup_) {
+    return Status::OK;
+  }
+
+  // Chown the cgroup itself so that the user/group can create subcontainers.
+  if (kernel_->Chown(cgroup_path_, uid.value(), gid.value()) != 0) {
+    return Status(::util::error::INTERNAL,
+                  Substitute(
+                      "Failed to chown cgroup path \"$0\" to UID $1 and GID $2 "
+                      "with error: $3",
+                      cgroup_path_, uid.value(), gid.value(), errno));
+  }
+
+  // Chown the tasks file so that the user/group can enter the container.
+  const string kTasksFile = CgroupFilePath(KernelFiles::CGroup::kTasks);
+  if (kernel_->Chown(kTasksFile, uid.value(), gid.value()) != 0) {
+    return Status(::util::error::INTERNAL,
+                  Substitute(
+                      "Failed to chown tasks file \"$0\" to UID $1 and GID $2 "
+                      "with error: $3",
+                      kTasksFile, uid.value(), gid.value(), errno));
+  }
+
+  return Status::OK;
 }
 
 StatusOr<vector<pid_t>> CgroupController::GetThreads() const {
@@ -82,10 +117,20 @@ StatusOr<vector<string>> CgroupController::GetSubcontainers() const {
 }
 
 Status CgroupController::EnableCloneChildren() {
+  // No-op if the underlying cgroup is not owned by this controller.
+  if (!owns_cgroup_) {
+    return Status::OK;
+  }
+
   return SetParamBool(KernelFiles::CGroup::Children::kClone, true);
 }
 
 Status CgroupController::DisableCloneChildren() {
+  // No-op if the underlying cgroup is not owned by this controller.
+  if (!owns_cgroup_) {
+    return Status::OK;
+  }
+
   return SetParamBool(KernelFiles::CGroup::Children::kClone, false);
 }
 
@@ -106,9 +151,11 @@ Status CgroupController::SetParamString(const string &cgroup_file,
 }
 
 Status CgroupController::SetChildrenLimit(int64 value) {
+  // No-op if the underlying cgroup is not owned by this controller.
   if (!owns_cgroup_) {
     return Status::OK;
   }
+
   return SetParamInt(KernelFiles::CGroup::Children::kLimit, value);
 }
 
@@ -243,8 +290,7 @@ Status CgroupController::WriteStringToFile(const string &file_path,
                                            const string &value) const {
   bool open_error = false;
   bool write_error = false;
-  kernel_->SafeWriteResFileWithRetry(3, value, file_path, &open_error,
-                                     &write_error);
+  kernel_->SafeWriteResFile(value, file_path, &open_error, &write_error);
 
   // Check errors.
   if (open_error) {

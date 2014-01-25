@@ -100,6 +100,7 @@ check: $(TESTS)
 			./$$t --test_tmpdir=$(TEST_TMPDIR); \
 		done; \
 	rm -rf $(TEST_TMPDIR)
+	echo "All tests pass!"
 
 clean:
 	-rm -rf $(OUT_DIR)

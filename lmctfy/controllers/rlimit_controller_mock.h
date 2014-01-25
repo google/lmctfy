@@ -32,10 +32,8 @@ class MockRLimitControllerFactory : public RLimitControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<RLimitController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD3(Create, ::util::StatusOr<RLimitController *>(
-                                 const string &hierarchy_path,
-                                 ::util::UnixUid uid,
-                                 ::util::UnixGid gid));
+  MOCK_CONST_METHOD1(Create, ::util::StatusOr<RLimitController *>(
+                                 const string &hierarchy_path));
 };
 
 typedef ::testing::StrictMock<MockRLimitControllerFactory>
@@ -55,6 +53,7 @@ class MockRLimitController : public RLimitController {
   MOCK_CONST_METHOD0(GetFdLimit, ::util::StatusOr<int64>());
   MOCK_CONST_METHOD0(GetFdUsage, ::util::StatusOr<int64>());
   MOCK_CONST_METHOD0(GetMaxFdUsage, ::util::StatusOr<int64>());
+  MOCK_CONST_METHOD0(GetFdFailCount, ::util::StatusOr<int64>());
 };
 
 typedef ::testing::StrictMock<MockRLimitController> StrictMockRLimitController;

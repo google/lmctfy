@@ -26,10 +26,12 @@ using ::std::string;
 #include "system_api/kernel_api.h"
 #include "lmctfy/controllers/cgroup_factory.h"
 #include "lmctfy/controllers/eventfd_notifications.h"
+#include "lmctfy/util/proc_cgroup.h"
 #include "include/lmctfy.pb.h"
 #include "util/safe_types/unix_gid.h"
 #include "util/safe_types/unix_uid.h"
 #include "util/file_lines.h"
+#include "strings/substitute.h"
 #include "util/task/statusor.h"
 
 namespace containers {
@@ -65,14 +67,11 @@ class CgroupControllerFactoryInterface {
   //   hierarchy_path: The path in the cgroup hierarchy that this controller
   //       will manage. i.e.: /test is the hierarchy path for a CPU controller
   //       that manages /dev/cgroup/cpu/test
-  //   uid: The UnixUid of the user to chown the new cgroup to.
-  //   gid: The UnixGid of the group to chown the new cgroup to.
   // Return:
   //   StatusOr<ControllerType *>: Status of the operation. Iff OK, returns a
   //       new CgroupController. Caller owns the pointer.
   virtual ::util::StatusOr<ControllerType *> Create(
-      const string &hierarchy_path, ::util::UnixUid uid,
-      ::util::UnixGid gid) const = 0;
+      const string &hierarchy_path) const = 0;
 
   // Determines whether the specified hierarchy path exists in this cgroup
   // hierarchy.
@@ -84,6 +83,15 @@ class CgroupControllerFactoryInterface {
   // Return:
   //   bool: True iff, the specified path exists.
   virtual bool Exists(const string &hierarchy_path) const = 0;
+
+  // Detect the cgroup path of the specified TID.
+  //
+  // Arguments:
+  //   tid: The TID for which to get the cgroup path.
+  // Return:
+  //   StatusOr<string>: Status or the operation. Iff OK, the cgroup path is
+  //       populated.
+  virtual ::util::StatusOr<string> DetectCgroupPath(pid_t tid) const = 0;
 
   // Return the name of the cgroup hierarchy this factory creates controllers
   // for.
@@ -118,10 +126,10 @@ class CgroupControllerFactory
         kernel_(CHECK_NOTNULL(kernel)),
         owns_cgroup_(cgroup_factory->OwnsCgroup(hierarchy_type)),
         eventfd_notifications_(CHECK_NOTNULL(eventfd_notifications)) {}
-  virtual ~CgroupControllerFactory() {}
+  ~CgroupControllerFactory() override {}
 
-  virtual ::util::StatusOr<ControllerType *> Get(
-      const string &hierarchy_path) const {
+  ::util::StatusOr<ControllerType *> Get(const string &hierarchy_path)
+      const override {
     // Get the cgroup.
     ::util::StatusOr<string> statusor =
         cgroup_factory_->Get(hierarchy_type, hierarchy_path);
@@ -133,12 +141,11 @@ class CgroupControllerFactory
                               eventfd_notifications_);
   }
 
-  virtual ::util::StatusOr<ControllerType *> Create(
-      const string &hierarchy_path, ::util::UnixUid uid,
-      ::util::UnixGid gid) const {
+  ::util::StatusOr<ControllerType *> Create(const string &hierarchy_path)
+      const override {
     // Create the cgroup.
     ::util::StatusOr<string> statusor =
-        cgroup_factory_->Create(hierarchy_type, hierarchy_path, uid, gid);
+        cgroup_factory_->Create(hierarchy_type, hierarchy_path);
     if (!statusor.ok()) {
       return statusor.status();
     }
@@ -147,13 +154,33 @@ class CgroupControllerFactory
                               eventfd_notifications_);
   }
 
-  virtual bool Exists(const string &hierarchy_path) const {
+  bool Exists(const string &hierarchy_path) const override {
     // If a Get() on the hierarchy succeeds, the hierarchy is ready and thus
     // exists.
     return cgroup_factory_->Get(hierarchy_type, hierarchy_path).ok();
   }
 
-  virtual string HierarchyName() const {
+  ::util::StatusOr<string> DetectCgroupPath(pid_t tid) const override {
+    // Get the name of the subsystem (cgroup hierarchy).
+    const string kSubsystemName = HierarchyName();
+
+    // Find path for the specified subsystem.
+    for (const ProcCgroupData &cgroup : ProcCgroup(tid)) {
+      // Check all co-mounted subsystems.
+      auto it = ::std::find(cgroup.subsystems.begin(), cgroup.subsystems.end(),
+                            kSubsystemName);
+      if (it != cgroup.subsystems.end()) {
+        return cgroup.hierarchy_path;
+      }
+    }
+
+    return ::util::Status(
+        ::util::error::NOT_FOUND,
+        ::strings::Substitute("Could not detect the container for TID \"$0\"",
+                              tid));
+  }
+
+  string HierarchyName() const override {
     return cgroup_factory_->GetHierarchyName(hierarchy_type);
   }
 
@@ -214,6 +241,17 @@ class CgroupController {
   // Return:
   //   Status: Status of the operation. Iff OK, the operation was successful.
   virtual ::util::Status Enter(pid_t tid);
+
+  // Delegates the controller to the specified user and group. This user/group
+  // can now enter into this cgroup and create children cgroups.
+  //
+  // Arguments:
+  //   uid: UNIX user ID of the user to delegate to.
+  //   uid: UNIX group ID of the group to delegate to.
+  // Return:
+  //   Status: Status of the operation. Iff OK, the operation was successful.
+  virtual ::util::Status Delegate(::util::UnixUid uid,
+                                  ::util::UnixGid gid);
 
   // Sets the limit in the number of children for this cgroup
   //

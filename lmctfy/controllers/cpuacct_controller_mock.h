@@ -31,10 +31,8 @@ class MockCpuAcctControllerFactory : public CpuAcctControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<CpuAcctController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD3(Create, ::util::StatusOr<CpuAcctController *>(
-                                 const string &hierarchy_path,
-                                 ::util::UnixUid uid,
-                                 ::util::UnixGid gid));
+  MOCK_CONST_METHOD1(Create, ::util::StatusOr<CpuAcctController *>(
+                                 const string &hierarchy_path));
 };
 
 typedef ::testing::StrictMock<MockCpuAcctControllerFactory>

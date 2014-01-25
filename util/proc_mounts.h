@@ -48,7 +48,7 @@ class ProcMountsData {
 
 namespace proc_mounts_internal {
 
-void ProcMountsParseLine(const char *line, ProcMountsData *data);
+bool ProcMountsParseLine(const char *line, ProcMountsData *data);
 
 }  // namespace proc_mounts_internal
 

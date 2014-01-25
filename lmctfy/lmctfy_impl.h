@@ -77,14 +77,14 @@ class ContainerApiImpl : public ContainerApi {
       const ::std::vector<ResourceHandlerFactory *> &resource_factories,
       const KernelApi *kernel, ActiveNotifications *active_notifications,
       EventFdNotifications *eventfd_notifications);
-  virtual ~ContainerApiImpl();
+  ~ContainerApiImpl() override;
 
   // These methods are documented in //include/lmctfy.h
-  virtual ::util::StatusOr<Container *> Get(StringPiece container_name) const;
-  virtual ::util::StatusOr<Container *> Create(StringPiece container_name,
-                                               const ContainerSpec &spec) const;
-  virtual ::util::Status Destroy(Container *container) const;
-  virtual ::util::StatusOr<string> Detect(pid_t tid) const;
+  ::util::StatusOr<Container *> Get(StringPiece container_name) const override;
+  ::util::StatusOr<Container *> Create(
+      StringPiece container_name, const ContainerSpec &spec) const override;
+  ::util::Status Destroy(Container *container) const override;
+  ::util::StatusOr<string> Detect(pid_t tid) const override;
 
   // Initialize lmctfy on this machine. This should only be called once at
   // machine boot and MUST be done before any container is returned. At this
@@ -149,34 +149,36 @@ class ContainerImpl : public Container {
                 const KernelApi *kernel,
                 SubProcessFactory *subprocess_factory,
                 ActiveNotifications *active_notifications);
-  virtual ~ContainerImpl();
+  ~ContainerImpl() override;
 
-  virtual ::util::Status Update(const ContainerSpec &spec, UpdatePolicy policy);
+  ::util::Status Update(const ContainerSpec &spec,
+                        UpdatePolicy policy) override;
 
   // Destroys container and all resource handlers. Also kills all processes
   // inside this container. Returns OK iff successful. Does NOT delete the
   // object.
-  virtual ::util::Status Destroy();
+  ::util::Status Destroy() override;
 
   // These methods are documented in //include/lmctfy.h
-  virtual ::util::Status Enter(const ::std::vector<pid_t> &tids);
-  virtual ::util::StatusOr<ContainerSpec> Spec() const;
-  virtual ::util::StatusOr<pid_t> Run(const ::std::vector<string> &command,
-                                      const RunSpec &spec);
-  virtual ::util::Status Exec(const ::std::vector<string> &command);
-  virtual ::util::StatusOr< ::std::vector<Container *>> ListSubcontainers(
-      ListPolicy policy) const;
-  virtual ::util::StatusOr< ::std::vector<pid_t>> ListThreads(
-      ListPolicy policy) const;
-  virtual ::util::StatusOr< ::std::vector<pid_t>> ListProcesses(
-      ListPolicy policy) const;
-  virtual ::util::Status Pause();
-  virtual ::util::Status Resume();
-  virtual ::util::StatusOr<ContainerStats> Stats(StatsType type) const;
-  virtual ::util::StatusOr<NotificationId> RegisterNotification(
-      const EventSpec &spec, EventCallback *callback);
-  virtual ::util::Status UnregisterNotification(NotificationId notification_id);
-  virtual ::util::Status KillAll();
+  ::util::Status Enter(const ::std::vector<pid_t> &tids) override;
+  ::util::StatusOr<ContainerSpec> Spec() const override;
+  ::util::StatusOr<pid_t> Run(const ::std::vector<string> &command,
+                                      const RunSpec &spec) override;
+  ::util::Status Exec(const ::std::vector<string> &command) override;
+  ::util::StatusOr< ::std::vector<Container *>> ListSubcontainers(
+      ListPolicy policy) const override;
+  ::util::StatusOr< ::std::vector<pid_t>> ListThreads(
+      ListPolicy policy) const override;
+  ::util::StatusOr< ::std::vector<pid_t>> ListProcesses(
+      ListPolicy policy) const override;
+  ::util::Status Pause() override;
+  ::util::Status Resume() override;
+  ::util::StatusOr<ContainerStats> Stats(StatsType type) const override;
+  ::util::StatusOr<NotificationId> RegisterNotification(
+      const EventSpec &spec, EventCallback *callback) override;
+  ::util::Status UnregisterNotification(NotificationId notification_id)
+      override;
+  ::util::Status KillAll() override;
 
   // Listable types for any given container.
   enum ListType {

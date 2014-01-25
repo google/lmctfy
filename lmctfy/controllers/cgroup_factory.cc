@@ -35,8 +35,6 @@
 using ::file::JoinPath;
 using ::util::ProcMounts;
 using ::util::ProcMountsData;
-using ::util::UnixGid;
-using ::util::UnixUid;
 using ::std::make_pair;
 using ::std::map;
 using ::std::max;
@@ -178,8 +176,7 @@ StatusOr<string> CgroupFactory::Get(CgroupHierarchy type,
 }
 
 StatusOr<string> CgroupFactory::Create(CgroupHierarchy type,
-                                       const string &hierarchy_path,
-                                       UnixUid uid, UnixGid gid) const {
+                                       const string &hierarchy_path) const {
   // Creating a controller that does not own the cgroup mount is like a Get().
   if (!OwnsCgroup(type)) {
     return Get(type, hierarchy_path);

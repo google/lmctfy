@@ -19,8 +19,9 @@
 namespace util {
 namespace file_lines_internal {
 
-void FileLinesParseToStringPiece(const char *parsed_line, StringPiece *data) {
+bool FileLinesParseToStringPiece(const char *parsed_line, StringPiece *data) {
   data->set(parsed_line);
+  return true;
 }
 
 }  // namespace file_lines_internal

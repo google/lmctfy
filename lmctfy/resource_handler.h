@@ -24,6 +24,8 @@ using ::std::string;
 #include "base/macros.h"
 #include "include/lmctfy.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/task/statusor.h"
 #include "util/task/status.h"
 
@@ -133,6 +135,12 @@ class ResourceHandler {
 
   // Enters the specified TIDs into this Resource Handler.
   virtual ::util::Status Enter(const ::std::vector<pid_t> &tids) = 0;
+
+  // Delegates ownership of this resource to the specified UNIX user and group.
+  // After this operation, the user/group can now enter the Resource Handler and
+  // create children Resource Handlers.
+  virtual ::util::Status Delegate(::util::UnixUid uid,
+                                  ::util::UnixGid gid) = 0;
 
   // Registers a notification for the specified event.
   //

@@ -70,6 +70,10 @@ class RLimitController : public CgroupController {
   // Get the max number of FDs used in this controller's lifetime.
   virtual ::util::StatusOr<int64> GetMaxFdUsage() const;
 
+  // Get the number of times container failed to get an FD because
+  // it hit the limit.
+  virtual ::util::StatusOr<int64> GetFdFailCount() const;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(RLimitController);
 };

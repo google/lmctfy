@@ -41,6 +41,7 @@ using ::std::string;
 #include "lmctfy/cli/commands/run.h"
 #include "lmctfy/cli/commands/spec.h"
 #include "lmctfy/cli/commands/stats.h"
+#include "lmctfy/cli/commands/update.h"
 #include "lmctfy/cli/output_map.h"
 #include "include/lmctfy.h"
 #include "strings/substitute.h"
@@ -98,6 +99,7 @@ static void RegisterCommands() {
   RegisterRunCommand();
   RegisterSpecCommand();
   RegisterStatsCommand();
+  RegisterUpdateCommand();
 }
 
 static bool ParseShortFlags(int *argc, char ***argv) {
@@ -109,36 +111,55 @@ static bool ParseShortFlags(int *argc, char ***argv) {
   for (size_t i = 1; i < *argc; ++i) {
     char *cur_arg = (*argv)[i];
 
-    if (cur_arg[0] != '-') {
-      // Non-flag argument, keep it.
+    // Keep all non-flag arguments.
+    if ((cur_arg[0] != '-') || (strlen(cur_arg) < 2)) {
       new_argv[new_argc++] = cur_arg;
-    } else if (strcmp(cur_arg, "-v") == 0) {
-      FLAGS_lmctfy_version = true;
-    } else if (strcmp(cur_arg, "-V") == 0) {
-      FLAGS_lmctfy_version = true;
-    } else if (strcmp(cur_arg, "-r") == 0) {
-      FLAGS_lmctfy_recursive = true;
-    } else if (strcmp(cur_arg, "-f") == 0) {
-      FLAGS_lmctfy_force = true;
-    } else if (strcmp(cur_arg, "-h") == 0) {
-      FLAGS_lmctfy_print_help = true;
-    } else if (strcmp(cur_arg, "-n") == 0) {
-      FLAGS_lmctfy_no_wait = true;
-    } else if (strcmp(cur_arg, "-b") == 0) {
-      FLAGS_lmctfy_binary = true;
-    } else if (strcmp(cur_arg, "-c") == 0) {
-      // Fail if there is no other arg available.
-      if (*argc - 1 == i) {
-        fprintf(stderr, "Config file not specified with -c flag.\n");
-        return false;
-      }
+      continue;
+    }
 
-      // Copy the next value.
-      ++i;
-      FLAGS_lmctfy_config = (*argv)[i];
-    } else {
-      // Not a short flag, copy the argument.
-      new_argv[new_argc++] = cur_arg;
+    switch (cur_arg[1]) {
+      case 'b':
+        FLAGS_lmctfy_binary = true;
+        break;
+      case 'c':
+        // Fail if there is no other arg available.
+        if (*argc - 1 == i) {
+          fprintf(stderr, "Config file not specified with -c flag.\n");
+          return false;
+        }
+
+        // Copy the next value.
+        ++i;
+        FLAGS_lmctfy_config = (*argv)[i];
+        break;
+      case 'f':
+        FLAGS_lmctfy_force = true;
+        break;
+      case 'h':
+        FLAGS_lmctfy_print_help = true;
+        break;
+      case 'l':
+        FLAGS_lmctfy_output_style = "long";
+        break;
+      case 'n':
+        FLAGS_lmctfy_no_wait = true;
+        break;
+      case 'p':
+        FLAGS_lmctfy_output_style = "pairs";
+        break;
+      case 'r':
+        FLAGS_lmctfy_recursive = true;
+        break;
+      case 'v':
+        FLAGS_lmctfy_output_style = "values";
+        break;
+      case 'V':
+        FLAGS_lmctfy_version = true;
+        break;
+      default:
+        // Not a short flag, copy the argument.
+        new_argv[new_argc++] = cur_arg;
+        break;
     }
   }
 

@@ -59,10 +59,14 @@
 //   string email;
 // };
 //
-// void ParseUserData(const char *line, UserData *data) {
+// bool ParseUserData(const char *line, UserData *data) {
 //   vector<string> elements = Split(line, " ");
+//   if (elements.size() != 2) {
+//     return false;
+//   }
 //   data->name = elements[0];
 //   data->email = elements[0];
+//   return true;
 // }
 //
 // typedef TypedFileLines<UserData, ParseUserData> Users;
@@ -79,6 +83,11 @@
 //
 // Users can now we used the same way as FileLines above.
 // FileLines is implemented in terms of TypedFileLines.
+//
+// The parsing function takes the line that was read as well as a pointer to the
+// data being output. The return of the function determines whether to use the
+// parsed output, if the return is false the line is skipped when providing
+// output to the user.
 
 #ifndef UTIL_FILE_LINES_H_
 #define UTIL_FILE_LINES_H_
@@ -104,7 +113,7 @@ namespace util {
 // Class is thread-hostile. All copied instances of the iterator share the same
 // file pointer and any of those advance the file pointer for all copies.
 template <typename DataType,
-          void (*ParseFunction)(const char *, DataType *),
+          bool (*ParseFunction)(const char *, DataType *),
           size_t buffer_size = size_t(4 << 10)>
 class TypedFileLinesIterator {
  public:
@@ -181,17 +190,19 @@ class TypedFileLinesIterator {
   void ReadNextLine() {
     CHECK(cfile_ != nullptr) << "Can't increment the past-the-end iterator";
 
-    // Read the line.
-    if (::system_api::GlobalLibcFsApi()->FGetS(line_.get(), buffer_size,
-                                               cfile_) == nullptr) {
-      // No more lines, make into end() iterator
-      cfile_ = nullptr;
-      line_.reset();
-      return;
-    }
+    // Try to parse lines until one is deemed usable by the parse function or we
+    // reach the end of file.
+    do {
+      if (::system_api::GlobalLibcFsApi()->FGetS(line_.get(), buffer_size,
+                                                 cfile_) == nullptr) {
+        // No more lines, make into end() iterator
+        cfile_ = nullptr;
+        line_.reset();
+        return;
+      }
 
-    // Parse the DataType from the line.
-    ParseFunction(line_.get(), &data_);
+      // Parse the DataType from the line.
+    } while (!ParseFunction(line_.get(), &data_) && cfile_ != nullptr);
   }
 
   // The underlying data from the parsed file line.
@@ -206,7 +217,7 @@ class TypedFileLinesIterator {
 };
 
 template <typename DataType,
-          void (*ParseFunction)(const char *, DataType *),
+          bool (*ParseFunction)(const char *, DataType *),
           size_t buffer_size>
 bool operator==(
     const TypedFileLinesIterator<DataType, ParseFunction, buffer_size> &left,
@@ -215,7 +226,7 @@ bool operator==(
 }
 
 template <typename DataType,
-          void (*ParseFunction)(const char *, DataType *),
+          bool (*ParseFunction)(const char *, DataType *),
           size_t buffer_size>
 bool operator!=(
     const TypedFileLinesIterator<DataType, ParseFunction, buffer_size> &left,
@@ -231,7 +242,7 @@ bool operator!=(
 //
 // Class is thread-compatible.
 template <typename DataType,
-          void (*ParseFunction)(const char *, DataType *),
+          bool (*ParseFunction)(const char *, DataType *),
           size_t buffer_size = size_t(4 << 10)>
 class TypedFileLines {
  public:
@@ -294,7 +305,7 @@ class TypedFileLines {
 
 namespace file_lines_internal {
 
-void FileLinesParseToStringPiece(const char *parsed_line, StringPiece *data);
+bool FileLinesParseToStringPiece(const char *parsed_line, StringPiece *data);
 
 }  // namespace file_lines_internal
 

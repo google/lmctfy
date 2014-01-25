@@ -29,8 +29,6 @@ using ::std::string;
 #include "lmctfy/controllers/cpuset_controller.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
-#include "util/safe_types/unix_gid.h"
-#include "util/safe_types/unix_uid.h"
 #include "util/cpu_mask.h"
 #include "util/errors.h"
 #include "strings/substitute.h"
@@ -38,10 +36,6 @@ using ::std::string;
 #include "util/task/codes.pb.h"
 
 using ::file::JoinPath;
-using ::util::UnixGid;
-using ::util::UnixGidValue;
-using ::util::UnixUid;
-using ::util::UnixUidValue;
 using ::util::CpuMask;
 using ::std::unique_ptr;
 using ::std::vector;
@@ -237,16 +231,11 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::CreateResourceHandler(
     cpu_hierarchy_path = JoinPath(cpu_hierarchy_path, base_container_name);
   }
 
-  const UnixUid kOwner(spec.owner());
-  const UnixGid kOwnerGroup(spec.owner_group());
-
   CpuController *cpu_controller = nullptr;
-  RETURN_IF_ERROR(
-      cpu_controller_factory_->Create(cpu_hierarchy_path, kOwner, kOwnerGroup),
-      &cpu_controller);
+  RETURN_IF_ERROR(cpu_controller_factory_->Create(cpu_hierarchy_path),
+                  &cpu_controller);
   CpuAcctController *cpuacct_controller = nullptr;
-  RETURN_IF_ERROR(cpuacct_controller_factory_->Create(cpu_hierarchy_path,
-                                                      kOwner, kOwnerGroup),
+  RETURN_IF_ERROR(cpuacct_controller_factory_->Create(cpu_hierarchy_path),
                   &cpuacct_controller);
 
   // Only create cpuset if available.
@@ -254,8 +243,7 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::CreateResourceHandler(
   if (cpuset_controller_factory_ != nullptr) {
     // Cpuset is flat.
     cpuset_controller = XRETURN_IF_ERROR(cpuset_controller_factory_->Create(
-        JoinPath("/", file::Basename(base_container_name).ToString()), kOwner,
-        kOwnerGroup));
+        JoinPath("/", file::Basename(base_container_name).ToString())));
   }
 
   return new CpuResourceHandler(container_name, kernel_, cpu_controller,
@@ -267,15 +255,12 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
   // Create NUMA cpuset cgroups based on InitSpec.
   // Initialize histograms: CpuAcctController::EnableSchedulerHistograms()
 
-  const UnixUid kRoot(UnixUidValue::Root());
-  const UnixGid kRootGroup(UnixGidValue::Root());
-
   // Create the batch subsystem in cpu and cpuacct. It is okay if they already
   // exist since InitMachine() should be idempotent.
   unique_ptr<CpuController> cpu_controller;
   {
     StatusOr<CpuController *> statusor =
-        cpu_controller_factory_->Create(kBatchSubsystem, kRoot, kRootGroup);
+        cpu_controller_factory_->Create(kBatchSubsystem);
     if (statusor.ok()) {
       cpu_controller.reset(statusor.ValueOrDie());
     } else if (statusor.status().error_code() !=
@@ -289,7 +274,7 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
   unique_ptr<CpuAcctController> cpuacct_controller;
   {
     StatusOr<CpuAcctController *> statusor =
-        cpuacct_controller_factory_->Create(kBatchSubsystem, kRoot, kRootGroup);
+        cpuacct_controller_factory_->Create(kBatchSubsystem);
     if (statusor.ok()) {
       cpuacct_controller.reset(statusor.ValueOrDie());
     } else if (statusor.status().error_code() !=
@@ -466,7 +451,8 @@ Status CpuResourceHandler::Stats(Container::StatsType type,
     StatusOr<vector<CpuHistogramData *> *> statusor =
         cpuacct_controller_->GetSchedulerHistograms();
     if (statusor.ok()) {
-      vector<CpuHistogramData *> *histograms = statusor.ValueOrDie();
+      unique_ptr<vector<CpuHistogramData *>> histograms(statusor.ValueOrDie());
+      ElementDeleter d(histograms.get());
       for (auto histogram_data : *histograms) {
         HistogramMap *histogram = cpu_stats->add_histograms();
         histogram->set_type(histogram_data->type);
@@ -476,7 +462,6 @@ Status CpuResourceHandler::Stats(Container::StatsType type,
           bucket->set_value(data.second);
         }
       }
-      STLDeleteElements(histograms);
     } else if (statusor.status().error_code() != ::util::error::NOT_FOUND) {
       return statusor.status();
     }

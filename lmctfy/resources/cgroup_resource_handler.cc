@@ -25,8 +25,8 @@ using ::std::string;
 #include "lmctfy/controllers/cgroup_controller.h"
 #include "lmctfy/controllers/cgroup_factory.h"
 #include "util/errors.h"
-#include "strings/substitute.h"
 #include "strings/strcat.h"
+#include "strings/substitute.h"
 #include "util/gtl/stl_util.h"
 #include "util/task/status.h"
 
@@ -137,6 +137,16 @@ Status CgroupResourceHandler::Enter(const vector<pid_t> &tids) {
       }
       some_tracked = true;
     }
+  }
+
+  return Status::OK;
+}
+
+Status CgroupResourceHandler::Delegate(::util::UnixUid uid,
+                                       ::util::UnixGid gid) {
+  // Delegate all the controllers.
+  for (const auto &type_controller_pair : controllers_) {
+    RETURN_IF_ERROR(type_controller_pair.second->Delegate(uid, gid));
   }
 
   return Status::OK;

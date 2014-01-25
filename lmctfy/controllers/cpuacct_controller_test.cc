@@ -140,27 +140,20 @@ TEST_F(CpuAcctControllerTest, SetupHistograms) {
   const string kResFile = JoinPath(kMountPoint,
                                    KernelFiles::CPUAcct::kHistogram);
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_,
-                                        "queue_self " + string(kQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("queue_self " + string(kQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_,
-                                        "queue_other " + string(kQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("queue_other " + string(kQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "oncpu " + string(kNonQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("oncpu " + string(kNonQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "serve " + string(kNonQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("serve " + string(kNonQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "sleep " + string(kNonQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("sleep " + string(kNonQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetupHistograms().ok());
 }
 
@@ -168,46 +161,38 @@ TEST_F(CpuAcctControllerTest, SetupHistogramsFails) {
   const string kResFile = JoinPath(kMountPoint,
                                    KernelFiles::CPUAcct::kHistogram);
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_,
-                                        "queue_self " + string(kQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("queue_self " + string(kQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "oncpu " + string(kNonQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("oncpu " + string(kNonQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "serve " + string(kNonQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("serve " + string(kNonQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_,
-                                        "queue_other " + string(kQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile("queue_other " + string(kQueueBuckets), kResFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
 
   // Fail the last call.
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "sleep " + string(kNonQueueBuckets),
-                                        kResFile, NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+              SafeWriteResFile("sleep " + string(kNonQueueBuckets), kResFile,
+                               NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
 
   EXPECT_FALSE(controller_->SetupHistograms().ok());
 }
 
 TEST_F(CpuAcctControllerTest, EnableSchedulerHistograms) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "1", kProcHistogramPath, NotNull(),
-                                        NotNull()))
+              SafeWriteResFile("1", kProcHistogramPath, NotNull(), NotNull()))
       .WillOnce(Return(0));
   EXPECT_TRUE(controller_->EnableSchedulerHistograms().ok());
 }
 
 TEST_F(CpuAcctControllerTest, EnableSchedulerHistogramsFails) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "1", kProcHistogramPath, NotNull(),
-                                        NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+              SafeWriteResFile("1", kProcHistogramPath, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   EXPECT_FALSE(controller_->EnableSchedulerHistograms().ok());
 }
 

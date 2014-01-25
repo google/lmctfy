@@ -87,9 +87,8 @@ TEST_F(MemoryControllerTest, SetLimit) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kLimitInBytes);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("42", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
 
   EXPECT_TRUE(controller_->SetLimit(Bytes(42)).ok());
 }
@@ -98,9 +97,8 @@ TEST_F(MemoryControllerTest, SetInfiniteLimit) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kLimitInBytes);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "-1", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("-1", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
 
   EXPECT_TRUE(controller_->SetLimit(Bytes(kint64max)).ok());
 }
@@ -109,9 +107,9 @@ TEST_F(MemoryControllerTest, SetLimitFails) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kLimitInBytes);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
 
   EXPECT_FALSE(controller_->SetLimit(Bytes(42)).ok());
 }
@@ -120,9 +118,8 @@ TEST_F(MemoryControllerTest, SetSoftLimit) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kSoftLimitInBytes);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("42", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
 
   EXPECT_TRUE(controller_->SetSoftLimit(Bytes(42)).ok());
 }
@@ -131,9 +128,8 @@ TEST_F(MemoryControllerTest, SetInfiniteSoftLimit) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kSoftLimitInBytes);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "-1", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("-1", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
 
   EXPECT_TRUE(controller_->SetSoftLimit(Bytes(kint64max)).ok());
 }
@@ -142,9 +138,9 @@ TEST_F(MemoryControllerTest, SetSoftLimitFails) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kSoftLimitInBytes);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
 
   EXPECT_FALSE(controller_->SetSoftLimit(Bytes(42)).ok());
 }
@@ -153,9 +149,8 @@ TEST_F(MemoryControllerTest, SetStalePageAge) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kStalePageAge);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("42", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
 
   EXPECT_OK(controller_->SetStalePageAge(42));
 }
@@ -164,11 +159,32 @@ TEST_F(MemoryControllerTest, SetStalePageAgeFails) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kStalePageAge);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
 
   EXPECT_NOT_OK(controller_->SetStalePageAge(42));
+}
+
+TEST_F(MemoryControllerTest, SetOomScore) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kOomScoreBadness);
+
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("42", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
+
+  EXPECT_OK(controller_->SetOomScore(42));
+}
+
+TEST_F(MemoryControllerTest, SetOomScoreFails) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kOomScoreBadness);
+
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
+
+  EXPECT_NOT_OK(controller_->SetOomScore(42));
 }
 
 TEST_F(MemoryControllerTest, GetLimit) {
@@ -277,6 +293,42 @@ TEST_F(MemoryControllerTest, GetStalePageAgeFails) {
       .WillOnce(Return(false));
 
   EXPECT_NOT_OK(controller_->GetStalePageAge());
+}
+
+TEST_F(MemoryControllerTest, GetOomScore) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kOomScoreBadness);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("42"), Return(true)));
+
+  StatusOr<unsigned int> statusor = controller_->GetOomScore();
+  ASSERT_TRUE(statusor.ok());
+  EXPECT_EQ(42, statusor.ValueOrDie());
+}
+
+TEST_F(MemoryControllerTest, GetOomScoreNotFound) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kOomScoreBadness);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+
+  EXPECT_ERROR_CODE(NOT_FOUND, controller_->GetOomScore());
+}
+
+TEST_F(MemoryControllerTest, GetOomScoreFails) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kOomScoreBadness);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(Return(false));
+
+  EXPECT_NOT_OK(controller_->GetOomScore());
 }
 
 TEST_F(MemoryControllerTest, GetUsage) {

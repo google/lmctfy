@@ -37,11 +37,9 @@ class MockCgroupFactory : public CgroupFactory {
   MOCK_CONST_METHOD2(Get,
                      ::util::StatusOr<string>(CgroupHierarchy type,
                                               const string &hierarchy_path));
-  MOCK_CONST_METHOD4(Create,
+  MOCK_CONST_METHOD2(Create,
                      ::util::StatusOr<string>(CgroupHierarchy type,
-                                              const string &hierarchy_path,
-                                              ::util::UnixUid uid,
-                                              ::util::UnixGid gid));
+                                              const string &hierarchy_path));
   MOCK_CONST_METHOD1(OwnsCgroup, bool(CgroupHierarchy type));
   MOCK_METHOD1(Mount, ::util::Status(const CgroupMount &cgroup));
   MOCK_CONST_METHOD1(IsMounted, bool(CgroupHierarchy type));

@@ -121,7 +121,7 @@ string ConsumeLine(string *text, int limit) {
   // at the limit). If the text is longer than the limit, just truncate at the
   // limit.
   size_t last_space = text->find_last_of(' ', limit);
-  size_t cutoff = last_space != 0 ? last_space : limit;
+  size_t cutoff = last_space != string::npos ? last_space : limit;
   string current_line = text->substr(0, cutoff);
 
   // Erase the current_line (and the space).
@@ -161,7 +161,7 @@ void PrintUsage(FILE *out, const CommandVector *commands) {
   fprintf(
       out,
       "\n"
-      "  Common Flags:\n"
+      "  Common Global Flags:\n"
       "    -V                Print lmctfy version.\n"
       "    -h                Print lmctfy help.\n"
       "    -l                Set the data output style to long\n"

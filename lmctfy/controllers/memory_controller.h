@@ -71,6 +71,10 @@ class MemoryController : public CgroupController {
   // counted in kstaled scan cycles.
   virtual ::util::Status SetStalePageAge(uint64 scan_cycles);
 
+  // Sets the OOM score of the cgroup. Higher scores are of higher priority and
+  // thus less likely to OOM.
+  virtual ::util::Status SetOomScore(int64 oom_score);
+
   // All statistics return NOT_FOUND if they were not found or available.
 
   // Gets the working set of this cgroup. This is the currently hot memory.
@@ -93,8 +97,11 @@ class MemoryController : public CgroupController {
   // Gets the reserved memory or "soft limit" for this cgroup.
   virtual ::util::StatusOr< ::util::Bytes> GetSoftLimit() const;
 
-  // Get the age at which pages are considered stale in this cgroup.
+  // Gets the age at which pages are considered stale in this cgroup.
   virtual ::util::StatusOr<uint64> GetStalePageAge() const;
+
+  // Gets the OOM score of this cgroup.
+  virtual ::util::StatusOr<int64> GetOomScore() const;
 
   // Register a notification for an OOM event. The handler for the event is
   // returned on success.

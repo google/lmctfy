@@ -95,10 +95,7 @@ static const char kCgroupMemoryLimitPath[] =
 
 class CgroupControllerFactoryTest : public ::testing::Test {
  public:
-  CgroupControllerFactoryTest()
-      : kBools({true, false}),
-        root_uid_(UnixUidValue::Root()),
-        root_gid_(UnixGidValue::Root()) {}
+  CgroupControllerFactoryTest() : kBools({true, false}) {}
 
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
@@ -119,13 +116,12 @@ class CgroupControllerFactoryTest : public ::testing::Test {
 
  protected:
   const vector<bool> kBools;
-  const UnixUid root_uid_;
-  const UnixGid root_gid_;
 
   unique_ptr<MockEventFdNotifications> mock_eventfd_notifications_;
   unique_ptr<KernelAPIMock> mock_kernel_;
   unique_ptr<MockCgroupFactory> mock_cgroup_factory_;
   unique_ptr<TestMemoryControllerFactory> factory_;
+  ::util::FileLinesTestUtil mock_file_lines_;
 };
 
 TEST_F(CgroupControllerFactoryTest, GetSuccess) {
@@ -159,12 +155,11 @@ TEST_F(CgroupControllerFactoryTest, CreateSuccess) {
   for (bool owns_cgroup : kBools) {
     SetupFactory(owns_cgroup);
 
-    EXPECT_CALL(*mock_cgroup_factory_,
-                Create(kType, kContainerName, root_uid_, root_gid_))
+    EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
         .WillRepeatedly(Return(string(kCgroupPath)));
 
     StatusOr<TestMemoryController *> statusor =
-        factory_->Create(kContainerName, root_uid_, root_gid_);
+        factory_->Create(kContainerName);
     ASSERT_TRUE(statusor.ok());
     EXPECT_NE(nullptr, statusor.ValueOrDie());
     unique_ptr<CgroupController> controller(statusor.ValueOrDie());
@@ -177,12 +172,10 @@ TEST_F(CgroupControllerFactoryTest, CreateCgroupFactoryCreateFails) {
   for (bool owns_cgroup : kBools) {
     SetupFactory(owns_cgroup);
 
-    EXPECT_CALL(*mock_cgroup_factory_,
-                Create(kType, kContainerName, root_uid_, root_gid_))
+    EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
         .WillRepeatedly(Return(Status::CANCELLED));
 
-    EXPECT_EQ(Status::CANCELLED,
-              factory_->Create(kContainerName, root_uid_, root_gid_).status());
+    EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainerName).status());
   }
 }
 
@@ -207,6 +200,108 @@ TEST_F(CgroupControllerFactoryTest, ExistsDoesNotExist) {
     EXPECT_FALSE(factory_->Exists(kContainerName));
   }
 }
+
+// Tests for DetectCgroupPath().
+
+TEST_F(CgroupControllerFactoryTest, DetectCgroupPathSuccess) {
+  SetupFactory(false);
+
+  mock_file_lines_.ExpectFileLines(
+      "/proc/self/cgroup",
+      {"7:net:/sys\n", "6:memory:/sys\n", "5:job:/sys/subcont\n"});
+
+  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
+      .WillRepeatedly(Return(string("job")));
+
+  StatusOr<string> statusor = factory_->DetectCgroupPath(0);
+  ASSERT_OK(statusor);
+  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+}
+
+TEST_F(CgroupControllerFactoryTest, DetectCgroupPathProcCgroupIsEmpty) {
+  SetupFactory(false);
+
+  mock_file_lines_.ExpectFileLines("/proc/self/cgroup", {});
+
+  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
+      .WillRepeatedly(Return(string("job")));
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, factory_->DetectCgroupPath(0));
+}
+
+TEST_F(CgroupControllerFactoryTest, DetectCgroupPathWithTidSuccess) {
+  SetupFactory(false);
+
+  mock_file_lines_.ExpectFileLines(
+      "/proc/12/cgroup",
+      {"7:net:/sys\n", "6:memory:/sys\n", "5:job:/sys/subcont\n"});
+
+  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
+      .WillRepeatedly(Return(string("job")));
+
+  StatusOr<string> statusor = factory_->DetectCgroupPath(12);
+  ASSERT_OK(statusor);
+  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+}
+
+TEST_F(CgroupControllerFactoryTest, DetectCgroupPathLineHasBadFormat) {
+  SetupFactory(false);
+
+  mock_file_lines_.ExpectFileLines(
+      "/proc/self/cgroup",
+      {"7:net:/sys\n", "6memory/sys\n", "5:job:/sys/subcont\n"});
+
+  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
+      .WillRepeatedly(Return(string("job")));
+
+  StatusOr<string> statusor = factory_->DetectCgroupPath(0);
+  ASSERT_OK(statusor);
+  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+}
+
+TEST_F(CgroupControllerFactoryTest,
+       DetectCgroupPathLineHasMoreElementsThanExpected) {
+  SetupFactory(false);
+
+  mock_file_lines_.ExpectFileLines(
+      "/proc/self/cgroup",
+      {"7:net:/sys:new\n", "6:memory:/sys:new\n", "5:job:/sys/subcont:new\n"});
+
+  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
+      .WillRepeatedly(Return(string("job")));
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, factory_->DetectCgroupPath(0));
+}
+
+TEST_F(CgroupControllerFactoryTest, DetectCgroupPathComountedSubsystems) {
+  SetupFactory(false);
+
+  mock_file_lines_.ExpectFileLines(
+      "/proc/self/cgroup",
+      {"7:net:/sys\n", "6:memory:/sys\n", "4:cpuacct,job,cpu:/sys/subcont\n"});
+
+  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
+      .WillRepeatedly(Return(string("job")));
+
+  StatusOr<string> statusor = factory_->DetectCgroupPath(0);
+  ASSERT_OK(statusor);
+  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+}
+
+TEST_F(CgroupControllerFactoryTest, DetectCgroupPathSubsystemNotFound) {
+  SetupFactory(false);
+
+  mock_file_lines_.ExpectFileLines(
+      "/proc/self/cgroup",
+      {"7:net:/sys\n", "6:memory:/sys\n"});
+
+  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
+      .WillRepeatedly(Return(string("job")));
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, factory_->DetectCgroupPath(0));
+}
+
+// Tests for HierarchyName().
 
 TEST_F(CgroupControllerFactoryTest, HierarchyNameSuccess) {
   const string kHierarchyName = "cgroup_hierarchy";
@@ -312,19 +407,26 @@ TEST_F(CgroupControllerTest, DestroyRmDirFails) {
             controller_->Destroy().error_code());
 }
 
+// Tests for Enter().
+
 TEST_F(CgroupControllerTest, EnterSuccess) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(
-                                 3, "42", kCgroupTasksPath, NotNull(),
-                                 NotNull())).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(Return(true));
 
   EXPECT_TRUE(controller_->Enter(42).ok());
 }
 
+TEST_F(CgroupControllerTest, EnterIgnoredWithUnownedCgroup) {
+  ReSetUpWithUnownedResource();
+
+  EXPECT_OK(controller_->Enter(42));
+}
+
 TEST_F(CgroupControllerTest, EnterOpenError) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(3, "42", kCgroupTasksPath, NotNull(),
-                                        NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<2>(true), Return(true)));
 
   Status status = controller_->Enter(42);
   EXPECT_FALSE(status.ok());
@@ -333,14 +435,61 @@ TEST_F(CgroupControllerTest, EnterOpenError) {
 
 TEST_F(CgroupControllerTest, EnterWriteError) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(3, "42", kCgroupTasksPath, NotNull(),
-                                        NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<4>(true), Return(true)));
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
 
   Status status = controller_->Enter(42);
   EXPECT_FALSE(status.ok());
   EXPECT_EQ(::util::error::UNAVAILABLE, status.error_code());
 }
+
+// Tests for Delegate().
+
+TEST_F(CgroupControllerTest, DelegateSuccess) {
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_CALL(*mock_kernel_, Chown(kCgroupPath, kUid.value(), kGid.value()))
+      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, Chown(kCgroupTasksPath, kUid.value(),
+                                   kGid.value())).WillOnce(Return(0));
+
+  EXPECT_OK(controller_->Delegate(kUid, kGid));
+}
+
+TEST_F(CgroupControllerTest, DelegateIgnoredWithUnownedCgroup) {
+  ReSetUpWithUnownedResource();
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_OK(controller_->Delegate(kUid, kGid));
+}
+
+TEST_F(CgroupControllerTest, DelegateChownDirectoryFails) {
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_CALL(*mock_kernel_, Chown(kCgroupPath, kUid.value(), kGid.value()))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, Chown(kCgroupTasksPath, kUid.value(),
+                                   kGid.value())).WillRepeatedly(Return(-1));
+
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, controller_->Delegate(kUid, kGid));
+}
+
+TEST_F(CgroupControllerTest, DelegateChownTasksFileFails) {
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_CALL(*mock_kernel_, Chown(kCgroupPath, kUid.value(), kGid.value()))
+      .WillRepeatedly(Return(-1));
+  EXPECT_CALL(*mock_kernel_, Chown(kCgroupTasksPath, kUid.value(),
+                                   kGid.value())).WillRepeatedly(Return(0));
+
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, controller_->Delegate(kUid, kGid));
+}
+
+// Tests for GetThreads().
 
 TEST_F(CgroupControllerTest, GetThreadsSuccess) {
   const vector<pid_t> kPids = {1, 2, 3, 4};
@@ -409,18 +558,17 @@ TEST_F(CgroupControllerTest, GetProcessesFails) {
 }
 
 TEST_F(CgroupControllerTest, SetParamStringSuccess) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(
-                                 3, "42", kCgroupTasksPath, NotNull(),
-                                 NotNull())).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(Return(true));
 
   EXPECT_TRUE(CallSetParamString("tasks", "42").ok());
 }
 
 TEST_F(CgroupControllerTest, SetParamStringOpenError) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(3, "42", kCgroupTasksPath, NotNull(),
-                                        NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<2>(true), Return(true)));
 
   Status status = CallSetParamString("tasks", "42");
   EXPECT_FALSE(status.ok());
@@ -429,9 +577,8 @@ TEST_F(CgroupControllerTest, SetParamStringOpenError) {
 
 TEST_F(CgroupControllerTest, SetParamStringWriteError) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(3, "42", kCgroupTasksPath, NotNull(),
-                                        NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<4>(true), Return(true)));
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
 
   Status status = CallSetParamString("tasks", "42");
   EXPECT_FALSE(status.ok());
@@ -439,18 +586,17 @@ TEST_F(CgroupControllerTest, SetParamStringWriteError) {
 }
 
 TEST_F(CgroupControllerTest, SetParamIntSuccess) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(
-                                 3, "42", kCgroupTasksPath, NotNull(),
-                                 NotNull())).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(Return(true));
 
   EXPECT_TRUE(CallSetParamInt("tasks", 42).ok());
 }
 
 TEST_F(CgroupControllerTest, SetParamIntOpenError) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(3, "42", kCgroupTasksPath, NotNull(),
-                                        NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<2>(true), Return(true)));
 
   Status status = CallSetParamInt("tasks", 42);
   EXPECT_FALSE(status.ok());
@@ -459,9 +605,8 @@ TEST_F(CgroupControllerTest, SetParamIntOpenError) {
 
 TEST_F(CgroupControllerTest, SetParamIntWriteError) {
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(3, "42", kCgroupTasksPath, NotNull(),
-                                        NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<4>(true), Return(true)));
+              SafeWriteResFile("42", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
 
   Status status = CallSetParamInt("tasks", 42);
   EXPECT_FALSE(status.ok());
@@ -470,32 +615,32 @@ TEST_F(CgroupControllerTest, SetParamIntWriteError) {
 
 TEST_F(CgroupControllerTest, SetParamBoolSuccess) {
   // True.
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "1", kCgroupTasksPath,
-                                                       NotNull(), NotNull()))
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("1", kCgroupTasksPath, NotNull(), NotNull()))
       .WillRepeatedly(Return(true));
 
   EXPECT_OK(CallSetParamBool("tasks", true));
 
   // False.
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "0", kCgroupTasksPath,
-                                                       NotNull(), NotNull()))
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("0", kCgroupTasksPath, NotNull(), NotNull()))
       .WillRepeatedly(Return(true));
 
   EXPECT_OK(CallSetParamBool("tasks", false));
 }
 
 TEST_F(CgroupControllerTest, SetParamBoolOpenError) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "1", kCgroupTasksPath,
-                                                       NotNull(), NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("1", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<2>(true), Return(true)));
 
   EXPECT_ERROR_CODE(NOT_FOUND, CallSetParamBool("tasks", true));
 }
 
 TEST_F(CgroupControllerTest, SetParamBoolWriteError) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "1", kCgroupTasksPath,
-                                                       NotNull(), NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<4>(true), Return(true)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("1", kCgroupTasksPath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
 
   EXPECT_ERROR_CODE(::util::error::UNAVAILABLE,
                     CallSetParamBool("tasks", true));
@@ -681,17 +826,23 @@ TEST_F(CgroupControllerTest, GetParamLinesFileDoesNotExist) {
 // Tests for EnableCloneChildren().
 
 TEST_F(CgroupControllerTest, EnableCloneChildrenSuccess) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "1", kCgroupClonePath,
-                                                       NotNull(), NotNull()))
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("1", kCgroupClonePath, NotNull(), NotNull()))
       .WillRepeatedly(Return(true));
 
   EXPECT_OK(controller_->EnableCloneChildren());
 }
 
+TEST_F(CgroupControllerTest, EnableCloneChildrenIgnoredWithUnownedCgroup) {
+  ReSetUpWithUnownedResource();
+
+  EXPECT_OK(controller_->EnableCloneChildren());
+}
+
 TEST_F(CgroupControllerTest, EnableCloneChildrenFailure) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "1", kCgroupClonePath,
-                                                       NotNull(), NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("1", kCgroupClonePath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<2>(true), Return(true)));
 
   EXPECT_ERROR_CODE(NOT_FOUND, controller_->EnableCloneChildren());
 }
@@ -699,17 +850,23 @@ TEST_F(CgroupControllerTest, EnableCloneChildrenFailure) {
 // Tests for DisableCloneChildren().
 
 TEST_F(CgroupControllerTest, DisableCloneChildrenSuccess) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "0", kCgroupClonePath,
-                                                       NotNull(), NotNull()))
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("0", kCgroupClonePath, NotNull(), NotNull()))
       .WillRepeatedly(Return(true));
 
   EXPECT_OK(controller_->DisableCloneChildren());
 }
 
+TEST_F(CgroupControllerTest, DisableCloneChildrenIgnoredWithUnownedCgroup) {
+  ReSetUpWithUnownedResource();
+
+  EXPECT_OK(controller_->DisableCloneChildren());
+}
+
 TEST_F(CgroupControllerTest, DisableCloneChildrenFailure) {
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(3, "0", kCgroupClonePath,
-                                                       NotNull(), NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<3>(true), Return(true)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("0", kCgroupClonePath, NotNull(), NotNull()))
+      .WillRepeatedly(DoAll(SetArgPointee<2>(true), Return(true)));
 
   EXPECT_ERROR_CODE(NOT_FOUND, controller_->DisableCloneChildren());
 }
@@ -760,9 +917,8 @@ TEST_F(CgroupControllerTest, SetLimit) {
   const string kResFile =
       JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("42", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
 
   EXPECT_OK(controller_->SetChildrenLimit(42));
 }
@@ -771,9 +927,9 @@ TEST_F(CgroupControllerTest, SetChildrenLimitFails) {
   const string kResFile =
       JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
 
   EXPECT_NOT_OK(controller_->SetChildrenLimit(42));
 }
@@ -784,9 +940,8 @@ TEST_F(CgroupControllerTest, UnownedSetChildrenLimitIgnored) {
       JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
 
   // If unowned, don't set the children limit.
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "42", kResFile,
-                                                       NotNull(), NotNull()))
-      .Times(0);
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("42", kResFile, NotNull(), NotNull())).Times(0);
 
   EXPECT_OK(controller_->SetChildrenLimit(42));
 }

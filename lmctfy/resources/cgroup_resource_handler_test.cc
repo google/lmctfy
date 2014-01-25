@@ -35,6 +35,8 @@ class CgroupController;
 }  // namespace containers
 
 using ::system_api::KernelAPIMock;
+using ::util::UnixGid;
+using ::util::UnixUid;
 using ::std::map;
 using ::std::unique_ptr;
 using ::std::vector;
@@ -49,8 +51,8 @@ using ::testing::StrictMock;
 using ::testing::_;
 using ::util::Status;
 using ::util::StatusOr;
-using ::util::error::NOT_FOUND;
 using ::util::error::INVALID_ARGUMENT;
+using ::util::error::NOT_FOUND;
 
 namespace containers {
 namespace lmctfy {
@@ -121,9 +123,6 @@ class TestCpuHandler: public CgroupResourceHandler {
 
   Status Destroy() {
     return CgroupResourceHandler::Destroy();
-  }
-  Status Enter(const vector<pid_t> &tids) {
-    return CgroupResourceHandler::Enter(tids);
   }
   const map<CgroupHierarchy, CgroupController *> &controllers() {
     return controllers_;
@@ -247,6 +246,8 @@ class CgroupResourceHandlerTest : public ::testing::Test {
   unique_ptr<TestCpuHandler> handler_;
 };
 
+// Tests for Destroy().
+
 TEST_F(CgroupResourceHandlerTest, DestroySuccess) {
   EXPECT_CALL(*mock_controller1_, Destroy())
       .WillOnce(Return(Status::OK));
@@ -280,6 +281,8 @@ TEST_F(CgroupResourceHandlerTest, DestroySecondDestroyFails) {
   delete mock_controller1_;
 }
 
+// Tests for Enter().
+
 TEST_F(CgroupResourceHandlerTest, EnterSuccess) {
   const vector<pid_t> tids = {11, 12};
 
@@ -309,6 +312,34 @@ TEST_F(CgroupResourceHandlerTest, EnterEnterFails) {
 
   EXPECT_EQ(Status::CANCELLED, handler_->Enter(tids));
 }
+
+// Tests for Delegate().
+
+TEST_F(CgroupResourceHandlerTest, DelegateSuccess) {
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_CALL(*mock_controller1_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_controller2_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_OK(handler_->Delegate(kUid, kGid));
+}
+
+TEST_F(CgroupResourceHandlerTest, DelegateFails) {
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_CALL(*mock_controller1_, Delegate(kUid, kGid))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_controller2_, Delegate(kUid, kGid))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED, handler_->Delegate(kUid, kGid));
+}
+
+// Tests for Create().
 
 TEST_F(CgroupResourceHandlerTest, CreateSetsChildrenLimits) {
   EXPECT_CALL(*mock_controller1_, SetChildrenLimit(12))

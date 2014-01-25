@@ -56,16 +56,18 @@ class CgroupTasksHandler : public TasksHandler {
   //   kernel: Wrapper for kernel syscalls. Does not take ownership.
   CgroupTasksHandler(const string &container_name,
                      CgroupController *cgroup_controller);
-  virtual ~CgroupTasksHandler();
+  ~CgroupTasksHandler() override;
 
   // Further documentation on these methods can be found in the TasksHandler
   // interface definition.
 
-  virtual ::util::Status Destroy();
-  virtual ::util::Status TrackTasks(const ::std::vector<pid_t> &tids);
-  virtual ::util::StatusOr< ::std::vector<string>> ListSubcontainers() const;
-  virtual ::util::StatusOr< ::std::vector<pid_t>> ListProcesses() const;
-  virtual ::util::StatusOr< ::std::vector<pid_t>> ListThreads() const;
+  ::util::Status Destroy() override;
+  ::util::Status TrackTasks(const ::std::vector<pid_t> &tids) override;
+  ::util::Status Delegate(::util::UnixUid uid,
+                          ::util::UnixGid gid) override;
+  ::util::StatusOr< ::std::vector<string>> ListSubcontainers() const override;
+  ::util::StatusOr< ::std::vector<pid_t>> ListProcesses() const override;
+  ::util::StatusOr< ::std::vector<pid_t>> ListThreads() const override;
 
  private:
   // Controller for the underlying cgroup hierarchy.
@@ -95,26 +97,23 @@ class CgroupTasksHandlerFactory : public TasksHandlerFactory {
       : TasksHandlerFactory(),
         cgroup_controller_factory_(cgroup_controller_factory),
         kernel_(kernel) {}
-  virtual ~CgroupTasksHandlerFactory() {}
+  ~CgroupTasksHandlerFactory() override {}
 
-  virtual ::util::StatusOr<TasksHandler *> Create(
-      const string &container_name, const ContainerSpec &spec) const {
+  ::util::StatusOr<TasksHandler *> Create(
+      const string &container_name, const ContainerSpec &spec) const override {
     // TODO(vmarmol): Consider keeping track of hierarchy mapping in the
     // controller to ensure things like this are valid (i.e.: CgroupTasksHandler
     // expects a 1:1 controller, make sure it gets one).
     // Create the controller. Hierarchy is 1:1.
     CgroupController *cgroup_controller;
-    RETURN_IF_ERROR(
-        cgroup_controller_factory_->Create(
-            container_name, ::util::UnixUid(spec.owner()),
-            ::util::UnixGid(spec.owner_group())),
-        &cgroup_controller);
+    RETURN_IF_ERROR(cgroup_controller_factory_->Create(container_name),
+                    &cgroup_controller);
 
     return new CgroupTasksHandler(container_name, cgroup_controller);
   }
 
-  virtual ::util::StatusOr<TasksHandler *> Get(
-      const string &container_name) const {
+  ::util::StatusOr<TasksHandler *> Get(const string &container_name)
+      const override {
     // Get the controller. Hierarchy is 1:1.
     CgroupController *cgroup_controller;
     RETURN_IF_ERROR(cgroup_controller_factory_->Get(container_name),
@@ -123,74 +122,12 @@ class CgroupTasksHandlerFactory : public TasksHandlerFactory {
     return new CgroupTasksHandler(container_name, cgroup_controller);
   }
 
-  virtual bool Exists(const string &container_name) const {
+  bool Exists(const string &container_name) const override {
     return cgroup_controller_factory_->Exists(container_name);
   }
 
-  // TODO(vmarmol): Use a specialization of FileLines for most of this.
-  virtual ::util::StatusOr<string> Detect(pid_t tid) const {
-    // 0 is an alias for self.
-    string proc_cgroup_path;
-    if (tid == 0) {
-      proc_cgroup_path = "/proc/self/cgroup";
-    } else {
-      proc_cgroup_path = ::strings::Substitute("/proc/$0/cgroup", tid);
-    }
-
-    string contents;
-    if (!kernel_->ReadFileToString(proc_cgroup_path, &contents)) {
-      return ::util::Status(
-          ::util::error::FAILED_PRECONDITION,
-          ::strings::Substitute(
-              "Failed to read \"$0\" while detecting container",
-              proc_cgroup_path));
-    }
-
-    // Get the name of the subsystem (cgroup hierarchy).
-    const string subsystem_name = cgroup_controller_factory_->HierarchyName();
-
-    // /proc/<tid>/cgroups is in the following format:
-    // <mount integernumber>:<comma-separated list of subsytem names>:<cgroup
-    // path in the subsystem>
-    //
-    // e.g. (for container /sys):
-    //   7:net:/sys
-    //   6:memory:/sys
-    //   5:job:/sys
-    //   4:io:/sys
-    //   3:cpuset:/sys
-    //   2:cpuacct,cpu:/sys
-    //   1:bcache,rlimit,perf_event:/sys
-
-    // Go through each line looking for this subsystem's mount point.
-    for (const auto &line :
-         ::strings::Split(contents, "\n", ::strings::SkipEmpty())) {
-      // Ensure the line is as we expected, else skip it.
-      const vector<string> elements =
-          ::strings::Split(line, ":", ::strings::SkipEmpty());
-      if (elements.size() < 3) {
-        LOG(WARNING) << "Failed to parse line \"" << line.ToString()
-                     << "\" from file \"" << proc_cgroup_path
-                     << "\", skipping line";
-        continue;
-      }
-
-      // Check if this subsystem is in this line.
-      const vector<string> subsystems =
-          ::strings::Split(elements[1], ",", ::strings::SkipEmpty());
-      if (find(subsystems.begin(), subsystems.end(), subsystem_name) !=
-          subsystems.end()) {
-        // The container name is the cgroup path since this TasksHandler makes a
-        // 1:1 mapping.
-        // TODO(vmarmol): Check for bad container name
-        return elements[2];
-      }
-    }
-
-    return ::util::Status(
-        ::util::error::NOT_FOUND,
-        ::strings::Substitute("Could not detect the container for TID \"$0\"",
-                              tid));
+  ::util::StatusOr<string> Detect(pid_t tid) const override {
+    return cgroup_controller_factory_->DetectCgroupPath(tid);
   }
 
  private:

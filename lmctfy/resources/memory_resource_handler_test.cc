@@ -25,8 +25,6 @@
 #include "lmctfy/controllers/memory_controller_mock.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
-#include "util/safe_types/unix_gid.h"
-#include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -35,8 +33,6 @@
 
 using ::util::Bytes;
 using ::system_api::KernelAPIMock;
-using ::util::UnixGid;
-using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::testing::NiceMock;
@@ -54,9 +50,6 @@ static const char kContainerName[] = "/test";
 
 class MemoryResourceHandlerFactoryTest : public ::testing::Test {
  public:
-  MemoryResourceHandlerFactoryTest()
-      : owner_uid_(UnixUid(10)), owner_gid_(UnixGid(11)) {}
-
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_controller_ = new StrictMockMemoryController();
@@ -81,9 +74,6 @@ class MemoryResourceHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
-  const UnixUid owner_uid_;
-  const UnixGid owner_gid_;
-
   MockMemoryController *mock_controller_;
   MockMemoryControllerFactory *mock_controller_factory_;
   unique_ptr<KernelAPIMock> mock_kernel_;
@@ -155,11 +145,8 @@ TEST_F(MemoryResourceHandlerFactoryTest, GetFails) {
 
 TEST_F(MemoryResourceHandlerFactoryTest, CreateSuccess) {
   ContainerSpec spec;
-  spec.set_owner(owner_uid_.value());
-  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_,
-              Create(kContainerName, owner_uid_, owner_gid_))
+  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(mock_controller_));
 
   StatusOr<ResourceHandler *> statusor =
@@ -173,11 +160,8 @@ TEST_F(MemoryResourceHandlerFactoryTest, CreateSuccess) {
 
 TEST_F(MemoryResourceHandlerFactoryTest, CreateFails) {
   ContainerSpec spec;
-  spec.set_owner(owner_uid_.value());
-  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_controller_factory_,
-              Create(kContainerName, owner_uid_, owner_gid_))
+  EXPECT_CALL(*mock_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED,
@@ -219,7 +203,16 @@ TEST_F(MemoryResourceHandlerTest, CreateOnlySetupSucceeds) {
   EXPECT_OK(handler_->CreateOnlySetup(spec));
 }
 
-TEST_F(MemoryResourceHandlerTest, CreateOnlySetupFails) {
+TEST_F(MemoryResourceHandlerTest, CreateOnlySetupSetStalePageAgeNotSupported) {
+  ContainerSpec spec;
+
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(1))
+      .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
+
+  EXPECT_OK(handler_->CreateOnlySetup(spec));
+}
+
+TEST_F(MemoryResourceHandlerTest, CreateOnlySetupSetStalePageAgeFails) {
   ContainerSpec spec;
 
   EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(1))
@@ -439,11 +432,13 @@ TEST_F(MemoryResourceHandlerTest, UpdateReplaceEmpty) {
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
       .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillOnce(Return(Status::OK));
 
   EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceNoReservationSuccess) {
+TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitSuccess) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
 
@@ -451,11 +446,13 @@ TEST_F(MemoryResourceHandlerTest, UpdateReplaceNoReservationSuccess) {
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
       .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillOnce(Return(Status::OK));
 
   EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceNoReservationLimitFails) {
+TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitSetLimitFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
 
@@ -463,12 +460,14 @@ TEST_F(MemoryResourceHandlerTest, UpdateReplaceNoReservationLimitFails) {
       .WillRepeatedly(Return(Status::CANCELLED));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
       .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED,
             handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceNoReservationReservationFails) {
+TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitSetReservationFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
 
@@ -476,12 +475,29 @@ TEST_F(MemoryResourceHandlerTest, UpdateReplaceNoReservationReservationFails) {
       .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
       .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED,
             handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithReservationSuccess) {
+TEST_F(MemoryResourceHandlerTest,
+       UpdateReplaceWithLimitSetOomScoreNotSupported) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_limit(42);
+
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(42)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
+
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitAndReservationSuccess) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
   spec.mutable_memory()->set_reservation(43);
@@ -490,11 +506,14 @@ TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithReservationSuccess) {
       .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(43)))
       .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithReservationFails) {
+TEST_F(MemoryResourceHandlerTest,
+       UpdateReplaceWithLimitAndReservationSetReservationFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
   spec.mutable_memory()->set_reservation(43);
@@ -503,9 +522,100 @@ TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithReservationFails) {
       .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(43)))
       .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED,
             handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithEvictionPrioritySuccess) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_eviction_priority(1000);
+
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(-1)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceHandlerTest,
+       UpdateReplaceWithEvictionPrioritySetOomScoreFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_eviction_priority(1000);
+
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED,
+            handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceHandlerTest,
+       UpdateReplaceWithNegativeEvictionPriorityFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_eviction_priority(-100);
+
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceHandlerTest,
+       UpdateReplaceWithOutOfRangeEvictionPriorityFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_eviction_priority(20000);
+
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceHandlerTest,
+       UpdateReplaceWithEvictionPriorityNotFound) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_eviction_priority(1000);
+
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
+      .WillRepeatedly(Return(Status(::util::error::NOT_FOUND, "")));
+
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceHandlerTest,
+       UpdateReplaceWithEvictionPriorityOtherError) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_eviction_priority(1000);
+
+  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
+      .WillRepeatedly(Return(Status(::util::error::INVALID_ARGUMENT, "")));
+
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
 // Tests for RegisterNotification().
@@ -609,13 +719,39 @@ class MemorySpecGettingTest : public MemoryResourceHandlerTest {
  public:
   virtual void SetUp() {
     MemoryResourceHandlerTest::SetUp();
-    Bytes empty(0);
+    Bytes kEmpty(0);
     EXPECT_CALL(*mock_memory_controller_, GetLimit())
-        .WillRepeatedly(Return(StatusOr<Bytes>(empty)));
+        .WillRepeatedly(Return(StatusOr<Bytes>(kEmpty)));
     EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
-        .WillRepeatedly(Return(StatusOr<Bytes>(empty)));
+        .WillRepeatedly(Return(StatusOr<Bytes>(kEmpty)));
+    EXPECT_CALL(*mock_memory_controller_, GetOomScore())
+        .WillRepeatedly(Return(0));
   }
 };
+
+TEST_F(MemorySpecGettingTest, GetEvictionPriority) {
+  ContainerSpec spec;
+  const int32 kPriority = 123;
+  EXPECT_CALL(*mock_memory_controller_, GetOomScore())
+      .WillRepeatedly(Return(kPriority));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_EQ(kPriority, spec.memory().eviction_priority());
+}
+
+TEST_F(MemorySpecGettingTest, GetEvictionPriorityFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetOomScore())
+      .WillRepeatedly(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetEvictionPriorityNotFound) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetOomScore())
+      .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
+  EXPECT_OK(handler_->Spec(&spec));
+}
+
 
 TEST_F(MemorySpecGettingTest, GetLimit) {
   ContainerSpec spec;

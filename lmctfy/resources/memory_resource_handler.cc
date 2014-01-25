@@ -27,6 +27,7 @@ using ::std::string;
 #include "util/safe_types/unix_gid.h"
 #include "util/safe_types/unix_uid.h"
 #include "util/errors.h"
+#include "strings/substitute.h"
 #include "util/task/codes.pb.h"
 #include "util/task/status.h"
 
@@ -41,11 +42,16 @@ using ::util::UnixGid;
 using ::util::UnixUid;
 using ::std::unique_ptr;
 using ::std::vector;
+using ::strings::Substitute;
 using ::util::Status;
 using ::util::StatusOr;
 
 namespace containers {
 namespace lmctfy {
+
+static const int32 kDefaultEvictionPriority = 5000;
+static const int32 kMinEvictionPriority = 0;
+static const int32 kMaxEvictionPriority = 10000;
 
 StatusOr<MemoryResourceHandlerFactory *> MemoryResourceHandlerFactory::New(
     CgroupFactory *cgroup_factory, const KernelApi *kernel,
@@ -88,8 +94,8 @@ StatusOr<ResourceHandler *> MemoryResourceHandlerFactory::CreateResourceHandler(
     const string &container_name, const ContainerSpec &spec) const {
   // Memory has a 1:1 mapping from container name to hierarchy path. It also
   // only has the memory cgroup controller for now.
-  StatusOr<MemoryController *> statusor = memory_controller_factory_->Create(
-      container_name, UnixUid(spec.owner()), UnixGid(spec.owner_group()));
+  StatusOr<MemoryController *> statusor =
+      memory_controller_factory_->Create(container_name);
   if (!statusor.ok()) {
     return statusor.status();
   }
@@ -107,17 +113,46 @@ MemoryResourceHandler::MemoryResourceHandler(
 
 Status MemoryResourceHandler::CreateOnlySetup(const ContainerSpec &spec) {
   // TODO(rgooch): make this configurable.
-  return memory_controller_->SetStalePageAge(1);
+  // Some kernels do not support setting stale page age, ignore in those cases.
+  Status status = memory_controller_->SetStalePageAge(1);
+  if (!status.ok() && (status.error_code() != ::util::error::NOT_FOUND)) {
+    return status;
+  }
+
+  return Status::OK;
 }
 
 Status MemoryResourceHandler::Update(const ContainerSpec &spec,
                                      Container::UpdatePolicy policy) {
   const MemorySpec &memory_spec = spec.memory();
 
-  // During a diff: update what was specified.
-  // During an update:
-  // - If no limit specified, default to -1 (unlimited).
-  // - If no reservation specified, default to 0.
+  // Set the OOM score if it was specified.
+  if (memory_spec.has_eviction_priority()) {
+    const int64 eviction_priority = memory_spec.eviction_priority();
+
+    // Check usage.
+    if (eviction_priority < kMinEvictionPriority ||
+        eviction_priority > kMaxEvictionPriority) {
+      return Status(
+          ::util::error::INVALID_ARGUMENT,
+          Substitute(
+              "Eviction priority of $0 is outside valid range of $1-$2",
+              eviction_priority, kMinEvictionPriority, kMaxEvictionPriority));
+    }
+
+    Status status = memory_controller_->SetOomScore(eviction_priority);
+    // TODO(jnagal): Fix after adding support for GetFeatures().
+    if (!status.ok() && status.error_code() != ::util::error::NOT_FOUND) {
+      return status;
+    }
+  } else if (policy == Container::UPDATE_REPLACE) {
+    // OOM score may not be supported in all kernels so don't fail if it is not
+    // supported and not specified.
+    Status status = memory_controller_->SetOomScore(kDefaultEvictionPriority);
+    if (!status.ok() && status.error_code() != ::util::error::NOT_FOUND) {
+      return status;
+    }
+  }
 
   // Set the limit. The default is -1 if it was not specified during a replace.
   if (memory_spec.has_limit()) {
@@ -159,16 +194,14 @@ Status MemoryResourceHandler::Stats(Container::StatsType type,
 
 Status MemoryResourceHandler::Spec(ContainerSpec *spec) const {
   MemorySpec *memory_spec = spec->mutable_memory();
-  {
-    Bytes limit;
-    RETURN_IF_ERROR(memory_controller_->GetLimit(), &limit);
-    memory_spec->set_limit(limit.value());
-  }
-  {
-    Bytes reservation;
-    RETURN_IF_ERROR(memory_controller_->GetSoftLimit(), &reservation);
-    memory_spec->set_reservation(reservation.value());
-  }
+
+  SET_IF_PRESENT(memory_controller_->GetOomScore(),
+                 memory_spec->set_eviction_priority);
+  memory_spec->set_limit(
+      XRETURN_IF_ERROR(memory_controller_->GetLimit()).value());
+  memory_spec->set_reservation(
+      XRETURN_IF_ERROR(memory_controller_->GetSoftLimit()).value());
+
   return Status::OK;
 }
 

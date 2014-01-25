@@ -31,6 +31,8 @@
 #include "lmctfy/tasks_handler_mock.h"
 #include "include/lmctfy.pb.h"
 #include "include/lmctfy_mock.h"
+#include "util/safe_types/unix_gid.h"
+#include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "util/file_lines_test_util.h"
 #include "gmock/gmock.h"
@@ -51,6 +53,10 @@ DECLARE_int32(lmctfy_ms_delay_between_kills);
 using ::system_api::MockKernelApiOverride;
 using ::file::JoinPath;
 using ::util::FileLinesTestUtil;
+using ::util::UnixGid;
+using ::util::UnixGidValue;
+using ::util::UnixUid;
+using ::util::UnixUidValue;
 using ::std::make_pair;
 using ::std::map;
 using ::std::sort;
@@ -259,7 +265,7 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
 
   EXPECT_CALL(mock_kernel_.Mock(), Access(_, _))
       .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SafeWriteResFileWithRetry(_, _, _, _, _))
+  EXPECT_CALL(mock_kernel_.Mock(), SafeWriteResFile(_, _, _, _))
       .WillRepeatedly(Return(0));
   EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_))
       .WillRepeatedly(Return(0));
@@ -321,7 +327,7 @@ TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
 
   EXPECT_CALL(mock_kernel_.Mock(), Access(_, _))
       .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SafeWriteResFileWithRetry(_, _, _, _, _))
+  EXPECT_CALL(mock_kernel_.Mock(), SafeWriteResFile(_, _, _, _))
       .WillRepeatedly(Return(0));
   EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_))
       .WillRepeatedly(Return(0));
@@ -662,6 +668,130 @@ TEST_F(ContainerApiImplTest, CreateContainerAlreadyExists) {
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   EXPECT_EQ(::util::error::ALREADY_EXISTS, status.status().error_code());
+}
+
+TEST_F(ContainerApiImplTest, CreateWithDelegatedUser) {
+  const string kName = "/test";
+  const UnixUid kUid(42);
+  const UnixGid kGid(UnixGidValue::Invalid());
+
+  ContainerSpec spec;
+  spec.set_owner(kUid.value());
+  spec.mutable_cpu();
+
+  MockResourceHandler *mock_cpu_handler =
+      new StrictMockResourceHandler(kName, RESOURCE_CPU);
+  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
+
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(false));
+
+  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
+      .WillOnce(Return(mock_cpu_handler));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillOnce(Return(mock_tasks_handler));
+
+  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+
+  StatusOr<Container *> status = lmctfy_->Create(kName, spec);
+  ASSERT_OK(status);
+  delete status.ValueOrDie();
+}
+
+TEST_F(ContainerApiImplTest, CreateWithDelegatedGid) {
+  const string kName = "/test";
+  const UnixUid kUid(UnixUidValue::Invalid());
+  const UnixGid kGid(42);
+
+  ContainerSpec spec;
+  spec.set_owner_group(kGid.value());
+  spec.mutable_cpu();
+
+  MockResourceHandler *mock_cpu_handler =
+      new StrictMockResourceHandler(kName, RESOURCE_CPU);
+  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
+
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(false));
+
+  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
+      .WillOnce(Return(mock_cpu_handler));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillOnce(Return(mock_tasks_handler));
+
+  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+
+  StatusOr<Container *> status = lmctfy_->Create(kName, spec);
+  ASSERT_OK(status);
+  delete status.ValueOrDie();
+}
+
+TEST_F(ContainerApiImplTest, CreateWithDelegatedUserDelegateTasksHandlerFails) {
+  const string kName = "/test";
+  const UnixUid kUid(42);
+  const UnixGid kGid(UnixGidValue::Invalid());
+
+  ContainerSpec spec;
+  spec.set_owner(kUid.value());
+  spec.mutable_cpu();
+
+  MockResourceHandler *mock_cpu_handler =
+      new StrictMockResourceHandler(kName, RESOURCE_CPU);
+  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
+
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(false));
+
+  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
+      .WillOnce(Return(mock_cpu_handler));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillOnce(Return(mock_tasks_handler));
+
+  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
+      .WillRepeatedly(Return(Status::OK));
+
+  EXPECT_ERROR_CODE(::util::error::CANCELLED, lmctfy_->Create(kName, spec));
+}
+
+TEST_F(ContainerApiImplTest, CreateWithDelegatedUserDelegateResourceHandlerFails) {
+  const string kName = "/test";
+  const UnixUid kUid(42);
+  const UnixGid kGid(UnixGidValue::Invalid());
+
+  ContainerSpec spec;
+  spec.set_owner(kUid.value());
+  spec.mutable_cpu();
+
+  MockResourceHandler *mock_cpu_handler =
+      new StrictMockResourceHandler(kName, RESOURCE_CPU);
+  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
+
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(false));
+
+  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
+      .WillOnce(Return(mock_cpu_handler));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillOnce(Return(mock_tasks_handler));
+
+  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_ERROR_CODE(::util::error::CANCELLED, lmctfy_->Create(kName, spec));
 }
 
 // Tests for Destroy()

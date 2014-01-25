@@ -27,6 +27,7 @@
 #include "lmctfy/controllers/job_controller_mock.h"
 #include "util/safe_types/unix_gid.h"
 #include "util/safe_types/unix_uid.h"
+#include "util/errors_test_util.h"
 #include "strings/stringpiece.h"
 #include "strings/substitute.h"
 #include "gmock/gmock.h"
@@ -60,9 +61,6 @@ static const char kContainerCgroupPath[] = "/dev/cgroup/job/test";
 
 class CgroupTasksHandlerFactoryTest : public ::testing::Test {
  public:
-  CgroupTasksHandlerFactoryTest()
-      : owner_uid_(UnixUid(10)), owner_gid_(UnixGid(11)) {}
-
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     unique_ptr<MockCgroupFactory> mock_cgroup_factory(
@@ -74,9 +72,6 @@ class CgroupTasksHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
-  const UnixUid owner_uid_;
-  const UnixGid owner_gid_;
-
   MockJobControllerFactory *mock_cgroup_controller_factory_;
 
   unique_ptr<KernelAPIMock> mock_kernel_;
@@ -85,11 +80,8 @@ class CgroupTasksHandlerFactoryTest : public ::testing::Test {
 
 TEST_F(CgroupTasksHandlerFactoryTest, CreateSuccess) {
   ContainerSpec spec;
-  spec.set_owner(owner_uid_.value());
-  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_cgroup_controller_factory_,
-              Create(kContainer, owner_uid_, owner_gid_))
+  EXPECT_CALL(*mock_cgroup_controller_factory_, Create(kContainer))
       .WillOnce(Return(new StrictMockJobController()));
 
   StatusOr<TasksHandler *> statusor = factory_->Create(kContainer, spec);
@@ -100,11 +92,8 @@ TEST_F(CgroupTasksHandlerFactoryTest, CreateSuccess) {
 
 TEST_F(CgroupTasksHandlerFactoryTest, CreateFails) {
   ContainerSpec spec;
-  spec.set_owner(owner_uid_.value());
-  spec.set_owner_group(owner_gid_.value());
 
-  EXPECT_CALL(*mock_cgroup_controller_factory_,
-              Create(kContainer, owner_uid_, owner_gid_))
+  EXPECT_CALL(*mock_cgroup_controller_factory_, Create(kContainer))
       .WillOnce(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainer, spec).status());
@@ -141,144 +130,26 @@ TEST_F(CgroupTasksHandlerFactoryTest, Exists) {
   EXPECT_FALSE(factory_->Exists(kContainer));
 }
 
+// Tests for Detect().
+
 TEST_F(CgroupTasksHandlerFactoryTest, DetectSuccess) {
-  const string kProcCgroup =
-      "7:net:/sys\n"
-      "6:memory:/sys\n"
-      "5:job:/sys/subcont\n"
-      "4:io:/sys\n"
-      "3:cpuset:/sys\n"
-      "2:cpuacct,cpu:/sys\n"
-      "1:bcache,rlimit,perf_event:/sys\n";
+  const pid_t kTid = 0;
 
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/self/cgroup", NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<1>(kProcCgroup), Return(true)));
-  EXPECT_CALL(*mock_cgroup_controller_factory_, HierarchyName())
-      .WillRepeatedly(Return(string("job")));
+  EXPECT_CALL(*mock_cgroup_controller_factory_, DetectCgroupPath(kTid))
+      .WillRepeatedly(Return(string(kContainer)));
 
-  StatusOr<string> statusor = factory_->Detect(0);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+  StatusOr<string> statusor = factory_->Detect(kTid);
+  ASSERT_OK(statusor);
+  EXPECT_EQ(kContainer, statusor.ValueOrDie());
 }
 
-TEST_F(CgroupTasksHandlerFactoryTest, DetectProcCgroupIsEmpty) {
-  const string kProcCgroup = "";
+TEST_F(CgroupTasksHandlerFactoryTest, DetectFails) {
+  const pid_t kTid = 0;
 
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/self/cgroup", NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<1>(kProcCgroup), Return(true)));
-  EXPECT_CALL(*mock_cgroup_controller_factory_, HierarchyName())
-      .WillRepeatedly(Return(string("job")));
+  EXPECT_CALL(*mock_cgroup_controller_factory_, DetectCgroupPath(kTid))
+      .WillRepeatedly(Return(Status::CANCELLED));
 
-  StatusOr<string> statusor = factory_->Detect(0);
-  EXPECT_FALSE(statusor.ok());
-  EXPECT_EQ(::util::error::NOT_FOUND, statusor.status().error_code());
-}
-
-TEST_F(CgroupTasksHandlerFactoryTest, DetectWithTidSuccess) {
-  const string kProcCgroup =
-      "7:net:/sys\n"
-      "6:memory:/sys\n"
-      "5:job:/sys/subcont\n"
-      "4:io:/sys\n"
-      "3:cpuset:/sys\n"
-      "2:cpuacct,cpu:/sys\n"
-      "1:bcache,rlimit,perf_event:/sys\n";
-
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/12/cgroup", NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<1>(kProcCgroup), Return(true)));
-  EXPECT_CALL(*mock_cgroup_controller_factory_, HierarchyName())
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->Detect(12);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
-}
-
-TEST_F(CgroupTasksHandlerFactoryTest, DetectReadFileToStringFails) {
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/self/cgroup", NotNull()))
-      .WillRepeatedly(Return(false));
-
-  StatusOr<string> statusor = factory_->Detect(0);
-  EXPECT_FALSE(statusor.ok());
-  EXPECT_EQ(::util::error::FAILED_PRECONDITION, statusor.status().error_code());
-}
-
-TEST_F(CgroupTasksHandlerFactoryTest, DetectLineHasBadFormat) {
-  const string kProcCgroup =
-      "7:net:/sys\n"
-      "6memory/sys\n"
-      "5:job:/sys/subcont\n"
-      "4:io:/sys\n"
-      "3:cpuset:/sys\n"
-      "2:cpuacct,cpu:/sys\n"
-      "1:bcache,rlimit,perf_event:/sys\n";
-
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/12/cgroup", NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<1>(kProcCgroup), Return(true)));
-  EXPECT_CALL(*mock_cgroup_controller_factory_, HierarchyName())
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->Detect(12);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
-}
-
-TEST_F(CgroupTasksHandlerFactoryTest, DetectLineHasMoreElementsThanExpected) {
-  const string kProcCgroup =
-      "7:net:/sys:new\n"
-      "6:memory:/sys:new\n"
-      "5:job:/sys/subcont:new\n"
-      "4:io:/sys:new\n"
-      "3:cpuset:/sys:new\n"
-      "2:cpuacct,cpu:/sys:new\n"
-      "1:bcache,rlimit,perf_event:/sys:new\n";
-
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/12/cgroup", NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<1>(kProcCgroup), Return(true)));
-  EXPECT_CALL(*mock_cgroup_controller_factory_, HierarchyName())
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->Detect(12);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
-}
-
-TEST_F(CgroupTasksHandlerFactoryTest, DetectComountedSubsystems) {
-  const string kProcCgroup =
-      "6:net:/sys\n"
-      "5:memory:/sys\n"
-      "4:cpuacct,job,cpu:/sys/subcont\n"
-      "3:io:/sys\n"
-      "2:cpuset:/sys\n"
-      "1:bcache,rlimit,perf_event:/sys\n";
-
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/12/cgroup", NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<1>(kProcCgroup), Return(true)));
-  EXPECT_CALL(*mock_cgroup_controller_factory_, HierarchyName())
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->Detect(12);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
-}
-
-TEST_F(CgroupTasksHandlerFactoryTest, DetectSubsystemNotFound) {
-  const string kProcCgroup =
-      "6:net:/sys\n"
-      "5:memory:/sys\n"
-      "4:io:/sys\n"
-      "3:cpuset:/sys\n"
-      "2:cpuacct,cpu:/sys\n"
-      "1:bcache,rlimit,perf_event:/sys\n";
-
-  EXPECT_CALL(*mock_kernel_, ReadFileToString("/proc/12/cgroup", NotNull()))
-      .WillRepeatedly(DoAll(SetArgPointee<1>(kProcCgroup), Return(true)));
-  EXPECT_CALL(*mock_cgroup_controller_factory_, HierarchyName())
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->Detect(12);
-  EXPECT_FALSE(statusor.ok());
-  EXPECT_EQ(::util::error::NOT_FOUND, statusor.status().error_code());
+  EXPECT_EQ(Status::CANCELLED, factory_->Detect(kTid).status());
 }
 
 class CgroupTasksHandlerTest : public ::testing::Test {
@@ -320,6 +191,8 @@ TEST_F(CgroupTasksHandlerTest, DestroyFails) {
   // Deletes itself on success
   EXPECT_EQ(Status::CANCELLED, handler_->Destroy());
 }
+
+// Tests for TrackTasks().
 
 TEST_F(CgroupTasksHandlerTest, TrackTasksSuccess) {
   EXPECT_CALL(*mock_cgroup_controller_, Enter(12))
@@ -363,16 +236,70 @@ TEST_F(CgroupTasksHandlerTest, TrackTasksFails) {
   EXPECT_EQ(Status::CANCELLED, handler_->TrackTasks(tids));
 }
 
-TEST_F(CgroupTasksHandlerTest, ListProcessesSuccess) {
-  const vector<pid_t> expected = {11, 12, 13};
+// Tests for Delegate().
 
+TEST_F(CgroupTasksHandlerTest, DelegateSuccess) {
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_CALL(*mock_cgroup_controller_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_OK(handler_->Delegate(kUid, kGid));
+}
+
+TEST_F(CgroupTasksHandlerTest, DelegateFails) {
+  const UnixUid kUid(2);
+  const UnixGid kGid(3);
+
+  EXPECT_CALL(*mock_cgroup_controller_, Delegate(kUid, kGid))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED, handler_->Delegate(kUid, kGid));
+}
+
+// Tests for ListProcesses().
+
+TEST_F(CgroupTasksHandlerTest, ListProcessesSuccess) {
+  const vector<pid_t> kExpected = {11, 12, 13};
+
+  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
+      .WillRepeatedly(Return(kExpected));
   EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
-      .WillRepeatedly(Return(expected));
+      .WillRepeatedly(Return(kExpected));
 
   StatusOr<vector<pid_t>> statusor = handler_->ListProcesses();
-  EXPECT_TRUE(statusor.ok());
-  CheckPids(expected, statusor.ValueOrDie());
+  ASSERT_OK(statusor);
+  CheckPids(kExpected, statusor.ValueOrDie());
 }
+
+TEST_F(CgroupTasksHandlerTest, ListProcessesWithVisitorThreads) {
+  const vector<pid_t> kPids = {11, 12, 13};
+  const vector<pid_t> kTids = {11, 12, 14};
+  const vector<pid_t> kExpected = {11, 12};
+
+  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
+      .WillRepeatedly(Return(kTids));
+  EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
+      .WillRepeatedly(Return(kPids));
+
+  StatusOr<vector<pid_t>> statusor = handler_->ListProcesses();
+  ASSERT_OK(statusor);
+  CheckPids(kExpected, statusor.ValueOrDie());
+}
+
+TEST_F(CgroupTasksHandlerTest, ListProcessesEmpty) {
+  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
+      .WillRepeatedly(Return(vector<pid_t>()));
+  EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
+      .WillRepeatedly(Return(vector<pid_t>()));
+
+  StatusOr<vector<pid_t>> statusor = handler_->ListProcesses();
+  ASSERT_OK(statusor);
+  EXPECT_EQ(0, statusor.ValueOrDie().size());
+}
+
+// Tests for ListThreads().
 
 TEST_F(CgroupTasksHandlerTest, ListThreadsSuccess) {
   const vector<pid_t> expected = {11, 12, 13};
@@ -383,15 +310,6 @@ TEST_F(CgroupTasksHandlerTest, ListThreadsSuccess) {
   StatusOr<vector<pid_t>> statusor = handler_->ListThreads();
   EXPECT_TRUE(statusor.ok());
   CheckPids(expected, statusor.ValueOrDie());
-}
-
-TEST_F(CgroupTasksHandlerTest, ListProcessesEmpty) {
-  EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
-      .WillRepeatedly(Return(vector<pid_t>()));
-
-  StatusOr<vector<pid_t>> statusor = handler_->ListProcesses();
-  EXPECT_TRUE(statusor.ok());
-  EXPECT_EQ(0, statusor.ValueOrDie().size());
 }
 
 TEST_F(CgroupTasksHandlerTest, ListThreadsEmpty) {

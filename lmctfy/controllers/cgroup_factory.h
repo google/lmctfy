@@ -22,8 +22,6 @@ using ::std::string;
 #include "base/macros.h"
 #include "system_api/kernel_api.h"
 #include "include/lmctfy.pb.h"
-#include "util/safe_types/unix_gid.h"
-#include "util/safe_types/unix_uid.h"
 #include "util/task/statusor.h"
 
 namespace containers {
@@ -54,14 +52,11 @@ class CgroupFactory {
   //   type: The cgroup hierarchy to create a hierarchy in.
   //   hierarchy_path: The path inside the cgroup hierarchy to create. e.g.:
   //       /alloc/task.
-  //   uid: The UnixUid of the user to chown the new cgroup to.
-  //   gid: The UnixGid of the group to chown the new cgroup to.
   // Return:
   //   Status or the operation. On success returns OK and populates the full
   //       cgroup path which now exists and is ready for use.
-  virtual ::util::StatusOr<string> Create(
-      CgroupHierarchy type, const string &hierarchy_path,
-      ::util::UnixUid uid, ::util::UnixGid gid) const;
+  virtual ::util::StatusOr<string> Create(CgroupHierarchy type,
+                                          const string &hierarchy_path) const;
 
   // Mounts the specified cgroup hierarchies to the specified mount path.
   virtual ::util::Status Mount(const CgroupMount &cgroup);

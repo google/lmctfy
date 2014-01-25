@@ -64,10 +64,8 @@ TEST_F(CpuControllerTest, Type) {
 TEST_F(CpuControllerTest, SetMilliCpus) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::Cpu::kShares);
 
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "1024", kResFile, NotNull(),
-                                        NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("1024", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetMilliCpus(1000).ok());
 }
 
@@ -75,9 +73,8 @@ TEST_F(CpuControllerTest, SetMilliCpusTooLow) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::Cpu::kShares);
 
   // Shares setting should not go below 2.
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "2", kResFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("2", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetMilliCpus(1).ok());
 }
 
@@ -86,9 +83,8 @@ TEST_F(CpuControllerTest, SetMilliCpusFails) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::Cpu::kShares);
 
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "1024", kResFile, NotNull(),
-                                        NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+              SafeWriteResFile("1024", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   EXPECT_FALSE(controller_->SetMilliCpus(1000).ok());
 }
 
@@ -103,14 +99,12 @@ TEST_F(CpuControllerTest, SetMaxMilliCpus) {
   const int64 milli_cpus = 2000;
   int64 expected_period_usecs = statusor.ValueOrDie() * 1000;
   int64 expected_quota_usecs = expected_period_usecs * (milli_cpus / 1000);
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, SimpleItoa(expected_quota_usecs),
-                                        kQuotaFile, NotNull(), NotNull()))
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile(SimpleItoa(expected_quota_usecs),
+                                              kQuotaFile, NotNull(), NotNull()))
       .WillOnce(Return(0));
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, SimpleItoa(expected_period_usecs),
-                                        kPeriodFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
+              SafeWriteResFile(SimpleItoa(expected_period_usecs), kPeriodFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetMaxMilliCpus(milli_cpus).ok());
 }
 
@@ -129,9 +123,8 @@ TEST_F(CpuControllerTest, SetMaxMilliCpusWritePeriodFails) {
                                       KernelFiles::Cpu::kHardcapPeriod);
 
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, "250000", kPeriodFile, NotNull(),
-                                        NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+              SafeWriteResFile("250000", kPeriodFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   EXPECT_FALSE(controller_->SetMaxMilliCpus(2000).ok());
 }
 
@@ -146,52 +139,47 @@ TEST_F(CpuControllerTest, SetMaxMilliCpusWriteQuotaFails) {
   ASSERT_TRUE(statusor.ok());
   int64 expected_period_usecs = statusor.ValueOrDie() * 1000;
   EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFileWithRetry(_, SimpleItoa(expected_period_usecs),
-                                        kPeriodFile, NotNull(), NotNull()))
-      .WillOnce(Return(0));
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "500000", kQuotaFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+              SafeWriteResFile(SimpleItoa(expected_period_usecs), kPeriodFile,
+                               NotNull(), NotNull())).WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("500000", kQuotaFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   EXPECT_FALSE(controller_->SetMaxMilliCpus(2000).ok());
 }
 
 TEST_F(CpuControllerTest, SetLatencyPremier) {
   const string kLatFile = JoinPath(kMountPoint, KernelFiles::Cpu::kLatency);
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "25", kLatFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("25", kLatFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetLatency(PREMIER).ok());
 }
 
 TEST_F(CpuControllerTest, SetLatencyPriority) {
   const string kLatFile = JoinPath(kMountPoint, KernelFiles::Cpu::kLatency);
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "50", kLatFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("50", kLatFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetLatency(PRIORITY).ok());
 }
 
 TEST_F(CpuControllerTest, SetLatencyNormal) {
   const string kLatFile = JoinPath(kMountPoint, KernelFiles::Cpu::kLatency);
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "100", kLatFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("100", kLatFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetLatency(NORMAL).ok());
 }
 
 TEST_F(CpuControllerTest, SetLatencyBestEffort) {
   const string kLatFile = JoinPath(kMountPoint, KernelFiles::Cpu::kLatency);
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "-1", kLatFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("-1", kLatFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetLatency(BEST_EFFORT).ok());
 }
 
 TEST_F(CpuControllerTest, SetLatencyFailure) {
   const string kLatFile = JoinPath(kMountPoint, KernelFiles::Cpu::kLatency);
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "25", kLatFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("25", kLatFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   EXPECT_FALSE(controller_->SetLatency(PREMIER).ok());
 }
 
@@ -199,9 +187,8 @@ TEST_F(CpuControllerTest, SetPlacementStrategy) {
   const string kResFile = JoinPath(kMountPoint,
                                    KernelFiles::Cpu::kPlacementStrategy);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "401", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("401", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
   EXPECT_TRUE(controller_->SetPlacementStrategy(401).ok());
 }
 
@@ -209,9 +196,9 @@ TEST_F(CpuControllerTest, SetPlacementStrategyFails) {
   const string kResFile = JoinPath(kMountPoint,
                                    KernelFiles::Cpu::kPlacementStrategy);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "401", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(0)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("401", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
   EXPECT_FALSE(controller_->SetPlacementStrategy(401).ok());
 }
 

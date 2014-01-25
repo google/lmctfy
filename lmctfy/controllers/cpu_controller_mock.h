@@ -32,10 +32,8 @@ class MockCpuControllerFactory : public CpuControllerFactory {
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<CpuController *>(const string &hierarchy_path));
-  MOCK_CONST_METHOD3(Create, ::util::StatusOr<CpuController *>(
-                                 const string &hierarchy_path,
-                                 ::util::UnixUid uid,
-                                 ::util::UnixGid gid));
+  MOCK_CONST_METHOD1(
+      Create, ::util::StatusOr<CpuController *>(const string &hierarchy_path));
   MOCK_CONST_METHOD1(Exists, bool(const string &hierarchy_path));
 };
 

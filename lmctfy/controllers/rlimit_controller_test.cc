@@ -64,9 +64,8 @@ TEST_F(RLimitControllerTest, Type) {
 TEST_F(RLimitControllerTest, SetFdLimitSuccess) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::RLimit::kFdLimit);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "11", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  EXPECT_CALL(*mock_kernel_, SafeWriteResFile("11", kResFile, NotNull(),
+                                              NotNull())).WillOnce(Return(0));
 
   EXPECT_OK(controller_->SetFdLimit(11));
 }
@@ -74,9 +73,9 @@ TEST_F(RLimitControllerTest, SetFdLimitSuccess) {
 TEST_F(RLimitControllerTest, SetFdLimitFails) {
   const string kResFile = JoinPath(kMountPoint, KernelFiles::RLimit::kFdLimit);
 
-  EXPECT_CALL(*mock_kernel_, SafeWriteResFileWithRetry(_, "11", kResFile,
-                                                       NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgPointee<4>(true), Return(1)));
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("11", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(1)));
 
   EXPECT_NOT_OK(controller_->SetFdLimit(11));
 }
@@ -172,6 +171,39 @@ TEST_F(RLimitControllerTest, GetMaxFdUsageFails) {
       .WillOnce(Return(false));
 
   EXPECT_NOT_OK(controller_->GetMaxFdUsage());
+}
+
+TEST_F(RLimitControllerTest, GetFdFailCountSuccess) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::RLimit::kFdFailCount);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK)).WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("12"), Return(true)));
+
+  StatusOr<int64> statusor = controller_->GetFdFailCount();
+  ASSERT_OK(statusor);
+  EXPECT_EQ(12, statusor.ValueOrDie());
+}
+
+TEST_F(RLimitControllerTest, GetFdFailCountNotFound) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::RLimit::kFdFailCount);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK)).WillRepeatedly(Return(1));
+
+  EXPECT_ERROR_CODE(NOT_FOUND, controller_->GetFdFailCount());
+}
+
+TEST_F(RLimitControllerTest, GetFdFailCountFails) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::RLimit::kFdFailCount);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK)).WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(Return(false));
+
+  EXPECT_NOT_OK(controller_->GetFdFailCount());
 }
 
 }  // namespace lmctfy

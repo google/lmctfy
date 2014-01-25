@@ -65,6 +65,10 @@ Status MemoryController::SetStalePageAge(uint64 scan_cycles) {
   return SetParamInt(KernelFiles::Memory::kStalePageAge, scan_cycles);
 }
 
+Status MemoryController::SetOomScore(int64 oom_score) {
+  return SetParamInt(KernelFiles::Memory::kOomScoreBadness, oom_score);
+}
+
 StatusOr<Bytes> MemoryController::GetWorkingSet() const {
   // Get usage in bytes.
   StatusOr<Bytes> statusor_bytes =
@@ -126,6 +130,10 @@ StatusOr<Bytes> MemoryController::GetSoftLimit() const {
 
 StatusOr<uint64> MemoryController::GetStalePageAge() const {
   return GetParamInt(KernelFiles::Memory::kStalePageAge);
+}
+
+StatusOr<int64> MemoryController::GetOomScore() const {
+  return GetParamInt(KernelFiles::Memory::kOomScoreBadness);
 }
 
 StatusOr<map<string, int64>> MemoryController::GetStats(
