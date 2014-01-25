@@ -50,7 +50,7 @@ int lmctfy_new_container_api(struct status *s, struct container_api **api) {
 void lmctfy_delete_container_api(struct container_api *api) {
   if (api != NULL) {
     if (api->container_api_ != NULL) {
-      // TODO(monnand): delete api->container_api_?
+      delete api->container_api_;
     }
     delete api;
   }
