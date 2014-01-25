@@ -8,6 +8,9 @@ extern "C" {
 
 struct status {
   int error_code;
+
+  // Null-terminated string allocated on heap.
+  // Needs to be free()'ed.
   char *message;
 };
 
