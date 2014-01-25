@@ -26,10 +26,7 @@ int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_s
   InitSpec init_spec;
   init_spec.ParseFromArray(spec, spec_size);
   Status v = ContainerApi::InitMachine(init_spec);
-  if (s != NULL) {
-    s->status_ = v;
-  }
-  return v.error_code();
+  return status_copy(s, v);
 }
 
 int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec) {

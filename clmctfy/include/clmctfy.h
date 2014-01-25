@@ -1,11 +1,15 @@
 #ifndef LMCTFY_C_BINDING_LMCTFY_C_H_
 #define LMCTFY_C_BINDING_LMCTFY_C_H_
 #include "lmctfy.pb-c.h"
-#include "status-c.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+struct status {
+  int error_code;
+  char *message;
+};
 
 struct container;
 struct container_api;
