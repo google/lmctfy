@@ -7,28 +7,29 @@ PWD = $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 
 LMCTFY_ROOT = $(shell dirname ${PWD})
 
-INCLUDE = ${PWD}/include
+CINCLUDE = ${PWD}/include
 
-CXX = g++
+CXX ?= g++
+AR ?= ar
 
-CXXFLAGS = -I${INCLUDE} -I${LMCTFY_ROOT}/include -I${LMCTFY_ROOT} -I${PWD}
+CXXFLAGS = -I${CINCLUDE} -I${LMCTFY_ROOT}/include -I${LMCTFY_ROOT} -I${PWD}
 CXXFLAGS += -std=c++0x -fpermissive
 
-all: clmctfy.o status-c.o ${INCLUDE}/lmctfy.pb-c.h
+all: clmctfy.o status-c.o
 
-clmctfy.o: ${PWD}/clmctfy.cc ${INCLUDE}/clmctfy.h ${PWD}/status-internal.h ${INCLUDE}/lmctfy.pb-c.h ${INCLUDE}/codes.pb-c.h
+clmctfy.o: ${PWD}/clmctfy.cc ${CINCLUDE}/clmctfy.h ${PWD}/status-internal.h ${CINCLUDE}/lmctfy.pb-c.h ${CINCLUDE}/codes.pb-c.h ${CINCLUDE}/clmctfy-raw.h
 	${CXX} ${CXXFLAGS} -c -o $@ $<
-status-c.o: ${PWD}/status-c.cc ${INCLUDE}/clmctfy.h ${INCLUDE}/codes.pb-c.h ${LMCTFY_ROOT}/util/task/status.h ${PWD}/status-internal.h
+status-c.o: ${PWD}/status-c.cc ${CINCLUDE}/clmctfy.h ${CINCLUDE}/codes.pb-c.h ${LMCTFY_ROOT}/util/task/status.h ${PWD}/status-internal.h
 	${CXX} ${CXXFLAGS} -c -o $@ $<
 
-${INCLUDE}/codes.pb-c.h: ${LMCTFY_ROOT}/util/task/codes.proto
-	${PROTOC_C} --c_out=${INCLUDE} --proto_path=${LMCTFY_ROOT}/util/task $<
+${CINCLUDE}/codes.pb-c.h: ${LMCTFY_ROOT}/util/task/codes.proto
+	${PROTOC_C} --c_out=${CINCLUDE} --proto_path=${LMCTFY_ROOT}/util/task $<
 
-${INCLUDE}/lmctfy.pb-c.h: ${LMCTFY_ROOT}/include/lmctfy.proto 
-	${PROTOC_C} --c_out=${INCLUDE} --proto_path=${LMCTFY_ROOT}/include $<
+${CINCLUDE}/lmctfy.pb-c.h: ${LMCTFY_ROOT}/include/lmctfy.proto 
+	${PROTOC_C} --c_out=${CINCLUDE} --proto_path=${LMCTFY_ROOT}/include $<
 
 clean:
-	rm -f ${INCLUDE}/*.pb-c.[ch]
+	rm -f ${CINCLUDE}/*.pb-c.[ch]
 	rm -f *.o
 
 .PHONY: clean all
