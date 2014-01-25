@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-#include "lmctfy-c.h"
+#include "clmctfy.h"
 #include "lmctfy.h"
 #include "util/task/statusor.h"
 #include "status-internal.h"
