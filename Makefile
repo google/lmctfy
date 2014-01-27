@@ -56,8 +56,21 @@ OUT_DIR = bin
 GTEST_DIR = gmock/gtest
 GMOCK_DIR = gmock
 
-# TODO(vmarmol): Detect supported GCC and use c++0x or c++11.
-CXXFLAGS += $(OPT) -std=c++0x
+CXXFLAGS += $(OPT)
+
+# Determine GCC version.
+GCC_VERSION = $(shell $(CXX) -dumpversion | awk -F'.' \
+	      '{printf "%d%02d%02d", $$1, $$2, $$3}')
+
+# Helper comparison function.
+IF = $(if $(shell [[ $(1) -$(2) $(3) ]] && echo "1"),$(4),$(5))
+
+# Use c++11 for GCC >=4.7.0 and c++0x for earlier versions. Additionally,
+# set -fpermissive for 4.7.x to work around '<::'.
+CXXFLAGS += $(call IF,$(GCC_VERSION),ge,40700,\
+	    $(call IF,$(GCC_VERSION),lt,40800,\
+	    -std=c++11 -fpermissive,-std=c++11),\
+	    -std=c++0x)
 
 # Add defines.
 CXXFLAGS += -DHASH_NAMESPACE=std -DHAVE_LONG_LONG -DGTEST_HAS_STRING_PIECE_ \
