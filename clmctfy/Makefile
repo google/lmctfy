@@ -1,6 +1,6 @@
 # TODO(monnand): Check protoc-c is installed
 PROTOC_C = protoc-c
-
+PROTOC = protoc
 
 # The directory where this Makefile resides
 CLMCTFY_ROOT = $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
@@ -14,6 +14,9 @@ AR ?= ar
 
 # Where to place the binary outputs.
 OUT_DIR = $(CLMCTFY_ROOT)/bin
+
+INCLUDE_PROTOS = $(LMCTFY_ROOT)/include/lmctfy
+UTIL_PROTOS = $(LMCTFY_ROOT)/util/task/codes
 
 # Location of gTest and gMock.
 GTEST_DIR = $(LMCTFY_ROOT)/gmock/gtest
@@ -38,27 +41,18 @@ CXXFLAGS += -pthread -lrt -lre2 -lgflags
 
 all: clmctfy.o status-c.o
 
-clmctfy.o: $(CLMCTFY_ROOT)/clmctfy.cc \
-	$(CLMCTFY_INCLUDE)/clmctfy.h \
-	$(CLMCTFY_ROOT)/status-internal.h \
-	$(CLMCTFY_INCLUDE)/lmctfy.pb-c.h \
-	$(CLMCTFY_INCLUDE)/codes.pb-c.h \
-	$(CLMCTFY_INCLUDE)/clmctfy-raw.h
+%.o: gen_protos %.cc
 	$(create_bin)
-	$(CXX) $(CXXFLAGS) -c -o $(OUT_DIR)/$@ $<
-status-c.o: $(CLMCTFY_ROOT)/status-c.cc \
-	$(CLMCTFY_INCLUDE)/clmctfy.h \
-	$(CLMCTFY_INCLUDE)/codes.pb-c.h \
-	$(LMCTFY_ROOT)/util/task/status.h \
-	$(CLMCTFY_ROOT)/status-internal.h
+	$(CXX) -c $*.cc -o $(OUT_DIR)/$@ $(CXXFLAGS)
+
+gen_protos: $(addsuffix _proto,$(INCLUDE_PROTOS) $(UTIL_PROTOS))
+
+%_proto: %.proto
+	$(PROTOC_C) $^ --c_out=$(dir $^) --proto_path=$(dir $^)
+
+%.pb-c.o: %_proto
 	$(create_bin)
-	$(CXX) $(CXXFLAGS) -c -o $(OUT_DIR)/$@ $<
-
-$(CLMCTFY_INCLUDE)/codes.pb-c.h: $(LMCTFY_ROOT)/util/task/codes.proto
-	$(PROTOC_C) --c_out=$(CLMCTFY_INCLUDE) --proto_path=$(LMCTFY_ROOT)/util/task $<
-
-$(CLMCTFY_INCLUDE)/lmctfy.pb-c.h: $(LMCTFY_ROOT)/include/lmctfy.proto 
-	$(PROTOC_C) --c_out=$(CLMCTFY_INCLUDE) --proto_path=$(LMCTFY_ROOT)/include $<
+	$(CXX) -c $*.pb-c.c -o $(OUT_DIR)/$@ $(CXXFLAGS)
 
 %_test: gtest_main.a
 	$(create_bin)

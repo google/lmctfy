@@ -6,7 +6,7 @@
 #include "util/task/statusor.h"
 #include "status-internal.h"
 #include "lmctfy.pb.h"
-#include "codes.pb-c.h"
+#include "util/task/codes.pb-c.h"
 
 #define STATUS_OK UTIL__ERROR__CODE__OK
 
