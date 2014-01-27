@@ -5,19 +5,19 @@ PROTOC_C = protoc-c
 # The directory where this Makefile resides
 CLMCTFY_ROOT = $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 
-LMCTFY_ROOT = $(shell dirname ${CLMCTFY_ROOT})
+LMCTFY_ROOT = $(shell dirname $(CLMCTFY_ROOT))
 
-CLMCTFY_INCLUDE = ${CLMCTFY_ROOT}/include
+CLMCTFY_INCLUDE = $(CLMCTFY_ROOT)/include
 
 CXX ?= g++
 AR ?= ar
 
 # Where to place the binary outputs.
-OUT_DIR = ${CLMCTFY_ROOT}/bin
+OUT_DIR = $(CLMCTFY_ROOT)/bin
 
 # Location of gTest and gMock.
-GTEST_DIR = ${LMCTFY_ROOT}/gmock/gtest
-GMOCK_DIR = ${LMCTFY_ROOT}/gmock
+GTEST_DIR = $(LMCTFY_ROOT)/gmock/gtest
+GMOCK_DIR = $(LMCTFY_ROOT)/gmock
 
 # Function for ensuring the output directory has been created.
 create_bin = mkdir -p $(dir $(OUT_DIR)/$@)
@@ -28,9 +28,9 @@ archive_all = $(AR) $(ARFLAGS) $(OUT_DIR)/$@ $(addprefix $(OUT_DIR)/,$^)
 # Gets all *_test.cc files in lmtcfy/.
 TESTS = $(basename $(shell find ./ -name \*_test.cc))
 
-CXXFLAGS = -I${CLMCTFY_INCLUDE} -I${LMCTFY_ROOT}/include -I${LMCTFY_ROOT} -I${CLMCTFY_ROOT}
-CXXFLAGS += -I${LMCTFY_ROOT}/base -I${LMCTFY_ROOT}/lmctfy -I${GTEST_DIR}/include \
-	    -I${GMOCK_DIR}/include -I/usr/local/include -L/usr/local/lib \
+CXXFLAGS = -I$(CLMCTFY_INCLUDE) -I$(LMCTFY_ROOT)/include -I$(LMCTFY_ROOT) -I$(CLMCTFY_ROOT)
+CXXFLAGS += -I$(LMCTFY_ROOT)/base -I$(LMCTFY_ROOT)/lmctfy -I$(GTEST_DIR)/include \
+	    -I$(GMOCK_DIR)/include -I/usr/local/include -L/usr/local/lib \
 	    -I/usr/include -L/usr/lib
 CXXFLAGS += -std=c++0x -fpermissive
 # Add libraries to link in.
@@ -38,31 +38,31 @@ CXXFLAGS += -pthread -lrt -lre2 -lgflags
 
 all: clmctfy.o status-c.o
 
-clmctfy.o: ${CLMCTFY_ROOT}/clmctfy.cc \
-	${CLMCTFY_INCLUDE}/clmctfy.h \
-	${CLMCTFY_ROOT}/status-internal.h \
-	${CLMCTFY_INCLUDE}/lmctfy.pb-c.h \
-	${CLMCTFY_INCLUDE}/codes.pb-c.h \
-	${CLMCTFY_INCLUDE}/clmctfy-raw.h
+clmctfy.o: $(CLMCTFY_ROOT)/clmctfy.cc \
+	$(CLMCTFY_INCLUDE)/clmctfy.h \
+	$(CLMCTFY_ROOT)/status-internal.h \
+	$(CLMCTFY_INCLUDE)/lmctfy.pb-c.h \
+	$(CLMCTFY_INCLUDE)/codes.pb-c.h \
+	$(CLMCTFY_INCLUDE)/clmctfy-raw.h
 	$(create_bin)
-	${CXX} ${CXXFLAGS} -c -o $(OUT_DIR)/$@ $<
-status-c.o: ${CLMCTFY_ROOT}/status-c.cc \
-	${CLMCTFY_INCLUDE}/clmctfy.h \
-	${CLMCTFY_INCLUDE}/codes.pb-c.h \
-	${LMCTFY_ROOT}/util/task/status.h \
-	${CLMCTFY_ROOT}/status-internal.h
+	$(CXX) $(CXXFLAGS) -c -o $(OUT_DIR)/$@ $<
+status-c.o: $(CLMCTFY_ROOT)/status-c.cc \
+	$(CLMCTFY_INCLUDE)/clmctfy.h \
+	$(CLMCTFY_INCLUDE)/codes.pb-c.h \
+	$(LMCTFY_ROOT)/util/task/status.h \
+	$(CLMCTFY_ROOT)/status-internal.h
 	$(create_bin)
-	${CXX} ${CXXFLAGS} -c -o $(OUT_DIR)/$@ $<
+	$(CXX) $(CXXFLAGS) -c -o $(OUT_DIR)/$@ $<
 
-${CLMCTFY_INCLUDE}/codes.pb-c.h: ${LMCTFY_ROOT}/util/task/codes.proto
-	${PROTOC_C} --c_out=${CLMCTFY_INCLUDE} --proto_path=${LMCTFY_ROOT}/util/task $<
+$(CLMCTFY_INCLUDE)/codes.pb-c.h: $(LMCTFY_ROOT)/util/task/codes.proto
+	$(PROTOC_C) --c_out=$(CLMCTFY_INCLUDE) --proto_path=$(LMCTFY_ROOT)/util/task $<
 
-${CLMCTFY_INCLUDE}/lmctfy.pb-c.h: ${LMCTFY_ROOT}/include/lmctfy.proto 
-	${PROTOC_C} --c_out=${CLMCTFY_INCLUDE} --proto_path=${LMCTFY_ROOT}/include $<
+$(CLMCTFY_INCLUDE)/lmctfy.pb-c.h: $(LMCTFY_ROOT)/include/lmctfy.proto 
+	$(PROTOC_C) --c_out=$(CLMCTFY_INCLUDE) --proto_path=$(LMCTFY_ROOT)/include $<
 
 %_test: gtest_main.a
 	$(create_bin)
-	$(CXX) ${CXXFLAGS} -o $(OUT_DIR)/$@ $*.cc $*_test.cc $(addprefix $(OUT_DIR)/,$^)
+	$(CXX) $(CXXFLAGS) -o $(OUT_DIR)/$@ $*.cc $*_test.cc $(addprefix $(OUT_DIR)/,$^)
 
 TEST_TMPDIR = "clmctfy_test.$$"
 check: $(TESTS)
@@ -76,9 +76,9 @@ check: $(TESTS)
 	#rm -rf $(TEST_TMPDIR)
 
 clean:
-	rm -f ${CLMCTFY_INCLUDE}/*.pb-c.[ch]
+	rm -f $(CLMCTFY_INCLUDE)/*.pb-c.[ch]
 	rm -f *.o
-	rm -rf ${OUT_DIR}
+	rm -rf $(OUT_DIR)
 
 .PHONY: clean all check
 
