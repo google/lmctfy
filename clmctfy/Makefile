@@ -25,8 +25,16 @@ create_bin = mkdir -p $(dir $(OUT_DIR)/$@)
 # Function that archives all input's bin/ output into an archive.
 archive_all = $(AR) $(ARFLAGS) $(OUT_DIR)/$@ $(addprefix $(OUT_DIR)/,$^)
 
+# Gets all *_test.cc files in lmtcfy/.
+TESTS = $(basename $(shell find ./ -name \*_test.cc))
+
 CXXFLAGS = -I${CLMCTFY_INCLUDE} -I${LMCTFY_ROOT}/include -I${LMCTFY_ROOT} -I${CLMCTFY_ROOT}
+CXXFLAGS += -I${LMCTFY_ROOT}/base -I${LMCTFY_ROOT}/lmctfy -I${GTEST_DIR}/include \
+	    -I${GMOCK_DIR}/include -I/usr/local/include -L/usr/local/lib \
+	    -I/usr/include -L/usr/lib
 CXXFLAGS += -std=c++0x -fpermissive
+# Add libraries to link in.
+CXXFLAGS += -pthread -lrt -lre2 -lgflags
 
 all: clmctfy.o status-c.o
 
@@ -52,12 +60,27 @@ ${CLMCTFY_INCLUDE}/codes.pb-c.h: ${LMCTFY_ROOT}/util/task/codes.proto
 ${CLMCTFY_INCLUDE}/lmctfy.pb-c.h: ${LMCTFY_ROOT}/include/lmctfy.proto 
 	${PROTOC_C} --c_out=${CLMCTFY_INCLUDE} --proto_path=${LMCTFY_ROOT}/include $<
 
+%_test: gtest_main.a
+	$(create_bin)
+	$(CXX) ${CXXFLAGS} -o $(OUT_DIR)/$@ $*.cc $*_test.cc $(addprefix $(OUT_DIR)/,$^)
+
+TEST_TMPDIR = "clmctfy_test.$$"
+check: $(TESTS)
+	for t in $(addprefix $(OUT_DIR)/,$^); \
+		do \
+			echo "***** Running $$t"; \
+			rm -rf $(TEST_TMPDIR); \
+			mkdir $(TEST_TMPDIR); \
+			./$$t --test_tmpdir=$(TEST_TMPDIR); \
+		done; \
+	#rm -rf $(TEST_TMPDIR)
+
 clean:
 	rm -f ${CLMCTFY_INCLUDE}/*.pb-c.[ch]
 	rm -f *.o
 	rm -rf ${OUT_DIR}
 
-.PHONY: clean all
+.PHONY: clean all check
 
 # Rules for Building Google Test and Google Mock (based on gmock's example).
 
@@ -89,13 +112,13 @@ gtest-all.o : $(GTEST_SRCS_)
 gmock-all.o : $(GMOCK_SRCS_)
 	$(create_bin)
 	$(CXX) -I$(GTEST_DIR) -I$(GMOCK_DIR)	\
-	       -I$(GMOCK_DIR)/include -I$(GTEST_DIR)/include \
+	       -I$(GMOCK_DIR)/include \
 	       $(CXXFLAGS) \
 		-c $(GMOCK_DIR)/src/gmock-all.cc -o $(OUT_DIR)/$@
 
 gmock_main.o : $(GMOCK_SRCS_)
 	$(create_bin)
-	$(CXX) -I$(GTEST_DIR) -I$(GMOCK_DIR) $(CXXFLAGS) \
+	$(CXX) -I$(GTEST_DIR) $(CXXFLAGS) \
 		-c $(GMOCK_DIR)/src/gmock_main.cc -o $(OUT_DIR)/$@
 
 gtest.a : gmock-all.o gtest-all.o
