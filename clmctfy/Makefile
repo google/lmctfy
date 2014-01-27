@@ -28,6 +28,12 @@ create_bin = mkdir -p $(dir $(OUT_DIR)/$@)
 # Function that archives all input's bin/ output into an archive.
 archive_all = $(AR) $(ARFLAGS) $(OUT_DIR)/$@ $(addprefix $(OUT_DIR)/,$^)
 
+# Function for getting a set of source files.
+get_srcs = $(shell find $(1) -name \*.cc -a ! -name \*_test.cc | tr "\n" " ")
+
+BASE_SOURCES = $(call get_srcs,$(LMCTFY_ROOT)/base/)
+FILE_SOURCES = $(call get_srcs,$(LMCTFY_ROOT)/file/)
+
 # Gets all *_test.cc files in lmtcfy/.
 TESTS = $(basename $(shell find ./ -name \*_test.cc))
 

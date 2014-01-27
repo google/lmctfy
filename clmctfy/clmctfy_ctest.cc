@@ -29,6 +29,10 @@ StatusOr<ContainerApi *> ContainerApi::New() {
   return new StrictMockContainerApi();
 }
 
+Status ContainerApi::InitMachine(const InitSpec &spec) {
+  return Status::OK;
+}
+
 namespace {
 
 TEST(ClmctfyTest, NewContainerApi) {
