@@ -84,32 +84,41 @@ StrictMockContainer *ClmctfyContainerTest::GetMockContainer() {
   return mock_container;
 }
 
-
-TEST_F(ClmctfyContainerTest, ExecSuccess) {
+TEST_F(ClmctfyContainerTest, Exec) {
   StrictMockContainer *mock_container = GetMockContainer();
   int argc = 2;
   const char *argv[] = {"echo", "hello world"};
   vector<string> cmds(argc);
+  string errmsg = "some error message";
+  Status status = Status(::util::error::INTERNAL, errmsg);
 
   for (int i = 0; i < argc; i++) {
     cmds[i] = argv[i];
   }
 
-  EXPECT_CALL(*mock_container, Exec(cmds)).WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_container, Exec(cmds))
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(status));
 
+  // First call will be success.
   struct status s = {0, NULL};
   int ret = lmctfy_container_exec(&s, container_, argc, argv);
 
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
   EXPECT_EQ(s.message, NULL);
-}
 
-TEST_F(ClmctfyContainerTest, ExecBadArgument) {
-  StrictMockContainer *mock_container = GetMockContainer();
+  // second call failed.
+  s = {0, NULL};
+  ret = lmctfy_container_exec(&s, container_, argc, argv);
 
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_exec(&s, container_, 0, NULL);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, status.error_code());
+  EXPECT_EQ(errmsg, s.message);
+
+  // Invalid arguments.
+  s = {0, NULL};
+  ret = lmctfy_container_exec(&s, container_, 0, NULL);
 
   EXPECT_EQ(ret, s.error_code);
   EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
@@ -127,31 +136,52 @@ TEST_F(ClmctfyContainerTest, ExecBadArgument) {
   container_->container_ = tmp;
   EXPECT_EQ(ret, s.error_code);
   EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+
 }
 
-
-TEST_F(ClmctfyContainerTest, ExecFail) {
+TEST_F(ClmctfyContainerTest, Update) {
   StrictMockContainer *mock_container = GetMockContainer();
-  int argc = 2;
-  const char *argv[] = {"echo", "hello world"};
+  Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT;
   string errmsg = "some error message";
   Status status = Status(::util::error::INTERNAL, errmsg);
-  vector<string> cmds(argc);
 
-  for (int i = 0; i < argc; i++) {
-    cmds[i] = argv[i];
-  }
-
-  EXPECT_CALL(*mock_container, Exec(cmds)).WillOnce(Return(status));
+  EXPECT_CALL(*mock_container, Update(_, Container::UPDATE_DIFF))
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(status));
 
   struct status s = {0, NULL};
-  int ret = lmctfy_container_exec(&s, container_, argc, argv);
+  int policy = CONTAINER_UPDATE_POLICY_DIFF;
+  int ret = lmctfy_container_update(&s, container_, policy, &spec);
 
+  EXPECT_EQ(ret, 0);
+  EXPECT_EQ(s.error_code, 0);
+  EXPECT_EQ(s.message, NULL);
+
+  s = {0, NULL};
+  ret = lmctfy_container_update(&s, container_, policy, &spec);
   EXPECT_EQ(ret, s.error_code);
   EXPECT_EQ(s.error_code, status.error_code());
   EXPECT_EQ(errmsg, s.message);
-}
 
+  s = {0, NULL};
+  ret = lmctfy_container_update(&s, container_, -1, &spec);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+
+  Container *tmp = container_->container_;
+  container_->container_ = NULL;
+  s = {0, NULL};
+  ret = lmctfy_container_update(&s, container_, policy, &spec);
+  container_->container_ = tmp;
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+
+  s = {0, NULL};
+  ret = lmctfy_container_update(&s, NULL, policy, &spec);
+  container_->container_ = tmp;
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+}
 
 }  // namespace lmctfy
 }  // namespace containers
