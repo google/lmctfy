@@ -30,6 +30,7 @@ namespace lmctfy {
 namespace internal {
 
 ContainerApi *lmctfy_container_api_strip(struct container_api *api);
+Container *lmctfy_container_strip(struct container *container);
 
 } // internal
 } // lmctfy

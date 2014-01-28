@@ -60,13 +60,17 @@ StrictMockContainerApi *ClmctfyContainerApiTest::GetMockApi() {
   return mock_api;
 }
 
-TEST_F(ClmctfyContainerApiTest, NewContainerApi) {
+TEST_F(ClmctfyContainerApiTest, GetContainer) {
   StrictMockContainerApi *mock_api = GetMockApi();
-  StatusOr<Container *> statusor_container = StatusOr<Container *>(new StrictMockContainer("test"));
+  const char *container_name = "test";
+  Container *ctnr = new StrictMockContainer(container_name);
+  StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
   EXPECT_CALL(*mock_api, Get(_)).WillOnce(Return(statusor_container));
   struct container *c = NULL;
-  int ret = lmctfy_container_api_get_container(NULL, &c, container_api_, "test");
+  int ret = lmctfy_container_api_get_container(NULL, &c, container_api_, container_name);
   EXPECT_EQ(ret, 0);
+  Container *ctnr_2 = internal::lmctfy_container_strip(c);
+  EXPECT_EQ(ctnr_2, ctnr);
 }
 
 }  // namespace lmctfy
