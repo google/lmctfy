@@ -55,6 +55,7 @@ class ClmctfyContainerApiTest : public ::testing::Test {
   struct container_api *container_api_;
   struct container *container_;
   StrictMockContainerApi *GetMockApi();
+  StrictMockContainer *GetMockContainer();
 };
 
 StrictMockContainerApi *ClmctfyContainerApiTest::GetMockApi() {
@@ -63,16 +64,25 @@ StrictMockContainerApi *ClmctfyContainerApiTest::GetMockApi() {
   return mock_api;
 }
 
+StrictMockContainer *ClmctfyContainerApiTest::GetMockContainer() {
+  Container *ctnr = internal::lmctfy_container_strip(container_);
+  StrictMockContainer *mock_container = dynamic_cast<StrictMockContainer *>(ctnr);
+  return mock_container;
+}
+
 TEST_F(ClmctfyContainerApiTest, GetContainer) {
   StrictMockContainerApi *mock_api = GetMockApi();
   const char *container_name = "test";
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
+
   EXPECT_CALL(*mock_api, Get(_)).WillOnce(Return(statusor_container));
-  struct container *c = NULL;
-  int ret = lmctfy_container_api_get_container(NULL, &c, container_api_, container_name);
+  EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
+
+  int ret = lmctfy_container_api_get_container(NULL, &container_, container_api_, container_name);
+
   EXPECT_EQ(ret, 0);
-  Container *ctnr_2 = internal::lmctfy_container_strip(c);
+  Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
 }
 
@@ -81,13 +91,33 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   const char *container_name = "test";
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
+
   EXPECT_CALL(*mock_api, Create(_, _)).WillOnce(Return(statusor_container));
-  struct container *c = NULL;
+  EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
+
   Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
-  int ret = lmctfy_container_api_create_container(NULL, &c, container_api_, container_name, &spec);
+  int ret = lmctfy_container_api_create_container(NULL, &container_, container_api_, container_name, &spec);
+
   EXPECT_EQ(ret, 0);
-  Container *ctnr_2 = internal::lmctfy_container_strip(c);
+  Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
+}
+
+TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
+  StrictMockContainerApi *mock_api = GetMockApi();
+  const char *container_name = "test";
+  Container *ctnr = new StrictMockContainer(container_name);
+  StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
+
+  EXPECT_CALL(*mock_api, Get(_)).WillOnce(Return(statusor_container));
+  EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
+
+  int ret = lmctfy_container_api_get_container(NULL, &container_, container_api_, container_name);
+
+  EXPECT_EQ(ret, 0);
+  ret = lmctfy_container_api_destroy_container(NULL, container_api_, container_);
+  container_ = NULL;
+  EXPECT_EQ(ret, 0);
 }
 
 }  // namespace lmctfy
