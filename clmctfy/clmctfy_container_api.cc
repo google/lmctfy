@@ -116,6 +116,20 @@ int lmctfy_container_api_destroy_container(struct status *s,
   return ret;
 }
 
+int lmctfy_container_api_detect_container(struct status *s,
+                                          char *container_name,
+                                          size_t n,
+                                          struct container_api *api,
+                                          pid_t pid) {
+  int ret = STATUS_OK;
+  StatusOr<string> statusor = api->container_api_->Detect(pid);
+  ret = status_copy(s, statusor.status());
+  if (container_name != NULL && statusor.ok() && n > 0) {
+    strncpy(container_name, statusor.ValueOrDie().c_str(), n);
+  }
+  return ret;
+}
+
 namespace containers {
 namespace lmctfy {
 namespace internal {

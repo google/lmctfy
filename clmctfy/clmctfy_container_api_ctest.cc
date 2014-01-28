@@ -121,6 +121,27 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
   EXPECT_EQ(ret, 0);
 }
 
+#define MAX_CONTAINER_NAME_LEN 512
+
+TEST_F(ClmctfyContainerApiTest, DetectContainer) {
+  StrictMockContainerApi *mock_api = GetMockApi();
+  const char *container_name = "test";
+  char output_name[MAX_CONTAINER_NAME_LEN];
+  pid_t pid = 10;
+  container_ = NULL;
+
+  memset(output_name, 0, MAX_CONTAINER_NAME_LEN);
+
+  StatusOr<string> statusor = StatusOr<string>(container_name);
+
+  EXPECT_CALL(*mock_api, Detect(pid)).WillOnce(Return(statusor));
+
+  int ret = lmctfy_container_api_detect_container(NULL, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
+
+  EXPECT_EQ(ret, 0);
+  EXPECT_EQ(string(container_name), string(output_name));
+}
+ 
 }  // namespace lmctfy
 }  // namespace containers
 
