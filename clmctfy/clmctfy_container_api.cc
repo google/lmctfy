@@ -104,6 +104,18 @@ int lmctfy_container_api_create_container(struct status *s,
   return ret;
 }
 
+int lmctfy_container_api_destroy_container(struct status *s,
+                                           struct container_api *api,
+                                           struct container *c) {
+  int ret = STATUS_OK;
+  if (c != NULL && c->container_ != NULL) {
+    Status status = api->container_api_->Destroy(c->container_);
+    ret = status_copy(s, status);
+    delete c;
+  }
+  return ret;
+}
+
 namespace containers {
 namespace lmctfy {
 namespace internal {

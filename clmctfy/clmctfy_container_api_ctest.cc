@@ -43,14 +43,17 @@ class ClmctfyContainerApiTest : public ::testing::Test {
  public:
   virtual void SetUp() {
     container_api_ = NULL;
+    container_ = NULL;
     lmctfy_new_container_api(NULL, &container_api_);
   }
 
   virtual void TearDown() {
+    lmctfy_container_api_destroy_container(NULL, container_api_, container_);
     lmctfy_delete_container_api(container_api_);
   }
  protected:
   struct container_api *container_api_;
+  struct container *container_;
   StrictMockContainerApi *GetMockApi();
 };
 

@@ -69,6 +69,10 @@ int lmctfy_container_api_create_container(
     const char *container_name,
     const Containers__Lmctfy__ContainerSpec *spec);
 
+int lmctfy_container_api_destroy_container(struct status *s,
+                                           struct container_api *api,
+                                           struct container *container);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
