@@ -15,14 +15,6 @@ using ::util::internal::status_copy;
 using ::util::Status;
 using ::util::StatusOr;
 
-struct container {
-  Container *container_;
-};
-
-struct container_api {
-  ContainerApi *container_api_;
-};
-
 int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_size) {
   InitSpec init_spec;
   init_spec.ParseFromArray(spec, spec_size);

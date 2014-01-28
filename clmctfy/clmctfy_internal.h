@@ -7,6 +7,25 @@
 #include "util/task/statusor.h"
 #include "lmctfy.h"
 
+using ::containers::lmctfy::Container;
+using ::containers::lmctfy::ContainerApi;
+
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
+struct container {
+  Container *container_;
+};
+
+struct container_api {
+  ContainerApi *container_api_;
+};
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
+
 #define RETURN_IF_ERROR_PTR(s, ...)                                 \
     do {                                                            \
       const ::util::Status _status =                                \
