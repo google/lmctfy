@@ -28,6 +28,12 @@ int lmctfy_container_api_create_container_raw(
     const void *spec,
     const size_t spec_size);
 
+int lmctfy_container_update_raw(struct status *s,
+                                struct container *container,
+                                int policy,
+                                const void *spec,
+                                const size_t spec_size);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

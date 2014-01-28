@@ -142,6 +142,11 @@ int lmctfy_container_exec(struct status *s,
                           const int argc,
                           const char **argv);
 
+int lmctfy_container_update(struct status *s,
+                            struct container *container,
+                            int policy,
+                            const Containers__Lmctfy__ContainerSpec *spec);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
