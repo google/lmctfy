@@ -4,7 +4,7 @@
 #include "clmctfy-raw.h"
 #include "lmctfy.h"
 #include "util/task/statusor.h"
-#include "status-internal.h"
+#include "clmctfy_internal.h"
 #include "lmctfy.pb.h"
 #include "util/task/codes.pb-c.h"
 
@@ -84,3 +84,15 @@ int lmctfy_container_api_create_container_raw(struct status *s,
   RETURN_IF_ERROR_PTR(s, statusor, &((*c)->container_));
   return STATUS_OK;
 }
+
+namespace containers {
+namespace lmctfy {
+namespace internal {
+
+ContainerApi *lmctfy_container_api_strip(struct container_api *api) {
+  return api->container_api_;
+}
+
+} // internal
+} // lmctfy
+} // containers
