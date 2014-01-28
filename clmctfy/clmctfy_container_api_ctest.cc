@@ -19,6 +19,7 @@
 #include "gmock/gmock.h"
 #include "util/task/statusor.h"
 #include "clmctfy_internal.h"
+#include "strings/stringpiece.h"
 
 using ::testing::NotNull;
 using ::testing::Return;
@@ -76,7 +77,7 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
-  EXPECT_CALL(*mock_api, Get(_)).WillOnce(Return(statusor_container));
+  EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor_container));
   EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
 
   int ret = lmctfy_container_api_get_container(NULL, &container_, container_api_, container_name);
@@ -92,7 +93,7 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
-  EXPECT_CALL(*mock_api, Create(_, _)).WillOnce(Return(statusor_container));
+  EXPECT_CALL(*mock_api, Create(StringPiece(container_name), _)).WillOnce(Return(statusor_container));
   EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
 
   Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
@@ -109,7 +110,7 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
-  EXPECT_CALL(*mock_api, Get(_)).WillOnce(Return(statusor_container));
+  EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor_container));
   EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
 
   int ret = lmctfy_container_api_get_container(NULL, &container_, container_api_, container_name);
