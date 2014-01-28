@@ -11,6 +11,7 @@ using ::containers::lmctfy::Container;
 using ::containers::lmctfy::ContainerApi;
 
 #ifdef __cplusplus
+// XXX(monnand): Do we need to extern "C"?
 extern "C" {
 #endif // __cplusplus
 

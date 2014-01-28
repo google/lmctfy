@@ -8,6 +8,11 @@
 extern "C" {
 #endif // __cplusplus
 
+enum update_policy {
+  UPDATE_POLICY_DIFF,
+  UPDATE_POLICY_REPLACE
+};
+
 struct status {
   int error_code;
 
@@ -22,24 +27,28 @@ struct container_api;
 // Initializes the machine to start being able to create containers.
 //
 // Arguments:
-//  - s: [output] s will be used as output. It contains the error code/message.
+//  - s: [output] s will be used as output. s will not be changed on success;
+//  Otherwise it contains the error code and message.
 //  - spec: The specification.
 //
 // Returns:
-//  Returns the error code. 0 on success. The return code is same as
-//  s->error_code when s is not NULL.
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec);
 
 // Create a new container_api.
 //
 // Arguments:
-//  - s: [output] s will be used as output. It contains the error code/message.
+//  - s: [output] s will be used as output. s will not be changed on success;
+//  Otherwise it contains the error code and message.
 //  - api: [output] The address of a pointer to struct container_api. The
 //  pointer of the container api will be stored in this address.
 //
 // Returns:
-//  Returns the error code. 0 on success. The return code is same as
-//  s->error_code when s is not NULL.
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_new_container_api(struct status *s, struct container_api **api);
 
 // Release the container api.
@@ -49,15 +58,17 @@ void lmctfy_delete_container_api(struct container_api *api);
 //
 // Arguments:
 //
-//  - s: [output] s will be used as output. It contains the error code/message.
+//  - s: [output] s will be used as output. s will not be changed on success;
+//  Otherwise it contains the error code and message.
 //  - container: [output] The address of a pointer to struct container. It will
 //  be used to store the pointer to the container.
 //  - api: A container api.
 //  - container_name: the container name.
 //
 // Returns:
-//  Returns the error code. 0 on success. The return code is same as
-//  s->error_code when s is not NULL.
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_api_get_container(
     struct status *s,
     struct container **container,
@@ -68,15 +79,17 @@ int lmctfy_container_api_get_container(
 //
 // Arguments:
 //
-//  - s: [output] s will be used as output. It contains the error code/message.
+//  - s: [output] s will be used as output. s will not be changed on success;
+//  Otherwise it contains the error code and message.
 //  - container: [output] The address of a pointer to struct container. It will
 //  - api: A container api.
 //  - container_name: the container name.
 //  - spec: container specification.
 //
 // Returns:
-//  Returns the error code. 0 on success. The return code is same as
-//  s->error_code when s is not NULL.
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_api_create_container(
     struct status *s,
     struct container **container,

@@ -50,15 +50,22 @@ void lmctfy_delete_container_api(struct container_api *api) {
   }
 }
 
+#define COPY_CONTAINER_STRUCTURE(ctnr_ptr, ctnr_struct)  do {  \
+  if ((ctnr_ptr) != NULL) { \
+    (*(ctnr_struct)) = new container(); \
+    (*(ctnr_struct))->container_ = ctnr_ptr;  \
+  }   \
+} while(0)
+
 int lmctfy_container_api_get_container(struct status *s,
                                        struct container **c,
                                        const struct container_api *api,
                                        const char *container_name) {
-  *c = new container();
-  (*c)->container_ = NULL;
+  Container *ctnr = NULL;
 
   StatusOr<Container *> statusor = api->container_api_->Get(container_name);
-  RETURN_IF_ERROR_PTR(s, statusor, &((*c)->container_));
+  RETURN_IF_ERROR_PTR(s, statusor, &ctnr);
+  COPY_CONTAINER_STRUCTURE(ctnr, c);
   return STATUS_OK;
 }
 
@@ -69,12 +76,12 @@ int lmctfy_container_api_create_container_raw(struct status *s,
                                        const void *spec,
                                        const int spec_size) {
   ContainerSpec container_spec;
-  *c = new container();
-  (*c)->container_ = NULL;
+  Container *ctnr = NULL;
   container_spec.ParseFromArray(spec, spec_size);
 
   StatusOr<Container *> statusor = api->container_api_->Create(container_name, container_spec);
-  RETURN_IF_ERROR_PTR(s, statusor, &((*c)->container_));
+  RETURN_IF_ERROR_PTR(s, statusor, &ctnr);
+  COPY_CONTAINER_STRUCTURE(ctnr, c);
   return STATUS_OK;
 }
 
@@ -83,9 +90,6 @@ int lmctfy_container_api_create_container(struct status *s,
                                           struct container_api *api,
                                           const char *container_name,
                                           const Containers__Lmctfy__ContainerSpec *spec) {
-  *c = new container();
-  (*c)->container_ = NULL;
-
   size_t sz = containers__lmctfy__container_spec__get_packed_size(spec);
   uint8_t *buf = new uint8_t[sz];
 
