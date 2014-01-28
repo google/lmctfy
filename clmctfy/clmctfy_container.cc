@@ -19,12 +19,8 @@ int lmctfy_container_exec(struct status *s,
                           const int argc,
                           const char **argv) {
   int ret = STATUS_OK;
-  if (container == NULL) {
-    return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "exec: null pointer to container");
-  }
-  if (argc <= 0) {
-    return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "exec: no enough arugment to run a command");
-  }
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_POSITIVE_OR_RETURN(s, argc);
 
   vector<string> cmds(argc);
   int i = 0;

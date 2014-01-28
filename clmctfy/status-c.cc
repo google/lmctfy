@@ -1,4 +1,5 @@
 #include <string.h> // to use strdup
+#include <stdarg.h>
 
 #include "clmctfy.h"
 #include "clmctfy_internal.h"
@@ -9,14 +10,30 @@ using ::util::Status;
 namespace util {
 namespace internal {
 
-int status_new(struct status *dst, int code, const char *message) {
+#define MAXLINE 4096
+
+static int status_new_fmt(struct status *dst, int code, const char *fmt, va_list ap) {
+  char buf[MAXLINE];
   if (dst == NULL) {
     return code;
   }
   dst->error_code = code;
-  if (message != NULL && code != 0) {
-    dst->message = strdup(message);
+
+  if (fmt == NULL || code == 0) {
+    return code;
   }
+  memset(buf, 0, MAXLINE);
+  vsnprintf(buf, MAXLINE, fmt, ap);
+  dst->error_code = code;
+  dst->message = strdup(buf);
+  return code;
+}
+
+int status_new(struct status *dst, int code, const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  status_new_fmt(dst, code, fmt, ap);
+  va_end(ap);
   return code;
 }
 

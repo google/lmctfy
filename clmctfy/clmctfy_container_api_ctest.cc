@@ -14,6 +14,7 @@
 
 #include "clmctfy.h"
 
+#include "lmctfy.h"
 #include "lmctfy_mock.h"
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
@@ -109,7 +110,6 @@ TEST_F(ClmctfyContainerApiTest, GetContainerFail) {
   free(s.message);
 }
 
-
 TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   StrictMockContainerApi *mock_api = GetMockApi();
   const char *container_name = "test";
@@ -119,6 +119,7 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   EXPECT_CALL(*mock_api, Create(StringPiece(container_name), _)).WillOnce(Return(statusor_container));
 
   Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
+
   struct status s = {0, NULL};
   int ret = lmctfy_container_api_create_container(&s, &container_, container_api_, container_name, &spec);
 

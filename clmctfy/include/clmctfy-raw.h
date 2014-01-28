@@ -18,7 +18,7 @@ extern "C" {
 // Returns:
 //  Returns the error code. 0 on success. The return code is same as
 //  status_get_code(s).
-int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_size);
+int lmctfy_init_machine_raw(struct status *s, const void *spec, const size_t spec_size);
 
 int lmctfy_container_api_create_container_raw(
     struct status *s,
@@ -26,7 +26,7 @@ int lmctfy_container_api_create_container_raw(
     struct container_api *api,
     const char *container_name,
     const void *spec,
-    const int spec_size);
+    const size_t spec_size);
 
 #ifdef __cplusplus
 }

@@ -37,10 +37,26 @@ struct container_api {
       }                                                             \
     } while (0)
 
+#define CHECK_NOTNULL_OR_RETURN(status, ptr)  do { \
+    if ((ptr) == NULL) {  \
+      return status_new(status, UTIL__ERROR__CODE__INVALID_ARGUMENT, \
+                        "In function %s: %s cannot be null",  \
+                        __func__, #ptr);  \
+    } \
+} while (0)
+
+#define CHECK_POSITIVE_OR_RETURN(status, value)  do { \
+    if ((value) <= 0) {  \
+      return status_new(status, UTIL__ERROR__CODE__INVALID_ARGUMENT, \
+                        "In function %s: %s=%d, but it should be positive",  \
+                        __func__, #value, value);  \
+    } \
+} while (0)
+
 namespace util {
 namespace internal {
 
-int status_new(struct status *dst, int code, const char *message);
+int status_new(struct status *dst, int code, const char *fmt, ...);
 int status_copy(struct status *dst, const Status &src);
 
 } // namespace internal
