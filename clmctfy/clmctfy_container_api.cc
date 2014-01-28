@@ -32,6 +32,7 @@ int lmctfy_init_machine_raw(struct status *s, const void *spec, const int spec_s
 
 int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec) {
   size_t sz = containers__lmctfy__init_spec__get_packed_size(spec);
+  // TODO(monnand) Can we use alloca(3) here, so that we don't need to use heap?
   uint8_t *buf = new uint8_t[sz];
   int ret = 0;
   containers__lmctfy__init_spec__pack(spec, buf);
@@ -83,6 +84,24 @@ int lmctfy_container_api_create_container_raw(struct status *s,
   StatusOr<Container *> statusor = api->container_api_->Create(container_name, container_spec);
   RETURN_IF_ERROR_PTR(s, statusor, &((*c)->container_));
   return STATUS_OK;
+}
+
+int lmctfy_container_api_create_container(struct status *s,
+                                          struct container **c,
+                                          struct container_api *api,
+                                          const char *container_name,
+                                          const Containers__Lmctfy__ContainerSpec *spec) {
+  *c = new container();
+  (*c)->container_ = NULL;
+
+  size_t sz = containers__lmctfy__container_spec__get_packed_size(spec);
+  uint8_t *buf = new uint8_t[sz];
+
+  int ret = 0;
+  containers__lmctfy__container_spec__pack(spec, buf);
+  ret = lmctfy_container_api_create_container_raw(s, c, api, container_name, buf, sz);
+  delete []buf;
+  return ret;
 }
 
 namespace containers {

@@ -73,6 +73,20 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
   EXPECT_EQ(ctnr_2, ctnr);
 }
 
+TEST_F(ClmctfyContainerApiTest, CreateContainer) {
+  StrictMockContainerApi *mock_api = GetMockApi();
+  const char *container_name = "test";
+  Container *ctnr = new StrictMockContainer(container_name);
+  StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
+  EXPECT_CALL(*mock_api, Create(_, _)).WillOnce(Return(statusor_container));
+  struct container *c = NULL;
+  Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
+  int ret = lmctfy_container_api_create_container(NULL, &c, container_api_, container_name, &spec);
+  EXPECT_EQ(ret, 0);
+  Container *ctnr_2 = internal::lmctfy_container_strip(c);
+  EXPECT_EQ(ctnr_2, ctnr);
+}
+
 }  // namespace lmctfy
 }  // namespace containers
 
