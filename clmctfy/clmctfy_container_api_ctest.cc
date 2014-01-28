@@ -49,8 +49,8 @@ class ClmctfyContainerApiTest : public ::testing::Test {
   }
 
   virtual void TearDown() {
-    lmctfy_container_api_destroy_container(NULL, container_api_, container_);
     lmctfy_delete_container_api(container_api_);
+    lmctfy_delete_container(container_);
   }
  protected:
   struct container_api *container_api_;
@@ -78,7 +78,6 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
   EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor_container));
-  EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
 
   struct status s = {0, NULL};
   int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
@@ -118,7 +117,6 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
   EXPECT_CALL(*mock_api, Create(StringPiece(container_name), _)).WillOnce(Return(statusor_container));
-  EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
 
   Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
   struct status s = {0, NULL};

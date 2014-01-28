@@ -3,6 +3,7 @@
 
 #include <unistd.h>
 #include "lmctfy.pb-c.h"
+#include "util/task/codes.pb-c.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,7 +52,12 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
 //  is same as s->error_code when s is not NULL.
 int lmctfy_new_container_api(struct status *s, struct container_api **api);
 
-// Release the container api.
+// Release the container api. 
+//
+// Arguments:
+//
+//  - api: The container api. This pointer will be invalid after the call to
+//  this function
 void lmctfy_delete_container_api(struct container_api *api);
 
 // Get a container
@@ -82,6 +88,7 @@ int lmctfy_container_api_get_container(
 //  - s: [output] s will be used as output. s will not be changed on success;
 //  Otherwise it contains the error code and message.
 //  - container: [output] The address of a pointer to struct container. It will
+//  be used to store the newly created container.
 //  - api: A container api.
 //  - container_name: the container name.
 //  - spec: container specification.
@@ -97,15 +104,43 @@ int lmctfy_container_api_create_container(
     const char *container_name,
     const Containers__Lmctfy__ContainerSpec *spec);
 
+// Destroy a container
+//
+// Arguments:
+//
+//  - s: [output] s will be used as output. s will not be changed on success;
+//  Otherwise it contains the error code and message.
+//  - api: A container api.
+//  - container: The pointer to struct container. The pointer will become
+//  invalid after a success destroy().
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_api_destroy_container(struct status *s,
                                            struct container_api *api,
                                            struct container *container);
 
 int lmctfy_container_api_detect_container(struct status *s,
                                           char *container_name,
-                                          size_t n,
+                                          const size_t n,
                                           struct container_api *api,
                                           pid_t pid);
+
+// Release the memory used by the container structure. The refered container
+// will not be affected.
+//
+// Arguments:
+//
+//  - container: The container.  This pointer will be invalid after the call to
+//  this function
+void lmctfy_delete_container(struct container *container);
+
+int lmctfy_container_exec(struct status *s,
+                          struct container *container,
+                          const int argc,
+                          const char **argv);
 
 #ifdef __cplusplus
 }

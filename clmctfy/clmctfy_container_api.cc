@@ -114,7 +114,7 @@ int lmctfy_container_api_destroy_container(struct status *s,
 
 int lmctfy_container_api_detect_container(struct status *s,
                                           char *container_name,
-                                          size_t n,
+                                          const size_t n,
                                           struct container_api *api,
                                           pid_t pid) {
   int ret = STATUS_OK;

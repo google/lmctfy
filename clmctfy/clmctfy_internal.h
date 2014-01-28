@@ -40,6 +40,7 @@ struct container_api {
 namespace util {
 namespace internal {
 
+int status_new(struct status *dst, int code, const char *message);
 int status_copy(struct status *dst, const Status &src);
 
 } // namespace internal
