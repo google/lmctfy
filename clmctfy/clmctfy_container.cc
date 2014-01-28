@@ -20,6 +20,7 @@ int lmctfy_container_exec(struct status *s,
                           const char **argv) {
   int ret = STATUS_OK;
   CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
   CHECK_POSITIVE_OR_RETURN(s, argc);
 
   vector<string> cmds(argc);

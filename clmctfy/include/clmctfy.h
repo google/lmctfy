@@ -9,9 +9,9 @@
 extern "C" {
 #endif // __cplusplus
 
-enum update_policy {
-  UPDATE_POLICY_DIFF,
-  UPDATE_POLICY_REPLACE
+enum {
+  CONTAINER_UPDATE_POLICY_DIFF,
+  CONTAINER_UPDATE_POLICY_REPLACE
 };
 
 struct status {

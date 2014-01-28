@@ -73,6 +73,7 @@ int lmctfy_container_api_get_container(struct status *s,
                                        const struct container_api *api,
                                        const char *container_name) {
   CHECK_NOTNULL_OR_RETURN(s, api);
+  CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
   Container *ctnr = NULL;
 
@@ -89,6 +90,7 @@ int lmctfy_container_api_create_container_raw(struct status *s,
                                        const void *spec,
                                        const size_t spec_size) {
   CHECK_NOTNULL_OR_RETURN(s, api);
+  CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
   ContainerSpec container_spec;
   Container *ctnr = NULL;
@@ -108,6 +110,7 @@ int lmctfy_container_api_create_container(struct status *s,
                                           const char *container_name,
                                           const Containers__Lmctfy__ContainerSpec *spec) {
   CHECK_NOTNULL_OR_RETURN(s, api);
+  CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
   CHECK_NOTNULL_OR_RETURN(s, spec);
   uint8_t *buf = NULL;
@@ -127,6 +130,7 @@ int lmctfy_container_api_destroy_container(struct status *s,
                                            struct container_api *api,
                                            struct container *c) {
   CHECK_NOTNULL_OR_RETURN(s, api);
+  CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   int ret = STATUS_OK;
   if (c != NULL && c->container_ != NULL) {
     Status status = api->container_api_->Destroy(c->container_);
@@ -143,6 +147,7 @@ int lmctfy_container_api_detect_container(struct status *s,
                                           pid_t pid) {
   int ret = STATUS_OK;
   CHECK_NOTNULL_OR_RETURN(s, api);
+  CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, container_name);
   CHECK_POSITIVE_OR_RETURN(s, n);
   StatusOr<string> statusor = api->container_api_->Detect(pid);
