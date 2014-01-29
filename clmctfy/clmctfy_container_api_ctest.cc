@@ -78,7 +78,13 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
-  EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor_container));
+  string errmsg = "some error message";
+  Status status = Status(::util::error::INTERNAL, errmsg);
+  StatusOr<Container *> statusor = StatusOr<Container *>(status);
+
+  EXPECT_CALL(*mock_api, Get(StringPiece(container_name)))
+      .WillOnce(Return(statusor_container))
+      .WillOnce(Return(statusor));
 
   struct status s = {0, NULL};
   int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
@@ -88,26 +94,18 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
   EXPECT_EQ(s.message, NULL);
   Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
-}
 
-TEST_F(ClmctfyContainerApiTest, GetContainerFail) {
-  StrictMockContainerApi *mock_api = GetMockApi();
-  const char *container_name = "test";
-  string errmsg = "some error message";
-  Status status = Status(::util::error::INTERNAL, errmsg);
-  StatusOr<Container *> statusor = StatusOr<Container *>(status);
-
-  EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor));
-
+  struct container *tmp = container_;
   container_ = NULL;
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
+  s = {0, NULL};
+  ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
 
   EXPECT_EQ(ret, ::util::error::INTERNAL);
   EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
   EXPECT_EQ(container_, NULL);
   EXPECT_EQ(errmsg, s.message);
   free(s.message);
+  container_ = tmp;
 }
 
 TEST_F(ClmctfyContainerApiTest, CreateContainer) {
@@ -116,7 +114,13 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
-  EXPECT_CALL(*mock_api, Create(StringPiece(container_name), _)).WillOnce(Return(statusor_container));
+  string errmsg = "some error message";
+  Status status = Status(::util::error::INTERNAL, errmsg);
+  StatusOr<Container *> statusor = StatusOr<Container *>(status);
+
+  EXPECT_CALL(*mock_api, Create(StringPiece(container_name), _))
+      .WillOnce(Return(statusor_container))
+      .WillOnce(Return(statusor));
 
   Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
 
@@ -128,26 +132,18 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   EXPECT_EQ(s.message, NULL);
   Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
-}
 
-TEST_F(ClmctfyContainerApiTest, CreateContainerFail) {
-  StrictMockContainerApi *mock_api = GetMockApi();
-  const char *container_name = "test";
-  string errmsg = "some error message";
-  Status status = Status(::util::error::INTERNAL, errmsg);
-  StatusOr<Container *> statusor = StatusOr<Container *>(status);
-
-  EXPECT_CALL(*mock_api, Create(StringPiece(container_name), _)).WillOnce(Return(statusor));
-
-  Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_create_container(&s, &container_, container_api_, container_name, &spec);
+  struct container *tmp = container_;
+  container_ = NULL;
+  s = {0, NULL};
+  ret = lmctfy_container_api_create_container(&s, &container_, container_api_, container_name, &spec);
 
   EXPECT_EQ(ret, ::util::error::INTERNAL);
   EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
   EXPECT_EQ(container_, NULL);
   EXPECT_EQ(errmsg, s.message);
   free(s.message);
+  container_ = tmp;
 }
 
 TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
@@ -156,47 +152,38 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
   Container *ctnr = new StrictMockContainer(container_name);
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
-  EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor_container));
-  EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(Status::OK));
+  string errmsg = "some error message";
+  Status destroy_status = Status(::util::error::INTERNAL, errmsg);
+
+  EXPECT_CALL(*mock_api, Get(StringPiece(container_name)))
+      .WillOnce(Return(statusor_container))
+      .WillOnce(Return(statusor_container));
+  EXPECT_CALL(*mock_api, Destroy(ctnr))
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(destroy_status));
 
   struct status s = {0, NULL};
   int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
-
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
   EXPECT_EQ(s.message, NULL);
-
   ret = lmctfy_container_api_destroy_container(&s, container_api_, container_);
   container_ = NULL;
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
   EXPECT_EQ(s.message, NULL);
-}
 
-TEST_F(ClmctfyContainerApiTest, DestroyContainerFail) {
-  StrictMockContainerApi *mock_api = GetMockApi();
-  const char *container_name = "test";
-  Container *ctnr = new StrictMockContainer(container_name);
-  StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
-
-  string errmsg = "some error message";
-  Status destroy_status = Status(::util::error::INTERNAL, errmsg);
-
-  EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor_container));
-  EXPECT_CALL(*mock_api, Destroy(ctnr)).WillOnce(Return(destroy_status));
-
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
-
+  s = {0, NULL};
+  ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
   EXPECT_EQ(s.message, NULL);
-
   ret = lmctfy_container_api_destroy_container(&s, container_api_, container_);
   container_ = NULL;
   EXPECT_EQ(ret, ::util::error::INTERNAL);
   EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
   EXPECT_EQ(errmsg, s.message);
+
 }
 
 #define MAX_CONTAINER_NAME_LEN 512
@@ -207,40 +194,27 @@ TEST_F(ClmctfyContainerApiTest, DetectContainer) {
   char output_name[MAX_CONTAINER_NAME_LEN];
   pid_t pid = 10;
   container_ = NULL;
-
   memset(output_name, 0, MAX_CONTAINER_NAME_LEN);
-
   StatusOr<string> statusor = StatusOr<string>(container_name);
 
-  EXPECT_CALL(*mock_api, Detect(pid)).WillOnce(Return(statusor));
+  string errmsg = "some error message";
+  Status status = Status(::util::error::INTERNAL, errmsg);
+  StatusOr<string> statusor_fail = StatusOr<string>(status);
+
+  EXPECT_CALL(*mock_api, Detect(pid))
+      .WillOnce(Return(statusor))
+      .WillOnce(Return(statusor_fail));
 
   struct status s = {0, NULL};
   int ret = lmctfy_container_api_detect_container(&s, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
-
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
   EXPECT_EQ(s.message, NULL);
   EXPECT_EQ(string(container_name), string(output_name));
-}
- 
-TEST_F(ClmctfyContainerApiTest, DetectContainerFail) {
-  StrictMockContainerApi *mock_api = GetMockApi();
-  const char *container_name = "test";
-  char output_name[MAX_CONTAINER_NAME_LEN];
-  pid_t pid = 10;
-  container_ = NULL;
 
-  memset(output_name, 0, MAX_CONTAINER_NAME_LEN);
-
-  string errmsg = "some error message";
-  Status status = Status(::util::error::INTERNAL, errmsg);
-  StatusOr<string> statusor = StatusOr<string>(status);
-
-  EXPECT_CALL(*mock_api, Detect(pid)).WillOnce(Return(statusor));
-
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_detect_container(&s, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
-
+  *output_name = '\0';
+  s = {0, NULL};
+  ret = lmctfy_container_api_detect_container(&s, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
   EXPECT_EQ(ret, status.error_code());
   EXPECT_EQ(s.error_code, status.error_code());
   EXPECT_EQ(errmsg, s.message);
