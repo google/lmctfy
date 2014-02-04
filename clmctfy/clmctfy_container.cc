@@ -19,6 +19,7 @@ int lmctfy_container_exec(struct status *s,
                           const int argc,
                           const char **argv) {
   int ret = STATUS_OK;
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
   CHECK_POSITIVE_OR_RETURN(s, argc);
@@ -48,6 +49,7 @@ int lmctfy_container_update_raw(struct status *s,
                                 const void *spec,
                                 const size_t spec_size) {
   ContainerSpec container_spec;
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
   if (spec != NULL && spec_size > 0) {
@@ -78,6 +80,7 @@ int lmctfy_container_update(struct status *s,
   size_t sz = 0;
   int ret = 0;
 
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, spec);
   CHECK_NOTNULL_OR_RETURN(s, container);
   sz = containers__lmctfy__container_spec__get_packed_size(spec);

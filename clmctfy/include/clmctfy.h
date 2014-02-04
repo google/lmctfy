@@ -28,8 +28,11 @@ struct container_api;
 // Initializes the machine to start being able to create containers.
 //
 // Arguments:
-//  - s: [output] s will be used as output. s will not be changed on success;
-//  Otherwise it contains the error code and message.
+//  - s: [output] s will be used as output.
+//    If the original value of s->code is not
+//    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
+//    immediately with value s->code. This will help users to propagete errors.
+//    Otherwise, it contains the error code and message.
 //  - spec: The specification.
 //
 // Returns:
@@ -41,10 +44,13 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
 // Create a new container_api.
 //
 // Arguments:
-//  - s: [output] s will be used as output. s will not be changed on success;
-//  Otherwise it contains the error code and message.
+//  - s: [output] s will be used as output.
+//    If the original value of s->code is not
+//    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
+//    immediately with value s->code. This will help users to propagete errors.
+//    Otherwise, it contains the error code and message.
 //  - api: [output] The address of a pointer to struct container_api. The
-//  pointer of the container api will be stored in this address.
+//    pointer of the container api will be stored in this address.
 //
 // Returns:
 //
@@ -64,10 +70,13 @@ void lmctfy_delete_container_api(struct container_api *api);
 //
 // Arguments:
 //
-//  - s: [output] s will be used as output. s will not be changed on success;
-//  Otherwise it contains the error code and message.
+//  - s: [output] s will be used as output.
+//    If the original value of s->code is not
+//    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
+//    immediately with value s->code. This will help users to propagete errors.
+//    Otherwise, it contains the error code and message.
 //  - container: [output] The address of a pointer to struct container. It will
-//  be used to store the pointer to the container.
+//    be used to store the pointer to the container.
 //  - api: A container api.
 //  - container_name: the container name.
 //
@@ -85,10 +94,13 @@ int lmctfy_container_api_get_container(
 //
 // Arguments:
 //
-//  - s: [output] s will be used as output. s will not be changed on success;
-//  Otherwise it contains the error code and message.
+//  - s: [output] s will be used as output.
+//    If the original value of s->code is not
+//    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
+//    immediately with value s->code. This will help users to propagete errors.
+//    Otherwise, it contains the error code and message.
 //  - container: [output] The address of a pointer to struct container. It will
-//  be used to store the newly created container.
+//    be used to store the newly created container.
 //  - api: A container api.
 //  - container_name: the container name.
 //  - spec: container specification.
@@ -108,11 +120,14 @@ int lmctfy_container_api_create_container(
 //
 // Arguments:
 //
-//  - s: [output] s will be used as output. s will not be changed on success;
-//  Otherwise it contains the error code and message.
+//  - s: [output] s will be used as output.
+//    If the original value of s->code is not
+//    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
+//    immediately with value s->code. This will help users to propagete errors.
+//    Otherwise, it contains the error code and message.
 //  - api: A container api.
 //  - container: The pointer to struct container. The pointer will become
-//  invalid after a success destroy().
+//    invalid after a success destroy().
 //
 // Returns:
 //
@@ -134,7 +149,7 @@ int lmctfy_container_api_detect_container(struct status *s,
 // Arguments:
 //
 //  - container: The container.  This pointer will be invalid after the call to
-//  this function
+//    this function
 void lmctfy_delete_container(struct container *container);
 
 int lmctfy_container_exec(struct status *s,

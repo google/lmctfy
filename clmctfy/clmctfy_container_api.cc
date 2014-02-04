@@ -18,6 +18,7 @@ using ::util::StatusOr;
 
 int lmctfy_init_machine_raw(struct status *s, const void *spec, const size_t spec_size) {
   InitSpec init_spec;
+  CHECK_NOTFAIL_OR_RETURN(s);
   if (spec != NULL && spec_size > 0) {
     // XXX should we consider this as an error?
     init_spec.ParseFromArray(spec, spec_size);
@@ -31,6 +32,7 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
   size_t sz = 0;
   int ret = 0;
 
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, spec);
   sz = containers__lmctfy__init_spec__get_packed_size(spec);
   if (sz > 0) {
@@ -44,6 +46,7 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
 }
 
 int lmctfy_new_container_api(struct status *s, struct container_api **api) {
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   *api = new container_api();
   (*api)->container_api_ = NULL;
@@ -72,6 +75,7 @@ int lmctfy_container_api_get_container(struct status *s,
                                        struct container **c,
                                        const struct container_api *api,
                                        const char *container_name) {
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
@@ -109,6 +113,7 @@ int lmctfy_container_api_create_container(struct status *s,
                                           struct container_api *api,
                                           const char *container_name,
                                           const Containers__Lmctfy__ContainerSpec *spec) {
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
@@ -129,6 +134,7 @@ int lmctfy_container_api_create_container(struct status *s,
 int lmctfy_container_api_destroy_container(struct status *s,
                                            struct container_api *api,
                                            struct container *c) {
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   int ret = STATUS_OK;
@@ -146,6 +152,7 @@ int lmctfy_container_api_detect_container(struct status *s,
                                           struct container_api *api,
                                           pid_t pid) {
   int ret = STATUS_OK;
+  CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, container_name);
