@@ -14,6 +14,28 @@ using ::std::vector;
 
 #define STATUS_OK UTIL__ERROR__CODE__OK
 
+int lmctfy_container_enter(struct status *s,
+                           struct container *container,
+                           const pid_t *tids,
+                           const int n) {
+  int ret = STATUS_OK;
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
+
+  if (tids == NULL || n <= 0) {
+    return ret;
+  }
+
+  vector<pid_t> tids_v(n);
+  int i = 0;
+  for (i = 0; i < n; i++) {
+    tids_v[i] = tids[i];
+  }
+  Status status = container->container_->Enter(tids_v);
+  return status_copy(s, status);
+}
+
 int lmctfy_container_exec(struct status *s,
                           struct container *container,
                           const int argc,

@@ -152,6 +152,11 @@ int lmctfy_container_api_detect_container(struct status *s,
 //    this function
 void lmctfy_delete_container(struct container *container);
 
+int lmctfy_container_enter(struct status *s,
+                           struct container *container,
+                           const pid_t *tids,
+                           const int n);
+
 int lmctfy_container_exec(struct status *s,
                           struct container *container,
                           const int argc,

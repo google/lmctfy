@@ -183,5 +183,59 @@ TEST_F(ClmctfyContainerTest, Update) {
   EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
 }
 
+TEST_F(ClmctfyContainerTest, Enter) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT;
+  string errmsg = "some error message";
+  Status status = Status(::util::error::INTERNAL, errmsg); 
+
+  EXPECT_CALL(*mock_container, Enter(_))
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(status));
+
+  struct status s = {0, NULL};
+  pid_t tids[] = {1, 2, 3, 4};
+  int n = 4;
+  int ret = lmctfy_container_enter(&s, container_, tids, n);
+  EXPECT_EQ(ret, 0);
+  EXPECT_EQ(s.error_code, 0);
+  EXPECT_EQ(s.message, NULL);
+
+  s = {0, NULL};
+  ret = lmctfy_container_enter(&s, container_, tids, n);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, status.error_code());
+  EXPECT_EQ(errmsg, s.message);
+
+  s = {0, NULL};
+  ret = lmctfy_container_enter(&s, container_, tids, -1);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__OK);
+
+  s = {0, NULL};
+  ret = lmctfy_container_enter(&s, container_, NULL, 0);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__OK);
+
+  s = {0, NULL};
+  ret = lmctfy_container_enter(&s, container_, tids, 0);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__OK);
+
+  Container *tmp = container_->container_;
+  container_->container_ = NULL;
+  s = {0, NULL};
+  ret = lmctfy_container_enter(&s, container_, tids, n);
+  container_->container_ = tmp;
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+
+  s = {0, NULL};
+  ret = lmctfy_container_enter(&s, NULL, tids, n);
+  container_->container_ = tmp;
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+}
+
 }  // namespace lmctfy
 }  // namespace containers
