@@ -109,6 +109,9 @@ CXXFLAGS += `pkg-config --cflags --libs protobuf`
 # Add proto-c flags.
 CXXFLAGS += -lprotobuf-c
 
+# FLAGS for C binding
+CFLAGS = -fpermissive
+
 CLI = lmctfy
 NSCON = lmctfy-nscon
 NSINIT = lmctfy-nsinit
@@ -241,7 +244,7 @@ $(CREAPER): lmctfy-creaper.go
 %_ctest: gtest_main.a $(SYSTEM_API_TEST_OBJS) clmctfy_only_api.a
 	$(create_bin)
 	$(CXX) -o $(OUT_DIR)/$@ $*.cc $*_ctest.cc $(addprefix $(OUT_DIR)/,$^) \
-		$(CXXFLAGS)
+		$(CXXFLAGS) $(CFLAGS)
 
 %_proto: %.proto
 	$(PROTOC) $^ --cpp_out=.
@@ -253,9 +256,13 @@ $(CREAPER): lmctfy-creaper.go
 
 %.pb-c.o: %_proto
 	$(create_bin)
-	$(CXX) -c $*.pb-c.c -o $(OUT_DIR)/$@ $(CXXFLAGS)
+	$(CXX) -c $*.pb-c.c -o $(OUT_DIR)/$@ $(CXXFLAGS) $(CFLAGS)
 
 gen_protos: $(addsuffix _proto,$(INCLUDE_PROTOS) $(UTIL_PROTOS))
+
+%_ctest.o: gen_protos %_ctest.cc
+	$(create_bin)
+	$(CXX) -c $*.cc -o $(OUT_DIR)/$@ $(CXXFLAGS) $(CFLAGS)
 
 %.o: gen_protos %.cc
 	$(create_bin)

@@ -91,7 +91,7 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
 
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
+  EXPECT_EQ(s.message, (const char *)NULL);
   Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
 
@@ -102,7 +102,7 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
 
   EXPECT_EQ(ret, ::util::error::INTERNAL);
   EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
-  EXPECT_EQ(container_, NULL);
+  EXPECT_EQ(container_, (struct container *)NULL);
   EXPECT_EQ(errmsg, s.message);
   free(s.message);
   container_ = tmp;
@@ -129,7 +129,7 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
 
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
+  EXPECT_EQ(s.message, (const char *)NULL);
   Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
 
@@ -140,7 +140,7 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
 
   EXPECT_EQ(ret, ::util::error::INTERNAL);
   EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
-  EXPECT_EQ(container_, NULL);
+  EXPECT_EQ(container_, (struct container *)NULL);
   EXPECT_EQ(errmsg, s.message);
   free(s.message);
   container_ = tmp;
@@ -166,18 +166,18 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
   int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
+  EXPECT_EQ(s.message, (const char *)NULL);
   ret = lmctfy_container_api_destroy_container(&s, container_api_, container_);
   container_ = NULL;
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
+  EXPECT_EQ(s.message, (const char *)NULL);
 
   s = {0, NULL};
   ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
+  EXPECT_EQ(s.message, (const char *)NULL);
   ret = lmctfy_container_api_destroy_container(&s, container_api_, container_);
   container_ = NULL;
   EXPECT_EQ(ret, ::util::error::INTERNAL);
@@ -209,7 +209,7 @@ TEST_F(ClmctfyContainerApiTest, DetectContainer) {
   int ret = lmctfy_container_api_detect_container(&s, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
+  EXPECT_EQ(s.message, (const char *)NULL);
   EXPECT_EQ(string(container_name), string(output_name));
 
   *output_name = '\0';
