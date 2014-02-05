@@ -41,7 +41,9 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
     containers__lmctfy__init_spec__pack(spec, buf);
   }
   ret = lmctfy_init_machine_raw(s, buf, sz);
-  delete []buf;
+  if (buf != NULL) {
+    delete []buf;
+  }
   return ret;
 }
 
@@ -127,7 +129,9 @@ int lmctfy_container_api_create_container(struct status *s,
   }
   containers__lmctfy__container_spec__pack(spec, buf);
   ret = lmctfy_container_api_create_container_raw(s, c, api, container_name, buf, sz);
-  delete []buf;
+  if (buf != NULL) {
+    delete []buf;
+  }
   return ret;
 }
 

@@ -90,7 +90,7 @@ TEST_F(ClmctfyContainerTest, Exec) {
   const char *argv[] = {"echo", "hello world"};
   vector<string> cmds(argc);
   string errmsg = "some error message";
-  Status status = Status(::util::error::INTERNAL, errmsg);
+  Status status(::util::error::INTERNAL, errmsg);
 
   for (int i = 0; i < argc; i++) {
     cmds[i] = argv[i];
@@ -115,6 +115,7 @@ TEST_F(ClmctfyContainerTest, Exec) {
   EXPECT_EQ(ret, s.error_code);
   EXPECT_EQ(s.error_code, status.error_code());
   EXPECT_EQ(errmsg, s.message);
+  free(s.message);
 
   // Invalid arguments.
   s = {0, NULL};
@@ -143,7 +144,7 @@ TEST_F(ClmctfyContainerTest, Update) {
   StrictMockContainer *mock_container = GetMockContainer();
   Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT;
   string errmsg = "some error message";
-  Status status = Status(::util::error::INTERNAL, errmsg);
+  Status status(::util::error::INTERNAL, errmsg);
 
   EXPECT_CALL(*mock_container, Update(_, Container::UPDATE_DIFF))
       .WillOnce(Return(Status::OK))
@@ -162,6 +163,7 @@ TEST_F(ClmctfyContainerTest, Update) {
   EXPECT_EQ(ret, s.error_code);
   EXPECT_EQ(s.error_code, status.error_code());
   EXPECT_EQ(errmsg, s.message);
+  free(s.message);
 
   s = {0, NULL};
   ret = lmctfy_container_update(&s, container_, -1, &spec);
@@ -183,11 +185,46 @@ TEST_F(ClmctfyContainerTest, Update) {
   EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
 }
 
+TEST_F(ClmctfyContainerTest, Run) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  string errmsg = "some error message";
+  Status err_status(::util::error::INTERNAL, errmsg); 
+  StatusOr<pid_t> statusor_success((pid_t)1);
+  StatusOr<pid_t> statusor_fail(err_status);
+  Containers__Lmctfy__RunSpec runspec = CONTAINERS__LMCTFY__RUN_SPEC__INIT;
+  struct status s = {0, NULL};
+  int ret = 0;
+  pid_t tid;
+  const char *argv[] = {"/bin/echo", "hello world"};
+  int argc = 2;
+  vector<string> cmds(argc);
+  for (int i = 0; i < argc; i++) {
+    cmds[i] = argv[i];
+  }
+
+  EXPECT_CALL(*mock_container, Run(cmds, _))
+      .WillOnce(Return(statusor_success))
+      .WillOnce(Return(statusor_fail));
+
+  s = {0, NULL};
+  ret = lmctfy_container_run(&s, &tid, container_, argc, argv, &runspec);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, 0);
+  EXPECT_EQ(s.message, NULL);
+  EXPECT_EQ(tid, 1);
+
+  s = {0, NULL};
+  ret = lmctfy_container_run(&s, &tid, container_, argc, argv, &runspec);
+  EXPECT_EQ(ret, s.error_code);
+  EXPECT_EQ(s.error_code, err_status.error_code());
+  EXPECT_EQ(errmsg, s.message);
+  free(s.message);
+}
+
 TEST_F(ClmctfyContainerTest, Enter) {
   StrictMockContainer *mock_container = GetMockContainer();
-  Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT;
   string errmsg = "some error message";
-  Status status = Status(::util::error::INTERNAL, errmsg); 
+  Status status(::util::error::INTERNAL, errmsg); 
 
   EXPECT_CALL(*mock_container, Enter(_))
       .WillOnce(Return(Status::OK))
@@ -206,6 +243,7 @@ TEST_F(ClmctfyContainerTest, Enter) {
   EXPECT_EQ(ret, s.error_code);
   EXPECT_EQ(s.error_code, status.error_code());
   EXPECT_EQ(errmsg, s.message);
+  free(s.message);
 
   s = {0, NULL};
   ret = lmctfy_container_enter(&s, container_, tids, -1);

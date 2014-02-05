@@ -14,6 +14,58 @@ using ::std::vector;
 
 #define STATUS_OK UTIL__ERROR__CODE__OK
 
+int lmctfy_container_run_raw(struct status *s,
+                             pid_t *tid,
+                             struct container *container,
+                             const int argc,
+                             const char **argv,
+                             const void *spec,
+                             const size_t spec_size) {
+  RunSpec run_spec;
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
+  CHECK_NOTNULL_OR_RETURN(s, tid);
+  CHECK_POSITIVE_OR_RETURN(s, argc);
+  if (spec != NULL && spec_size > 0) {
+    run_spec.ParseFromArray(spec, spec_size);
+  }
+  vector<string> cmds(argc);
+  int i = 0;
+  for (i = 0; i < argc; i++) {
+    cmds[i] = argv[i];
+  }
+  StatusOr<pid_t> statusor = container->container_->Run(cmds, run_spec);
+  RETURN_IF_ERROR_PTR(s, statusor, tid);
+  return STATUS_OK;
+}
+
+int lmctfy_container_run(struct status *s,
+                         pid_t *tid,
+                         struct container *container,
+                         const int argc,
+                         const char **argv,
+                         const Containers__Lmctfy__RunSpec *spec) {
+
+  uint8_t *buf = NULL;
+  size_t sz = 0;
+  int ret = 0;
+
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, spec);
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  sz = containers__lmctfy__run_spec__get_packed_size(spec);
+  if (sz > 0) {
+    buf = new uint8_t[sz];
+    containers__lmctfy__run_spec__pack(spec, buf);
+  }
+  ret = lmctfy_container_run_raw(s, tid, container, argc, argv, buf, sz);
+  if (buf != NULL) {
+    delete []buf;
+  }
+  return ret;
+}
+
 int lmctfy_container_enter(struct status *s,
                            struct container *container,
                            const pid_t *tids,
@@ -111,6 +163,8 @@ int lmctfy_container_update(struct status *s,
     containers__lmctfy__container_spec__pack(spec, buf);
   }
   ret = lmctfy_container_update_raw(s, container, policy, buf, sz);
-  delete []buf;
+  if (buf != NULL) {
+    delete []buf;
+  }
   return ret;
 }

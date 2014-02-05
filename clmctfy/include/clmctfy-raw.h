@@ -28,6 +28,14 @@ int lmctfy_container_api_create_container_raw(
     const void *spec,
     const size_t spec_size);
 
+int lmctfy_container_run_raw(struct status *s,
+                             pid_t *tid,
+                             struct container *container,
+                             const int argc,
+                             const char **argv,
+                             const void *spec,
+                             const size_t spec_size);
+
 int lmctfy_container_update_raw(struct status *s,
                                 struct container *container,
                                 int policy,

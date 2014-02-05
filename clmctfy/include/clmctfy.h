@@ -157,6 +157,22 @@ int lmctfy_container_enter(struct status *s,
                            const pid_t *tids,
                            const int n);
 
+// 
+// Arguments:
+//
+//  - s: [output]
+//  - tid: [output] On success, tid stores the PID of the command.
+//  - container
+//  - argc: number of arguments (including the binary file path).
+//  - argv: All arguments. The first element is the binary that will be executed
+//    and must be an absolute path.
+int lmctfy_container_run(struct status *s,
+                         pid_t *tid,
+                         struct container *container,
+                         const int argc,
+                         const char **argv,
+                         const Containers__Lmctfy__RunSpec *spec);
+
 int lmctfy_container_exec(struct status *s,
                           struct container *container,
                           const int argc,

@@ -76,11 +76,11 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
   StrictMockContainerApi *mock_api = GetMockApi();
   const char *container_name = "test";
   Container *ctnr = new StrictMockContainer(container_name);
-  StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
+  StatusOr<Container *> statusor_container(ctnr);
 
   string errmsg = "some error message";
   Status status = Status(::util::error::INTERNAL, errmsg);
-  StatusOr<Container *> statusor = StatusOr<Container *>(status);
+  StatusOr<Container *> statusor(status);
 
   EXPECT_CALL(*mock_api, Get(StringPiece(container_name)))
       .WillOnce(Return(statusor_container))
@@ -112,11 +112,11 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
   StrictMockContainerApi *mock_api = GetMockApi();
   const char *container_name = "test";
   Container *ctnr = new StrictMockContainer(container_name);
-  StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
+  StatusOr<Container *> statusor_container(ctnr);
 
   string errmsg = "some error message";
   Status status = Status(::util::error::INTERNAL, errmsg);
-  StatusOr<Container *> statusor = StatusOr<Container *>(status);
+  StatusOr<Container *> statusor(status);
 
   EXPECT_CALL(*mock_api, Create(StringPiece(container_name), _))
       .WillOnce(Return(statusor_container))
@@ -153,7 +153,7 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
   StatusOr<Container *> statusor_container = StatusOr<Container *>(ctnr);
 
   string errmsg = "some error message";
-  Status destroy_status = Status(::util::error::INTERNAL, errmsg);
+  Status destroy_status(::util::error::INTERNAL, errmsg);
 
   EXPECT_CALL(*mock_api, Get(StringPiece(container_name)))
       .WillOnce(Return(statusor_container))
@@ -195,7 +195,7 @@ TEST_F(ClmctfyContainerApiTest, DetectContainer) {
   pid_t pid = 10;
   container_ = NULL;
   memset(output_name, 0, MAX_CONTAINER_NAME_LEN);
-  StatusOr<string> statusor = StatusOr<string>(container_name);
+  StatusOr<string> statusor(container_name);
 
   string errmsg = "some error message";
   Status status = Status(::util::error::INTERNAL, errmsg);
