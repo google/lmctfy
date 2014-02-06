@@ -153,7 +153,7 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
   SHOULD_SUCCEED(lmctfy_container_api_get_container, &container_, container_api_, container_name);
   SHOULD_FAIL_WITH_ERROR(destroy_status, lmctfy_container_api_destroy_container, container_api_, container_);
 
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_destroy_container, NULL, container_);
+  WITH_NULL_CONTAINER_API_RUN(lmctfy_container_api_destroy_container, container_api_, container_);
   // XXX(monnand): Should succeed or not?
   SHOULD_SUCCEED(lmctfy_container_api_destroy_container, container_api_, NULL);
 }
@@ -183,6 +183,7 @@ TEST_F(ClmctfyContainerApiTest, DetectContainer) {
   *output_name = '\0';
   SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_api_detect_container, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
   EXPECT_EQ(*output_name, '\0');
+  WITH_NULL_CONTAINER_API_RUN(lmctfy_container_api_detect_container, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
 }
  
 }  // namespace lmctfy
