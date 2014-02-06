@@ -183,6 +183,10 @@ int lmctfy_container_update(struct status *s,
                             int policy,
                             const Containers__Lmctfy__ContainerSpec *spec);
 
+int lmctfy_container_spec(struct status *s,
+                          struct container *container,
+                          Containers__Lmctfy__ContainerSpec **spec);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

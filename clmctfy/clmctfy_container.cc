@@ -54,6 +54,7 @@ int lmctfy_container_run(struct status *s,
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, spec);
   CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
   sz = containers__lmctfy__run_spec__get_packed_size(spec);
   if (sz > 0) {
     buf = new uint8_t[sz];
@@ -152,11 +153,12 @@ int lmctfy_container_update(struct status *s,
 
   uint8_t *buf = NULL;
   size_t sz = 0;
-  int ret = 0;
+  int ret = STATUS_OK;
 
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, spec);
   CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
   sz = containers__lmctfy__container_spec__get_packed_size(spec);
   if (sz > 0) {
     buf = new uint8_t[sz];
@@ -164,6 +166,33 @@ int lmctfy_container_update(struct status *s,
   }
   ret = lmctfy_container_update_raw(s, container, policy, buf, sz);
   if (buf != NULL) {
+    delete []buf;
+  }
+  return ret;
+}
+
+int lmctfy_container_spec(struct status *s,
+                          struct container *container,
+                          Containers__Lmctfy__ContainerSpec **spec) {
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
+  CHECK_NOTNULL_OR_RETURN(s, spec);
+
+  int ret = STATUS_OK;
+  uint8_t *buf = NULL;
+  StatusOr<ContainerSpec> statusor_container_spec = container->container_->Spec();
+  if (!statusor_container_spec.ok()) {
+    return status_copy(s, statusor_container_spec.status());
+  }
+
+  const ContainerSpec container_spec = statusor_container_spec.ValueOrDie();
+  int sz = container_spec.ByteSize();
+  *spec = NULL;
+  if (sz > 0) {
+    buf = new uint8_t[sz];
+    container_spec.SerializeToArray(buf, sz);
+    *spec = containers__lmctfy__container_spec__unpack(NULL, sz, buf);
     delete []buf;
   }
   return ret;

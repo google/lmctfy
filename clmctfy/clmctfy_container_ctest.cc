@@ -167,5 +167,24 @@ TEST_F(ClmctfyContainerTest, Enter) {
   WITH_NULL_CONTAINER_RUN(lmctfy_container_enter, container_, NULL, 0);
 }
 
+TEST_F(ClmctfyContainerTest, Spec) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Status status(::util::error::INTERNAL, "some error message"); 
+
+  ContainerSpec spec;
+  StatusOr<ContainerSpec> statusor_spec(spec);
+  StatusOr<ContainerSpec> statusor_fail(status);
+
+  EXPECT_CALL(*mock_container, Spec())
+      .WillOnce(Return(statusor_spec))
+      .WillOnce(Return(statusor_fail));
+
+  Containers__Lmctfy__ContainerSpec *container_spec;
+  SHOULD_SUCCEED(lmctfy_container_spec, container_, &container_spec);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_spec, container_, &container_spec);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_spec, container_, NULL);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_spec, container_, &container_spec);
+}
+
 }  // namespace lmctfy
 }  // namespace containers
