@@ -165,51 +165,6 @@ TEST_F(ClmctfyContainerTest, Enter) {
   // With 0 tid, it should success.
   SHOULD_SUCCESS_ON(lmctfy_container_enter, &s, container_, NULL, 0);
   WITH_NULL_CONTAINER_RUN(lmctfy_container_enter, &s, container_, NULL, 0);
-
-  /*
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_enter(&s, container_, tids, n);
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
-
-
-  s = {0, NULL};
-  ret = lmctfy_container_enter(&s, container_, tids, n);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, status.error_code());
-  EXPECT_EQ(errmsg, s.message);
-  free(s.message);
-
-  s = {0, NULL};
-  ret = lmctfy_container_enter(&s, container_, tids, -1);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__OK);
-
-  s = {0, NULL};
-  ret = lmctfy_container_enter(&s, container_, NULL, 0);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__OK);
-
-  s = {0, NULL};
-  ret = lmctfy_container_enter(&s, container_, tids, 0);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__OK);
-
-  Container *tmp = container_->container_;
-  container_->container_ = NULL;
-  s = {0, NULL};
-  ret = lmctfy_container_enter(&s, container_, tids, n);
-  container_->container_ = tmp;
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
-
-  s = {0, NULL};
-  ret = lmctfy_container_enter(&s, NULL, tids, n);
-  container_->container_ = tmp;
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
-  */
 }
 
 }  // namespace lmctfy
