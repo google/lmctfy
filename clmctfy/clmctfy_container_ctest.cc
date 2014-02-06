@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "clmctfy.h"
+#include "clmctfy_macros_ctest.h"
 
 #include "lmctfy_mock.h"
 #include "gtest/gtest.h"
@@ -100,44 +101,10 @@ TEST_F(ClmctfyContainerTest, Exec) {
       .WillOnce(Return(Status::OK))
       .WillOnce(Return(status));
 
-  // First call will be success.
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_exec(&s, container_, argc, argv);
-
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
-
-  // second call failed.
-  s = {0, NULL};
-  ret = lmctfy_container_exec(&s, container_, argc, argv);
-
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, status.error_code());
-  EXPECT_EQ(errmsg, s.message);
-  free(s.message);
-
-  // Invalid arguments.
-  s = {0, NULL};
-  ret = lmctfy_container_exec(&s, container_, 0, NULL);
-
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
-
-  Container *tmp = container_->container_;
-  container_->container_ = NULL;
-  s = {0, NULL};
-  ret = lmctfy_container_exec(&s, container_, 0, NULL);
-  container_->container_ = tmp;
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
-
-  s = {0, NULL};
-  ret = lmctfy_container_exec(&s, NULL, 0, NULL);
-  container_->container_ = tmp;
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
-
+  SHOULD_SUCCESS_ON(lmctfy_container_exec, &s, container_, argc, argv);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_exec, &s, container_, argc, argv);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_exec, &s, container_, 0, NULL);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_exec, &s, container_, argc, argv);
 }
 
 TEST_F(ClmctfyContainerTest, Update) {
@@ -150,39 +117,11 @@ TEST_F(ClmctfyContainerTest, Update) {
       .WillOnce(Return(Status::OK))
       .WillOnce(Return(status));
 
-  struct status s = {0, NULL};
   int policy = CONTAINER_UPDATE_POLICY_DIFF;
-  int ret = lmctfy_container_update(&s, container_, policy, &spec);
-
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
-
-  s = {0, NULL};
-  ret = lmctfy_container_update(&s, container_, policy, &spec);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, status.error_code());
-  EXPECT_EQ(errmsg, s.message);
-  free(s.message);
-
-  s = {0, NULL};
-  ret = lmctfy_container_update(&s, container_, -1, &spec);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
-
-  Container *tmp = container_->container_;
-  container_->container_ = NULL;
-  s = {0, NULL};
-  ret = lmctfy_container_update(&s, container_, policy, &spec);
-  container_->container_ = tmp;
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
-
-  s = {0, NULL};
-  ret = lmctfy_container_update(&s, NULL, policy, &spec);
-  container_->container_ = tmp;
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+  SHOULD_SUCCESS_ON(lmctfy_container_update, &s, container_, policy, &spec);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_update, &s, container_, policy, &spec);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_update, &s, container_, -1, &spec);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_update, &s, container_, -1, &spec);
 }
 
 TEST_F(ClmctfyContainerTest, Run) {
@@ -192,8 +131,6 @@ TEST_F(ClmctfyContainerTest, Run) {
   StatusOr<pid_t> statusor_success((pid_t)1);
   StatusOr<pid_t> statusor_fail(err_status);
   Containers__Lmctfy__RunSpec runspec = CONTAINERS__LMCTFY__RUN_SPEC__INIT;
-  struct status s = {0, NULL};
-  int ret = 0;
   pid_t tid;
   const char *argv[] = {"/bin/echo", "hello world"};
   int argc = 2;
@@ -206,19 +143,10 @@ TEST_F(ClmctfyContainerTest, Run) {
       .WillOnce(Return(statusor_success))
       .WillOnce(Return(statusor_fail));
 
-  s = {0, NULL};
-  ret = lmctfy_container_run(&s, &tid, container_, argc, argv, &runspec);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, NULL);
-  EXPECT_EQ(tid, 1);
-
-  s = {0, NULL};
-  ret = lmctfy_container_run(&s, &tid, container_, argc, argv, &runspec);
-  EXPECT_EQ(ret, s.error_code);
-  EXPECT_EQ(s.error_code, err_status.error_code());
-  EXPECT_EQ(errmsg, s.message);
-  free(s.message);
+  SHOULD_SUCCESS_ON(lmctfy_container_run, &s, &tid, container_, argc, argv, &runspec);
+  SHOULD_FAIL_WITH_ERROR(err_status, lmctfy_container_run, &s, &tid, container_, argc, argv, &runspec);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_run, &s, &tid, container_, 0, NULL, &runspec);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_run, &s, &tid, container_, argc, argv, &runspec);
 }
 
 TEST_F(ClmctfyContainerTest, Enter) {
@@ -230,13 +158,21 @@ TEST_F(ClmctfyContainerTest, Enter) {
       .WillOnce(Return(Status::OK))
       .WillOnce(Return(status));
 
-  struct status s = {0, NULL};
   pid_t tids[] = {1, 2, 3, 4};
   int n = 4;
+  SHOULD_SUCCESS_ON(lmctfy_container_enter, &s, container_, tids, n);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_enter, &s, container_, tids, n);
+  // With 0 tid, it should success.
+  SHOULD_SUCCESS_ON(lmctfy_container_enter, &s, container_, NULL, 0);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_enter, &s, container_, NULL, 0);
+
+  /*
+  struct status s = {0, NULL};
   int ret = lmctfy_container_enter(&s, container_, tids, n);
   EXPECT_EQ(ret, 0);
   EXPECT_EQ(s.error_code, 0);
   EXPECT_EQ(s.message, NULL);
+
 
   s = {0, NULL};
   ret = lmctfy_container_enter(&s, container_, tids, n);
@@ -273,6 +209,7 @@ TEST_F(ClmctfyContainerTest, Enter) {
   container_->container_ = tmp;
   EXPECT_EQ(ret, s.error_code);
   EXPECT_EQ(s.error_code, UTIL__ERROR__CODE__INVALID_ARGUMENT);
+  */
 }
 
 }  // namespace lmctfy
