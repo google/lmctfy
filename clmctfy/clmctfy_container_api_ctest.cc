@@ -14,6 +14,7 @@
 
 #include "clmctfy.h"
 
+#include "clmctfy_macros_ctest.h"
 #include "lmctfy.h"
 #include "lmctfy_mock.h"
 #include "gtest/gtest.h"
@@ -86,25 +87,16 @@ TEST_F(ClmctfyContainerApiTest, GetContainer) {
       .WillOnce(Return(statusor_container))
       .WillOnce(Return(statusor));
 
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
-
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, (const char *)NULL);
+  SHOULD_SUCCEED(lmctfy_container_api_get_container, &container_, container_api_, container_name);
   Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
-
   struct container *tmp = container_;
   container_ = NULL;
-  s = {0, NULL};
-  ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
-
-  EXPECT_EQ(ret, ::util::error::INTERNAL);
-  EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
-  EXPECT_EQ(container_, (struct container *)NULL);
-  EXPECT_EQ(errmsg, s.message);
-  free(s.message);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_api_get_container, &container_, container_api_, container_name);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_get_container, NULL, container_api_, container_name);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_get_container, &container_, container_api_, NULL);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_get_container, &container_, container_api_, "");
+  WITH_NULL_CONTAINER_API_RUN(lmctfy_container_api_get_container, &container_, container_api_, container_name);
   container_ = tmp;
 }
 
@@ -124,25 +116,18 @@ TEST_F(ClmctfyContainerApiTest, CreateContainer) {
 
   Containers__Lmctfy__ContainerSpec spec = CONTAINERS__LMCTFY__CONTAINER_SPEC__INIT; 
 
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_create_container(&s, &container_, container_api_, container_name, &spec);
-
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, (const char *)NULL);
+  SHOULD_SUCCEED(lmctfy_container_api_create_container, &container_, container_api_, container_name, &spec);
   Container *ctnr_2 = GetMockContainer();
   EXPECT_EQ(ctnr_2, ctnr);
-
   struct container *tmp = container_;
   container_ = NULL;
-  s = {0, NULL};
-  ret = lmctfy_container_api_create_container(&s, &container_, container_api_, container_name, &spec);
-
-  EXPECT_EQ(ret, ::util::error::INTERNAL);
-  EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_api_create_container, &container_, container_api_, container_name, &spec);
   EXPECT_EQ(container_, (struct container *)NULL);
-  EXPECT_EQ(errmsg, s.message);
-  free(s.message);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_create_container, NULL, container_api_, container_name, &spec);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_create_container, &container_, container_api_, container_name, NULL);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_create_container, &container_, container_api_, NULL, &spec);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_create_container, &container_, container_api_, "", &spec);
+  WITH_NULL_CONTAINER_API_RUN(lmctfy_container_api_get_container, &container_, container_api_, container_name);
   container_ = tmp;
 }
 
@@ -162,28 +147,15 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
       .WillOnce(Return(Status::OK))
       .WillOnce(Return(destroy_status));
 
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, (const char *)NULL);
-  ret = lmctfy_container_api_destroy_container(&s, container_api_, container_);
-  container_ = NULL;
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, (const char *)NULL);
+  SHOULD_SUCCEED(lmctfy_container_api_get_container, &container_, container_api_, container_name);
+  SHOULD_SUCCEED(lmctfy_container_api_destroy_container, container_api_, container_);
 
-  s = {0, NULL};
-  ret = lmctfy_container_api_get_container(&s, &container_, container_api_, container_name);
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, (const char *)NULL);
-  ret = lmctfy_container_api_destroy_container(&s, container_api_, container_);
-  container_ = NULL;
-  EXPECT_EQ(ret, ::util::error::INTERNAL);
-  EXPECT_EQ(s.error_code, ::util::error::INTERNAL);
-  EXPECT_EQ(errmsg, s.message);
+  SHOULD_SUCCEED(lmctfy_container_api_get_container, &container_, container_api_, container_name);
+  SHOULD_FAIL_WITH_ERROR(destroy_status, lmctfy_container_api_destroy_container, container_api_, container_);
 
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_api_destroy_container, NULL, container_);
+  // XXX(monnand): Should succeed or not?
+  SHOULD_SUCCEED(lmctfy_container_api_destroy_container, container_api_, NULL);
 }
 
 #define MAX_CONTAINER_NAME_LEN 512
@@ -205,19 +177,11 @@ TEST_F(ClmctfyContainerApiTest, DetectContainer) {
       .WillOnce(Return(statusor))
       .WillOnce(Return(statusor_fail));
 
-  struct status s = {0, NULL};
-  int ret = lmctfy_container_api_detect_container(&s, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
-  EXPECT_EQ(ret, 0);
-  EXPECT_EQ(s.error_code, 0);
-  EXPECT_EQ(s.message, (const char *)NULL);
+  SHOULD_SUCCEED(lmctfy_container_api_detect_container, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
   EXPECT_EQ(string(container_name), string(output_name));
 
   *output_name = '\0';
-  s = {0, NULL};
-  ret = lmctfy_container_api_detect_container(&s, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
-  EXPECT_EQ(ret, status.error_code());
-  EXPECT_EQ(s.error_code, status.error_code());
-  EXPECT_EQ(errmsg, s.message);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_api_detect_container, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
   EXPECT_EQ(*output_name, '\0');
 }
  

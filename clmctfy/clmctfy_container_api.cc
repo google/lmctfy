@@ -81,6 +81,8 @@ int lmctfy_container_api_get_container(struct status *s,
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
+  CHECK_NOTNULL_OR_RETURN(s, container_name);
+  CHECK_POSITIVE_OR_RETURN(s, strlen(container_name));
   Container *ctnr = NULL;
 
   StatusOr<Container *> statusor = api->container_api_->Get(container_name);
@@ -98,6 +100,8 @@ int lmctfy_container_api_create_container_raw(struct status *s,
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
+  CHECK_NOTNULL_OR_RETURN(s, container_name);
+  CHECK_POSITIVE_OR_RETURN(s, strlen(container_name));
   ContainerSpec container_spec;
   Container *ctnr = NULL;
   if (spec != NULL && spec_size > 0) {
@@ -120,6 +124,8 @@ int lmctfy_container_api_create_container(struct status *s,
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
   CHECK_NOTNULL_OR_RETURN(s, spec);
+  CHECK_NOTNULL_OR_RETURN(s, container_name);
+  CHECK_POSITIVE_OR_RETURN(s, strlen(container_name));
   uint8_t *buf = NULL;
   size_t sz = 0;
   int ret = 0;

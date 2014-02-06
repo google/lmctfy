@@ -101,10 +101,10 @@ TEST_F(ClmctfyContainerTest, Exec) {
       .WillOnce(Return(Status::OK))
       .WillOnce(Return(status));
 
-  SHOULD_SUCCESS_ON(lmctfy_container_exec, &s, container_, argc, argv);
-  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_exec, &s, container_, argc, argv);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_exec, &s, container_, 0, NULL);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_exec, &s, container_, argc, argv);
+  SHOULD_SUCCEED(lmctfy_container_exec, container_, argc, argv);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_exec, container_, argc, argv);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_exec, container_, 0, NULL);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_exec, container_, argc, argv);
 }
 
 TEST_F(ClmctfyContainerTest, Update) {
@@ -118,10 +118,10 @@ TEST_F(ClmctfyContainerTest, Update) {
       .WillOnce(Return(status));
 
   int policy = CONTAINER_UPDATE_POLICY_DIFF;
-  SHOULD_SUCCESS_ON(lmctfy_container_update, &s, container_, policy, &spec);
-  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_update, &s, container_, policy, &spec);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_update, &s, container_, -1, &spec);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_update, &s, container_, -1, &spec);
+  SHOULD_SUCCEED(lmctfy_container_update, container_, policy, &spec);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_update, container_, policy, &spec);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_update, container_, -1, &spec);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_update, container_, -1, &spec);
 }
 
 TEST_F(ClmctfyContainerTest, Run) {
@@ -143,10 +143,10 @@ TEST_F(ClmctfyContainerTest, Run) {
       .WillOnce(Return(statusor_success))
       .WillOnce(Return(statusor_fail));
 
-  SHOULD_SUCCESS_ON(lmctfy_container_run, &s, &tid, container_, argc, argv, &runspec);
-  SHOULD_FAIL_WITH_ERROR(err_status, lmctfy_container_run, &s, &tid, container_, argc, argv, &runspec);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_run, &s, &tid, container_, 0, NULL, &runspec);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_run, &s, &tid, container_, argc, argv, &runspec);
+  SHOULD_SUCCEED(lmctfy_container_run, &tid, container_, argc, argv, &runspec);
+  SHOULD_FAIL_WITH_ERROR(err_status, lmctfy_container_run, &tid, container_, argc, argv, &runspec);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_run, &tid, container_, 0, NULL, &runspec);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_run, &tid, container_, argc, argv, &runspec);
 }
 
 TEST_F(ClmctfyContainerTest, Enter) {
@@ -160,11 +160,11 @@ TEST_F(ClmctfyContainerTest, Enter) {
 
   pid_t tids[] = {1, 2, 3, 4};
   int n = 4;
-  SHOULD_SUCCESS_ON(lmctfy_container_enter, &s, container_, tids, n);
-  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_enter, &s, container_, tids, n);
+  SHOULD_SUCCEED(lmctfy_container_enter, container_, tids, n);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_enter, container_, tids, n);
   // With 0 tid, it should success.
-  SHOULD_SUCCESS_ON(lmctfy_container_enter, &s, container_, NULL, 0);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_enter, &s, container_, NULL, 0);
+  SHOULD_SUCCEED(lmctfy_container_enter, container_, NULL, 0);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_enter, container_, NULL, 0);
 }
 
 }  // namespace lmctfy
