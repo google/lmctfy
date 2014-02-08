@@ -197,3 +197,58 @@ int lmctfy_container_spec(struct status *s,
   }
   return ret;
 }
+
+int lmctfy_container_list_subcontainers(struct status *s,
+                                        struct container **subcontainers[],
+                                        int *nr_subcontainers,
+                                        struct container *c,
+                                        int list_policy) {
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, c);
+  CHECK_NOTNULL_OR_RETURN(s, c->container_);
+  CHECK_NOTNULL_OR_RETURN(s, subcontainers);
+  CHECK_NOTNULL_OR_RETURN(s, nr_subcontainers);
+
+  *nr_subcontainers = 0;
+  *subcontainers = NULL;
+  Container::ListPolicy policy;
+
+  switch (list_policy) {
+    case CONTAINER_LIST_POLICY_SELF:
+      policy = Container::LIST_SELF;
+      break;
+    case CONTAINER_LIST_POLICY_RECURSIVE:
+      policy = Container::LIST_RECURSIVE;
+      break;
+    default:
+      return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "Unknown list policy: %d", list_policy);
+  }
+
+  StatusOr< vector<Container *> > statusor_subcontainers = 
+      c->container_->ListSubcontainers(policy);
+
+  if (!statusor_subcontainers.ok()) {
+    return status_copy(s, statusor_subcontainers.status());
+  }
+
+  const vector<Container *> &subcontainers_vector = statusor_subcontainers.ValueOrDie();
+  if (subcontainers_vector.size() == 0) {
+    return STATUS_OK;
+  }
+  struct container **subctnrs = (struct container **)malloc(sizeof(struct container *) * subcontainers_vector.size());
+  if (subctnrs == NULL) {
+    return status_new(s, UTIL__ERROR__CODE__RESOURCE_EXHAUSTED, "out of memory");
+  }
+  *subcontainers = subctnrs;
+  *nr_subcontainers = subcontainers_vector.size();
+
+  vector<Container *>::const_iterator container_iter = subcontainers_vector.begin();
+  for (container_iter = subcontainers_vector.begin(); container_iter != subcontainers_vector.end(); container_iter++) {
+    struct container *ctnr = new container();
+    ctnr->container_ = *container_iter;
+    *subctnrs = ctnr;
+    subctnrs++;
+  }
+  return STATUS_OK;
+}
+

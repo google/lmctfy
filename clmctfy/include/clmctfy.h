@@ -14,6 +14,16 @@ enum {
   CONTAINER_UPDATE_POLICY_REPLACE
 };
 
+enum {
+  CONTAINER_LIST_POLICY_SELF,
+  CONTAINER_LIST_POLICY_RECURSIVE
+};
+
+enum {
+  CONTAINER_STATS_TYPE_SUMMARY,
+  CONTAINER_STATS_TYPE_FULL
+};
+
 struct status {
   int error_code;
 
@@ -22,8 +32,21 @@ struct status {
   char *message;
 };
 
+
 struct container;
 struct container_api;
+
+// Callback used on an event notification.
+//
+// The container and status structure pointers are only valid within the
+// callback.
+//
+// - container: The container that received the notification. It is an error
+//    to delete it.
+// - status: The status of the notification. If OK, then the event registered
+//    occured. Otherwise, an error is reported in the status. Errors may
+//    be caused by container deletion or unexpected registration errors.
+typedef void lmctfy_event_callback_f(struct container *, const struct status *);
 
 // Initializes the machine to start being able to create containers.
 //
@@ -187,6 +210,25 @@ int lmctfy_container_spec(struct status *s,
                           struct container *container,
                           Containers__Lmctfy__ContainerSpec **spec);
 
+// List all subcontainers.
+//
+// Arguments:
+//
+//  - s: [output]
+//  - subcontainers: [output] The address of a pointer points to an array of
+//    struct container pointers. The caller takes the onwership. On success, the
+//    pointer will be assigned an address to an array of containers. The pointed 
+//    array should be released with free(). The containers inside the array
+//    should be deleted/destroyed individually.
+//  - nr_subcontainers: [output] The address of an integer used to store number
+//    of subcontainers in the array.
+//  - container: The container
+//  - list_policy: CONTAINER_LIST_POLICY_SELF or CONTAINER_LIST_POLICY_RECURSIVE
+int lmctfy_container_list_subcontainers(struct status *s,
+                                        struct container **subcontainers[],
+                                        int *nr_subcontainers,
+                                        struct container *container,
+                                        int list_policy);
 #ifdef __cplusplus
 }
 #endif // __cplusplus

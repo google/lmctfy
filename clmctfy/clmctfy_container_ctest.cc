@@ -49,7 +49,8 @@ class ClmctfyContainerTest : public ::testing::Test {
   virtual void SetUp() {
     container_api_ = NULL;
     container_ = NULL;
-    const char *container_name = "test";
+    const char *container_name = "/test";
+    container_name_ = container_name;
     lmctfy_new_container_api(NULL, &container_api_);
     StrictMockContainerApi *mock_api = GetMockApi();
     Container *ctnr = new StrictMockContainer(container_name);
@@ -71,6 +72,7 @@ class ClmctfyContainerTest : public ::testing::Test {
   struct container *container_;
   StrictMockContainerApi *GetMockApi();
   StrictMockContainer *GetMockContainer();
+  string container_name_;
 };
 
 StrictMockContainerApi *ClmctfyContainerTest::GetMockApi() {
@@ -184,6 +186,44 @@ TEST_F(ClmctfyContainerTest, Spec) {
   SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_spec, container_, &container_spec);
   SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_spec, container_, NULL);
   WITH_NULL_CONTAINER_RUN(lmctfy_container_spec, container_, &container_spec);
+}
+
+TEST_F(ClmctfyContainerTest, ListSubContainers) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Status status(::util::error::INTERNAL, "some error message"); 
+
+  StrictMockContainer *ctnr1 = new StrictMockContainer("container1");
+  StrictMockContainer *ctnr2 = new StrictMockContainer("container2");
+
+  vector<Container *> subcontainers_vector(2);
+  subcontainers_vector[0] = ctnr1;
+  subcontainers_vector[1] = ctnr2;
+  StatusOr<vector<Container *>> statusor_subcontainers(subcontainers_vector);
+  Container::ListPolicy policy = Container::LIST_SELF;
+
+  StatusOr<vector<Container *>> statusor_fail(status);
+
+  EXPECT_CALL(*mock_container, ListSubcontainers(policy))
+      .WillOnce(Return(statusor_subcontainers))
+      .WillOnce(Return(statusor_fail));
+
+  struct container **subcontainers;
+  int nr_containers;
+  SHOULD_SUCCEED(lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
+  EXPECT_EQ(nr_containers, subcontainers_vector.size());
+  vector<Container *>::iterator iter;
+  int i = 0;
+  for (i = 0, iter = subcontainers_vector.begin(); iter != subcontainers_vector.end(); iter++, i++) {
+    Container *ctnr = internal::lmctfy_container_strip(subcontainers[i]);
+    EXPECT_EQ(*iter, ctnr);
+    lmctfy_delete_container(subcontainers[i]);
+  }
+  free(subcontainers);
+
+  subcontainers = NULL;
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
+  EXPECT_EQ(nr_containers, 0);
+  EXPECT_EQ(subcontainers, (struct container **)NULL);
 }
 
 }  // namespace lmctfy
