@@ -229,6 +229,18 @@ int lmctfy_container_list_subcontainers(struct status *s,
                                         int *nr_subcontainers,
                                         struct container *container,
                                         int list_policy);
+
+int lmctfy_container_list_threads(struct status *s,
+                                  pid_t *threads[],
+                                  int *nr_threads,
+                                  struct container *container,
+                                  int list_policy);
+
+int lmctfy_container_list_processes(struct status *s,
+                                    pid_t *processes[],
+                                    int *nr_processes,
+                                    struct container *container,
+                                    int list_policy);
 #ifdef __cplusplus
 }
 #endif // __cplusplus

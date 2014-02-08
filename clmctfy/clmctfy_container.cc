@@ -252,3 +252,91 @@ int lmctfy_container_list_subcontainers(struct status *s,
   return STATUS_OK;
 }
 
+int lmctfy_container_list_threads(struct status *s,
+                                  pid_t *threads[],
+                                  int *nr_threads,
+                                  struct container *c,
+                                  int list_policy) {
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, c);
+  CHECK_NOTNULL_OR_RETURN(s, c->container_);
+  CHECK_NOTNULL_OR_RETURN(s, threads);
+  CHECK_NOTNULL_OR_RETURN(s, nr_threads);
+
+  *threads = NULL;
+  *nr_threads = 0;
+  Container::ListPolicy policy;
+  switch (list_policy) {
+    case CONTAINER_LIST_POLICY_SELF:
+      policy = Container::LIST_SELF;
+      break;
+    case CONTAINER_LIST_POLICY_RECURSIVE:
+      policy = Container::LIST_RECURSIVE;
+      break;
+    default:
+      return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "Unknown list policy: %d", list_policy);
+  }
+
+  StatusOr<vector<pid_t>> statusor_pids = c->container_->ListThreads(policy);
+  if (!statusor_pids.ok()) {
+    return status_copy(s, statusor_pids.status());
+  }
+  const vector<pid_t> &pids = statusor_pids.ValueOrDie();
+  *nr_threads = pids.size();
+  if (*nr_threads == 0) {
+    return STATUS_OK;
+  }
+
+  pid_t *ptr = (pid_t *)malloc(sizeof(pid_t) * pids.size());
+  *threads = ptr;
+  vector<pid_t>::const_iterator iter;
+  for (iter = pids.begin(); iter != pids.end(); iter++, ptr++) {
+    *ptr = *iter;
+  }
+  return STATUS_OK;
+}
+
+int lmctfy_container_list_processes(struct status *s,
+                                    pid_t *processes[],
+                                    int *nr_processes,
+                                    struct container *c,
+                                    int list_policy) {
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, c);
+  CHECK_NOTNULL_OR_RETURN(s, c->container_);
+  CHECK_NOTNULL_OR_RETURN(s, processes);
+  CHECK_NOTNULL_OR_RETURN(s, nr_processes);
+
+  *processes = NULL;
+  *nr_processes = 0;
+  Container::ListPolicy policy;
+  switch (list_policy) {
+    case CONTAINER_LIST_POLICY_SELF:
+      policy = Container::LIST_SELF;
+      break;
+    case CONTAINER_LIST_POLICY_RECURSIVE:
+      policy = Container::LIST_RECURSIVE;
+      break;
+    default:
+      return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "Unknown list policy: %d", list_policy);
+  }
+
+  StatusOr<vector<pid_t>> statusor_pids = c->container_->ListProcesses(policy);
+  if (!statusor_pids.ok()) {
+    return status_copy(s, statusor_pids.status());
+  }
+  const vector<pid_t> &pids = statusor_pids.ValueOrDie();
+  *nr_processes = pids.size();
+  if (*nr_processes == 0) {
+    return STATUS_OK;
+  }
+
+  pid_t *ptr = (pid_t *)malloc(sizeof(pid_t) * pids.size());
+  *processes = ptr;
+  vector<pid_t>::const_iterator iter;
+  for (iter = pids.begin(); iter != pids.end(); iter++, ptr++) {
+    *ptr = *iter;
+  }
+  return STATUS_OK;
+}
+

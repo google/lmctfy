@@ -224,6 +224,89 @@ TEST_F(ClmctfyContainerTest, ListSubContainers) {
   SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
   EXPECT_EQ(nr_containers, 0);
   EXPECT_EQ(subcontainers, (struct container **)NULL);
+
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, NULL, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, &subcontainers, NULL, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, -1);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
+}
+
+TEST_F(ClmctfyContainerTest, ListThreads) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Status status(::util::error::INTERNAL, "some error message"); 
+
+  int N = 10;
+  vector<pid_t> pids_vector(N);
+  for (int i = 0; i < N; i++) {
+    pids_vector[i] = i + 1;
+  }
+
+  StatusOr<vector<pid_t>> statusor_pids(pids_vector);
+  StatusOr<vector<pid_t>> statusor_fail(status);
+  Container::ListPolicy policy = Container::LIST_SELF;
+
+  EXPECT_CALL(*mock_container, ListThreads(policy))
+      .WillOnce(Return(statusor_pids))
+      .WillOnce(Return(statusor_fail));
+
+  pid_t *pids;
+  int nr_threads;
+  SHOULD_SUCCEED(lmctfy_container_list_threads, &pids, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
+  EXPECT_EQ(nr_threads, pids_vector.size());
+  vector<pid_t>::const_iterator iter;
+  int i = 0;
+  for (i = 0, iter = pids_vector.begin(); iter != pids_vector.end(); iter++, i++) {
+    EXPECT_EQ(pids[i], *iter);
+  }
+  free(pids);
+
+  pids = NULL;
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_threads, &pids, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
+  EXPECT_EQ(nr_threads, 0);
+  EXPECT_EQ(pids, (pid_t *)NULL);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, NULL, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, &pids, NULL, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, &pids, &nr_threads, container_, -1);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_threads, &pids, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
+}
+
+TEST_F(ClmctfyContainerTest, ListProcesses) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Status status(::util::error::INTERNAL, "some error message"); 
+
+  int N = 10;
+  vector<pid_t> pids_vector(N);
+  for (int i = 0; i < N; i++) {
+    pids_vector[i] = i + 1;
+  }
+
+  StatusOr<vector<pid_t>> statusor_pids(pids_vector);
+  StatusOr<vector<pid_t>> statusor_fail(status);
+  Container::ListPolicy policy = Container::LIST_SELF;
+
+  EXPECT_CALL(*mock_container, ListProcesses(policy))
+      .WillOnce(Return(statusor_pids))
+      .WillOnce(Return(statusor_fail));
+
+  pid_t *pids;
+  int nr_processes;
+  SHOULD_SUCCEED(lmctfy_container_list_processes, &pids, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
+  EXPECT_EQ(nr_processes, pids_vector.size());
+  vector<pid_t>::const_iterator iter;
+  int i = 0;
+  for (i = 0, iter = pids_vector.begin(); iter != pids_vector.end(); iter++, i++) {
+    EXPECT_EQ(pids[i], *iter);
+  }
+  free(pids);
+
+  pids = NULL;
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_processes, &pids, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
+  EXPECT_EQ(nr_processes, 0);
+  EXPECT_EQ(pids, (pid_t *)NULL);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, NULL, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, &pids, NULL, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, &pids, &nr_processes, container_, -1);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_processes, &pids, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
 }
 
 }  // namespace lmctfy
