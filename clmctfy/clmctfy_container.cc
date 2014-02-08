@@ -427,18 +427,28 @@ inline void EventCallbackWrapper::Run(Container *c, Status s) {
   if (callback_ == NULL) {
     return;
   }
-  struct container ctnr;
   struct status sts;
-  ctnr.container_ = c;
   status_copy(&sts, s);
-
-  if (c == NULL) {
-    callback_(NULL, &sts);
-  } else {
-    callback_(&ctnr, &sts);
+  if (c != container_->container_) {
+    struct container ctnr;
+    ctnr.container_ = c;
+    // This should never happen.
+    status_new(&sts, UTIL__ERROR__CODE__UNKNOWN, "Unknown container passed to the callback");
+    callback_(NULL, &sts, user_data_);
+    if (c == NULL) {
+       callback_(NULL, &sts, user_data_);
+    } else {
+       callback_(&ctnr, &sts, user_data_);
+    }
+    if (sts.message != NULL) {
+      free(sts.message);
+    }
+    return;
   }
-  if (sts.message != NULL) {
-    free(sts.message);
+  if (c == NULL) {
+       callback_(NULL, &sts, user_data_);
+  } else {
+       callback_(container_, &sts, user_data_);
   }
 }
 
@@ -446,6 +456,7 @@ int lmctfy_container_register_notification_raw(struct status *s,
                                                notification_id_t *notif_id,
                                                struct container *container,
                                                lmctfy_event_callback_f callback,
+                                               void *user_data,
                                                const void *spec,
                                                const size_t spec_size) {
   CHECK_NOTFAIL_OR_RETURN(s);
@@ -457,7 +468,7 @@ int lmctfy_container_register_notification_raw(struct status *s,
   if (spec != NULL && spec_size > 0) {
     event_spec.ParseFromArray(spec, spec_size);
   }
-  EventCallbackWrapper *cb = new EventCallbackWrapper(callback);
+  EventCallbackWrapper *cb = new EventCallbackWrapper(container, callback, user_data);
 
   // Container object does not take the ownership of the callback.
   StatusOr<Container::NotificationId> statusor_id = container->container_->RegisterNotification(event_spec, cb);
@@ -476,6 +487,7 @@ int lmctfy_container_register_notification(struct status *s,
                                            notification_id_t *notif_id,
                                            struct container *container,
                                            lmctfy_event_callback_f callback,
+                                           void *user_data,
                                            Containers__Lmctfy__EventSpec *spec) {
 
   uint8_t *buf = NULL;
@@ -493,7 +505,7 @@ int lmctfy_container_register_notification(struct status *s,
     buf = new uint8_t[sz];
     containers__lmctfy__event_spec__pack(spec, buf);
   }
-  ret = lmctfy_container_register_notification_raw(s, notif_id, container, callback, buf, sz);
+  ret = lmctfy_container_register_notification_raw(s, notif_id, container, callback, user_data, buf, sz);
   if (buf != NULL) {
     delete []buf;
   }

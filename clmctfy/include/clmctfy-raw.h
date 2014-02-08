@@ -46,6 +46,7 @@ int lmctfy_container_register_notification_raw(struct status *s,
                                                notification_id_t *notif_id,
                                                struct container *container,
                                                lmctfy_event_callback_f callback,
+                                               void *user_data,
                                                const void *spec,
                                                const size_t spec_size);
 

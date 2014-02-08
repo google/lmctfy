@@ -14,12 +14,19 @@ using ::containers::lmctfy::ContainerApi;
 
 class EventCallbackWrapper : public Callback2<Container *, ::util::Status> {
  public:
-  EventCallbackWrapper(lmctfy_event_callback_f cb) : callback_(cb) { }
+  EventCallbackWrapper(struct container *c,
+                       lmctfy_event_callback_f cb,
+                       void *user_data) 
+      : container_(c),
+        callback_(cb),
+        user_data_(user_data) { }
   virtual ~EventCallbackWrapper() {}
   virtual bool IsRepeatable() const { return true; }
   virtual void Run(Container *c, ::util::Status s);
  private:
   lmctfy_event_callback_f callback_;
+  void *user_data_;
+  struct container *container_;
   DISALLOW_COPY_AND_ASSIGN(EventCallbackWrapper);
 };
 

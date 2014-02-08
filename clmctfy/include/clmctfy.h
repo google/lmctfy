@@ -48,7 +48,10 @@ struct container_api;
 //    occured. Otherwise, an error is reported in the status. Errors may
 //    be caused by container deletion or unexpected registration errors.
 //    it will be an error if the user call free(s->message);
-typedef void (*lmctfy_event_callback_f)(struct container *, const struct status *);
+// - user_data: 
+typedef void (*lmctfy_event_callback_f)(struct container *container,
+                                        const struct status *status,
+                                        void *user_data);
 
 typedef uint64_t notification_id_t;
 
@@ -266,6 +269,7 @@ int lmctfy_container_register_notification(struct status *s,
                                            notification_id_t *notif_id,
                                            struct container *container,
                                            lmctfy_event_callback_f callback,
+                                           void *user_data,
                                            Containers__Lmctfy__EventSpec *spec);
 
 int lmctfy_container_unregister_notification(struct status *s,
