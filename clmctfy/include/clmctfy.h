@@ -2,6 +2,7 @@
 #define LMCTFY_C_BINDING_LMCTFY_C_H_
 
 #include <unistd.h>
+#include <stdint.h>
 #include "lmctfy.pb-c.h"
 #include "util/task/codes.pb-c.h"
 
@@ -46,7 +47,10 @@ struct container_api;
 // - status: The status of the notification. If OK, then the event registered
 //    occured. Otherwise, an error is reported in the status. Errors may
 //    be caused by container deletion or unexpected registration errors.
-typedef void lmctfy_event_callback_f(struct container *, const struct status *);
+//    it will be an error if the user call free(s->message);
+typedef void (*lmctfy_event_callback_f)(struct container *, const struct status *);
+
+typedef uint64_t notification_id_t;
 
 // Initializes the machine to start being able to create containers.
 //
@@ -241,6 +245,23 @@ int lmctfy_container_list_processes(struct status *s,
                                     int *nr_processes,
                                     struct container *container,
                                     int list_policy);
+
+int lmctfy_container_pause(struct status *s,
+                           struct container *container);
+
+int lmctfy_container_resume(struct status *s,
+                           struct container *container);
+
+int lmctfy_container_killall(struct status *s,
+                           struct container *container);
+
+int lmctfy_container_stats(struct status *s,
+                          struct container *container,
+                          int stats_type,
+                          Containers__Lmctfy__ContainerStats **stats);
+
+const char *lmctfy_container_name(struct container *container);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
