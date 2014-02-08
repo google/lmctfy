@@ -262,6 +262,16 @@ int lmctfy_container_stats(struct status *s,
 
 const char *lmctfy_container_name(struct container *container);
 
+int lmctfy_container_register_notification(struct status *s,
+                                           notification_id_t *notif_id,
+                                           struct container *container,
+                                           lmctfy_event_callback_f callback,
+                                           Containers__Lmctfy__EventSpec *spec);
+
+int lmctfy_container_unregister_notification(struct status *s,
+                                             struct container *container,
+                                             const notification_id_t notif_id);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

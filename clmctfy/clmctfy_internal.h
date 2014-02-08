@@ -15,18 +15,17 @@ using ::containers::lmctfy::ContainerApi;
 class EventCallbackWrapper : public Callback2<Container *, ::util::Status> {
  public:
   EventCallbackWrapper(lmctfy_event_callback_f cb) : callback_(cb) { }
-  EventCallbackWrapper(EventCallbackWrapper &other) : callback_(other.callback_) { }
-  void operator=(const EventCallbackWrapper &rhs) { callback_ = rhs.callback_; }
   virtual ~EventCallbackWrapper() {}
   virtual bool IsRepeatable() const { return true; }
   virtual void Run(Container *c, ::util::Status s);
  private:
   lmctfy_event_callback_f callback_;
+  DISALLOW_COPY_AND_ASSIGN(EventCallbackWrapper);
 };
 
 struct container {
   Container *container_;
-  ::std::unordered_map<notification_id_t, EventCallbackWrapper> notif_map_;
+  ::std::unordered_map<notification_id_t, EventCallbackWrapper *> notif_map_;
 };
 
 struct container_api {

@@ -451,6 +451,8 @@ int lmctfy_container_register_notification_raw(struct status *s,
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
+  CHECK_NOTNULL_OR_RETURN(s, notif_id);
+  CHECK_NOTNULL_OR_RETURN(s, callback);
   EventSpec event_spec;
   if (spec != NULL && spec_size > 0) {
     event_spec.ParseFromArray(spec, spec_size);
@@ -470,10 +472,37 @@ int lmctfy_container_register_notification_raw(struct status *s,
   return STATUS_OK;
 }
 
+int lmctfy_container_register_notification(struct status *s,
+                                           notification_id_t *notif_id,
+                                           struct container *container,
+                                           lmctfy_event_callback_f callback,
+                                           Containers__Lmctfy__EventSpec *spec) {
 
-int lmctfy_container_unregister_notification_raw(struct status *s,
-                                                 struct container *container,
-                                                 const notification_id_t notif_id) {
+  uint8_t *buf = NULL;
+  size_t sz = 0;
+  int ret = 0;
+
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, spec);
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
+  CHECK_NOTNULL_OR_RETURN(s, notif_id);
+  CHECK_NOTNULL_OR_RETURN(s, callback);
+  sz = containers__lmctfy__event_spec__get_packed_size(spec);
+  if (sz > 0) {
+    buf = new uint8_t[sz];
+    containers__lmctfy__event_spec__pack(spec, buf);
+  }
+  ret = lmctfy_container_register_notification_raw(s, notif_id, container, callback, buf, sz);
+  if (buf != NULL) {
+    delete []buf;
+  }
+  return ret;
+}
+
+int lmctfy_container_unregister_notification(struct status *s,
+                                             struct container *container,
+                                             const notification_id_t notif_id) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
