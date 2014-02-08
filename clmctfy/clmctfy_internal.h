@@ -32,6 +32,7 @@ class EventCallbackWrapper : public Callback2<Container *, ::util::Status> {
 
 struct container {
   Container *container_;
+  // TODO(monnand): Make it thread-safe?
   ::std::unordered_map<notification_id_t, EventCallbackWrapper *> notif_map_;
 };
 
