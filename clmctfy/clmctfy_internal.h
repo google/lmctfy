@@ -27,6 +27,7 @@ class EventCallbackWrapper : public Callback2<Container *, ::util::Status> {
   lmctfy_event_callback_f callback_;
   void *user_data_;
   struct container *container_;
+  Container::NotificationId notif_id_;
   DISALLOW_COPY_AND_ASSIGN(EventCallbackWrapper);
 };
 

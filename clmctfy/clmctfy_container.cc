@@ -429,26 +429,35 @@ inline void EventCallbackWrapper::Run(Container *c, Status s) {
   }
   struct status sts;
   status_copy(&sts, s);
-  if (c != container_->container_) {
-    struct container ctnr;
-    ctnr.container_ = c;
-    // This should never happen.
-    status_new(&sts, UTIL__ERROR__CODE__UNKNOWN, "Unknown container passed to the callback");
+  if (c == NULL) {
     callback_(NULL, &sts, user_data_);
-    if (c == NULL) {
-       callback_(NULL, &sts, user_data_);
-    } else {
-       callback_(&ctnr, &sts, user_data_);
-    }
     if (sts.message != NULL) {
       free(sts.message);
     }
     return;
   }
-  if (c == NULL) {
-       callback_(NULL, &sts, user_data_);
-  } else {
-       callback_(container_, &sts, user_data_);
+  if (c != container_->container_) {
+    char *oldmsg = sts.message;
+    int olderrcode = sts.error_code;
+    struct container ctnr;
+    ctnr.container_ = c;
+    // This should never happen.
+    status_new(&sts, UTIL__ERROR__CODE__UNKNOWN,
+               "Unknown container passed to the callback. "
+               "(ErrorCode=%d, Message=\"%s\")", olderrcode,
+               (oldmsg == NULL ? "" : oldmsg));
+    callback_(&ctnr, &sts, user_data_);
+    if (sts.message != NULL) {
+      free(sts.message);
+    }
+    if (oldmsg != NULL) {
+      free(oldmsg);
+    }
+    return;
+  }
+  callback_(container_, &sts, user_data_);
+  if (sts.message != NULL) {
+    free(sts.message);
   }
 }
 
@@ -468,10 +477,12 @@ int lmctfy_container_register_notification_raw(struct status *s,
   if (spec != NULL && spec_size > 0) {
     event_spec.ParseFromArray(spec, spec_size);
   }
-  EventCallbackWrapper *cb = new EventCallbackWrapper(container, callback, user_data);
+  EventCallbackWrapper *cb =
+      new EventCallbackWrapper(container, callback, user_data);
 
   // Container object does not take the ownership of the callback.
-  StatusOr<Container::NotificationId> statusor_id = container->container_->RegisterNotification(event_spec, cb);
+  StatusOr<Container::NotificationId> statusor_id =
+      container->container_->RegisterNotification(event_spec, cb);
 
   if (!statusor_id.ok()) {
     delete cb;
@@ -505,7 +516,13 @@ int lmctfy_container_register_notification(struct status *s,
     buf = new uint8_t[sz];
     containers__lmctfy__event_spec__pack(spec, buf);
   }
-  ret = lmctfy_container_register_notification_raw(s, notif_id, container, callback, user_data, buf, sz);
+  ret = lmctfy_container_register_notification_raw(s,
+                                                   notif_id,
+                                                   container,
+                                                   callback,
+                                                   user_data,
+                                                   buf,
+                                                   sz);
   if (buf != NULL) {
     delete []buf;
   }
@@ -523,7 +540,8 @@ int lmctfy_container_unregister_notification(struct status *s,
   if (iter == container->notif_map_.end()) {
     return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "unknown notification id");
   }
-  Status status = container->container_->UnregisterNotification(notif_id);
+  Status status =
+      container->container_->UnregisterNotification(notif_id);
   if (!status.ok()) {
     return status_copy(s, status);
   }
