@@ -146,7 +146,9 @@ int lmctfy_container_api_create_container(
     const char *container_name,
     const Containers__Lmctfy__ContainerSpec *spec);
 
-// Destroy a container
+// Destroy a container. The caller has to call lmctfy_delete_container after
+// detroying a container. Otherwise, the memory of occupied by the container
+// structure will not be released.
 //
 // Arguments:
 //

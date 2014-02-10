@@ -116,6 +116,15 @@ int lmctfy_container_exec(struct status *s,
 void lmctfy_delete_container(struct container *container) {
   if (container != NULL) {
     if (container->container_ != NULL) {
+      unordered_map<notification_id_t, EventCallbackWrapper *>::iterator iter;
+      for (iter = container->notif_map_.begin();
+           iter != container->notif_map_.end();
+           iter++) {
+        container->container_->UnregisterNotification(iter->first);
+        delete iter->second;
+        iter->second = NULL;
+      }
+      container->notif_map_.clear();
       delete container->container_;
     }
     delete container;

@@ -151,7 +151,6 @@ int lmctfy_container_api_destroy_container(struct status *s,
   if (c != NULL && c->container_ != NULL) {
     Status status = api->container_api_->Destroy(c->container_);
     ret = status_copy(s, status);
-    delete c;
   }
   return ret;
 }

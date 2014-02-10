@@ -362,5 +362,35 @@ TEST_F(ClmctfyContainerTest, Name) {
   container_->container_ = tmp;
 }
 
+static void event_callback_counter(struct container *container,
+                                   const struct status *s,
+                                   void *data) {
+  if (data != NULL) {
+    (*((int *)data))++;
+  }
+}
+
+TEST_F(ClmctfyContainerTest, RegisterThenUnRegister) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Containers__Lmctfy__EventSpec spec = CONTAINERS__LMCTFY__EVENT_SPEC__INIT;
+  notification_id_t notif_id = 0;
+  StatusOr<Container::NotificationId> statusor_success((Container::NotificationId)1);
+  int evt_counter = 0;
+
+  EXPECT_CALL(*mock_container, RegisterNotification(_, _))
+      .WillOnce(Return(statusor_success));
+
+  EXPECT_CALL(*mock_container, UnregisterNotification(1))
+      .WillOnce(Return(Status::OK));
+
+  SHOULD_SUCCEED(lmctfy_container_register_notification,
+                 &notif_id,
+                 container_,
+                 event_callback_counter,
+                 &evt_counter,
+                 &spec);
+  EXPECT_EQ(notif_id, 1);
+}
+
 }  // namespace lmctfy
 }  // namespace containers
