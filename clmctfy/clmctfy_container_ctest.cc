@@ -309,5 +309,58 @@ TEST_F(ClmctfyContainerTest, ListProcesses) {
   WITH_NULL_CONTAINER_RUN(lmctfy_container_list_processes, &pids, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
 }
 
+TEST_F(ClmctfyContainerTest, Pause) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Status status(::util::error::INTERNAL, "some error message"); 
+
+  EXPECT_CALL(*mock_container, Pause())
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(status));
+
+  SHOULD_SUCCEED(lmctfy_container_pause, container_);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_pause, container_);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_pause, container_);
+}
+
+TEST_F(ClmctfyContainerTest, Resume) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Status status(::util::error::INTERNAL, "some error message"); 
+
+  EXPECT_CALL(*mock_container, Resume())
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(status));
+
+  SHOULD_SUCCEED(lmctfy_container_resume, container_);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_resume, container_);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_resume, container_);
+}
+
+TEST_F(ClmctfyContainerTest, KillAll) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  Status status(::util::error::INTERNAL, "some error message"); 
+
+  EXPECT_CALL(*mock_container, KillAll())
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(status));
+
+  SHOULD_SUCCEED(lmctfy_container_killall, container_);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_killall, container_);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_killall, container_);
+}
+
+TEST_F(ClmctfyContainerTest, Name) {
+  StrictMockContainer *mock_container = GetMockContainer();
+  string container_name = mock_container->name();
+  const char *name = lmctfy_container_name(container_);
+  EXPECT_EQ(container_name, name);
+  name = lmctfy_container_name(NULL);
+  EXPECT_EQ(name, NULL);
+  Container *tmp = container_->container_;
+  container_->container_ = NULL;
+  name = lmctfy_container_name(container_);
+  EXPECT_EQ(name, NULL);
+  container_->container_ = tmp;
+}
+
 }  // namespace lmctfy
 }  // namespace containers
