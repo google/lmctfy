@@ -13,6 +13,7 @@ OPT ?= -O2 -DNDEBUG       # (A) Production use (optimized mode)
 # Use default if no configuration specified.
 CXX ?= g++
 AR ?= ar
+CC ?= gcc
 
 # Version number of lmctfy.
 VERSION = "\"0.4.5\""
@@ -22,7 +23,7 @@ PROTOC = protoc
 PROTOC_C = protoc-c
 
 # Function for getting a set of source files.
-get_srcs = $(shell find $(1) -name \*.cc -a ! -name \*_test.cc | tr "\n" " ")
+get_srcs = $(shell find $(1) -name \*.cc -a ! -name \*_test.cc -a ! -name \*_ctest.cc | tr "\n" " ")
 
 INCLUDE_PROTOS = include/virtual_host include/lmctfy include/namespaces
 UTIL_PROTOS = util/task/codes
