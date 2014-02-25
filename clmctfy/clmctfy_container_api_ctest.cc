@@ -158,15 +158,12 @@ TEST_F(ClmctfyContainerApiTest, DestroyContainer) {
   SHOULD_SUCCEED(lmctfy_container_api_destroy_container, container_api_, NULL);
 }
 
-#define MAX_CONTAINER_NAME_LEN 512
-
 TEST_F(ClmctfyContainerApiTest, DetectContainer) {
   StrictMockContainerApi *mock_api = GetMockApi();
   const char *container_name = "test";
-  char output_name[MAX_CONTAINER_NAME_LEN];
+  char *output_name = NULL;
   pid_t pid = 10;
   container_ = NULL;
-  memset(output_name, 0, MAX_CONTAINER_NAME_LEN);
   StatusOr<string> statusor(container_name);
 
   string errmsg = "some error message";
@@ -177,13 +174,14 @@ TEST_F(ClmctfyContainerApiTest, DetectContainer) {
       .WillOnce(Return(statusor))
       .WillOnce(Return(statusor_fail));
 
-  SHOULD_SUCCEED(lmctfy_container_api_detect_container, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
+  SHOULD_SUCCEED(lmctfy_container_api_detect_container, &output_name, container_api_, pid);
   EXPECT_EQ(string(container_name), string(output_name));
+  free(output_name);
 
-  *output_name = '\0';
-  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_api_detect_container, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
-  EXPECT_EQ(*output_name, '\0');
-  WITH_NULL_CONTAINER_API_RUN(lmctfy_container_api_detect_container, output_name, MAX_CONTAINER_NAME_LEN, container_api_, pid);
+  output_name = NULL;
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_api_detect_container, &output_name, container_api_, pid);
+  EXPECT_EQ(output_name, NULL);
+  WITH_NULL_CONTAINER_API_RUN(lmctfy_container_api_detect_container, &output_name, container_api_, pid);
 }
  
 }  // namespace lmctfy

@@ -9,17 +9,13 @@
 #include "clmctfy.h"
 #include "lmctfy.pb-c.h"
 
-#define CONTAINER_NAME_MAX_LENGTH	2014
-
 int main() {
 	struct container_api *lmctfy = NULL;
 	struct container *container = NULL;
 	struct status s = {0, NULL};
 	int err = 0;
-	char container_name[CONTAINER_NAME_MAX_LENGTH];
+	char *container_name = NULL;
 	Containers__Lmctfy__ContainerStats *stats = NULL;
-
-	memset(container_name, 0, CONTAINER_NAME_MAX_LENGTH);
 
 	err = lmctfy_new_container_api(&s, &lmctfy);
 	if (err != 0) {
@@ -28,7 +24,7 @@ int main() {
 		return -1;
 	}
 
-	err = lmctfy_container_api_detect_self(&s, container_name, CONTAINER_NAME_MAX_LENGTH, lmctfy);
+	err = lmctfy_container_api_detect_self(&s, &container_name, lmctfy);
 	if (err != 0) {
 		printf("Failed to detect the current container: %s\n", s.message);
 		free(s.message);

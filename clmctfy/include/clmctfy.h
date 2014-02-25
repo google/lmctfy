@@ -175,19 +175,18 @@ int lmctfy_container_api_destroy_container(struct status *s,
 //  - s: [output] Will be used to store the status. The function will first
 //    check the error code stored in s->error_code and will only proceed if the
 //    error code is not zero.
-//  - container_name: [output] Will be used to store the container name
-//  - n: The size of the buffer pointed by container_name
+//  - container_name: [output] Will be used to store the container name.
+//    It's the caller's responsibility to free() *container_name.
 //  - api: The container api.
 //  - pid: The thread ID to check. 0 refers to self.
 int lmctfy_container_api_detect_container(struct status *s,
-                                          char *container_name,
-                                          const size_t n,
+                                          char **container_name,
                                           struct container_api *api,
                                           pid_t pid);
 
 // XXX(monnand): Do we really need this macro?
-#define lmctfy_container_api_detect_self(s, container_name, n, api) \
-    lmctfy_container_api_detect_container((s), (container_name), (n), (api), 0)
+#define lmctfy_container_api_detect_self(s, container_name, api) \
+    lmctfy_container_api_detect_container((s), (container_name), (api), 0)
 
 // Release the memory used by the container structure. The refered container
 // will not be affected.
