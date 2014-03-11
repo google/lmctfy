@@ -1,8 +1,8 @@
 #ifndef LMCTFY_C_BINDING_CLMCTFY_RAW_H_
 #define LMCTFY_C_BINDING_CLMCTFY_RAW_H_
 
-#include "clmctfy.h"
 #include "lmctfy.pb-c.h"
+#include "clmctfy.h"
 
 #ifdef __cplusplus
 extern "C" {

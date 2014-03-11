@@ -1,17 +1,22 @@
+#include "clmctfy.h"
+#include "clmctfy-raw.h"
+
 #include <stdlib.h>
 #include <string.h>
 
-#include "clmctfy.h"
-#include "clmctfy-raw.h"
-#include "lmctfy.h"
 #include "util/task/statusor.h"
-#include "clmctfy_internal.h"
 #include "lmctfy.pb.h"
 #include "util/task/codes.pb-c.h"
+#include "lmctfy.h"
+
+#include "clmctfy_internal.h"
 
 #define STATUS_OK UTIL__ERROR__CODE__OK
 
-using namespace ::containers::lmctfy;
+using ::containers::lmctfy::Container;
+using ::containers::lmctfy::ContainerApi;
+using ::containers::lmctfy::InitSpec;
+using ::containers::lmctfy::ContainerSpec;
 using ::util::internal::status_copy;
 using ::util::internal::status_new;
 using ::util::Status;

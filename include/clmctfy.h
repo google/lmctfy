@@ -1,10 +1,11 @@
-#ifndef LMCTFY_C_BINDING_LMCTFY_C_H_
-#define LMCTFY_C_BINDING_LMCTFY_C_H_
+#ifndef LMCTFY_INCLUDE_CLMCTFY_H_
+#define LMCTFY_INCLUDE_CLMCTFY_H_
 
 #include <unistd.h>
 #include <stdint.h>
-#include "lmctfy.pb-c.h"
+
 #include "util/task/codes.pb-c.h"
+#include "lmctfy.pb-c.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -294,4 +295,4 @@ int lmctfy_container_unregister_notification(struct status *s,
 #ifdef __cplusplus
 }
 #endif // __cplusplus
-#endif // LMCTFY_C_BINDING_LMCTFY_C_H_
+#endif // LMCTFY_INCLUDE_CLMCTFY_H_

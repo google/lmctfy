@@ -102,7 +102,7 @@ CXXFLAGS += -I. -I./include -I./base -I./lmctfy -I$(GTEST_DIR)/include \
 	    -I$(GMOCK_DIR)/include -I/usr/local/include -L/usr/local/lib \
 	    -I/usr/include -L/usr/lib
 # Add include for c binding
-CXXFLAGS += -I./clmctfy/include -I./clmctfy
+CXXFLAGS += -I./clmctfy
 
 # Add proto flags.
 CXXFLAGS += `pkg-config --cflags --libs protobuf`

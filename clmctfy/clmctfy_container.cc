@@ -1,14 +1,23 @@
 #include "clmctfy.h"
 #include "clmctfy-raw.h"
-#include "lmctfy.h"
-#include "clmctfy_internal.h"
-#include "util/task/statusor.h"
-#include "base/callback.h"
-#include "base/macros.h"
+
 #include <vector>
 #include <unordered_map>
 
-using namespace ::containers::lmctfy;
+#include "util/task/statusor.h"
+#include "base/callback.h"
+#include "base/macros.h"
+#include "lmctfy.h"
+
+#include "clmctfy_internal.h"
+
+using ::containers::lmctfy::Container;
+using ::containers::lmctfy::ContainerApi;
+using ::containers::lmctfy::InitSpec;
+using ::containers::lmctfy::ContainerSpec;
+using ::containers::lmctfy::RunSpec;
+using ::containers::lmctfy::EventSpec;
+using ::containers::lmctfy::ContainerStats;
 using ::util::internal::status_copy;
 using ::util::internal::status_new;
 using ::util::Status;

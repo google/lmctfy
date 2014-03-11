@@ -14,14 +14,15 @@
 
 #include "clmctfy.h"
 
-#include "clmctfy_macros_ctest.h"
-#include "lmctfy.h"
-#include "lmctfy_mock.h"
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
 #include "util/task/statusor.h"
-#include "clmctfy_internal.h"
 #include "strings/stringpiece.h"
+
+#include "lmctfy_mock.h"
+#include "lmctfy.h"
+#include "clmctfy_macros_ctest.h"
+#include "clmctfy_internal.h"
 
 using ::testing::NotNull;
 using ::testing::Return;

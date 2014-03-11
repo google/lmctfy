@@ -1,9 +1,10 @@
 #include <string.h> // to use strdup
 #include <stdarg.h>
 
+#include "util/task/status.h"
+
 #include "clmctfy.h"
 #include "clmctfy_internal.h"
-#include "util/task/status.h"
 
 using ::util::Status;
 
