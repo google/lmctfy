@@ -62,7 +62,7 @@ typedef uint64_t notification_id_t;
 //  - s: [output] s will be used as output.
 //    If the original value of s->code is not
 //    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
-//    immediately with value s->code. This will help users to propagete errors.
+//    immediately with value s->code. This will help users to propagate errors.
 //    Otherwise, it contains the error code and message.
 //  - spec: The specification.
 //
@@ -78,7 +78,7 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
 //  - s: [output] s will be used as output.
 //    If the original value of s->code is not
 //    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
-//    immediately with value s->code. This will help users to propagete errors.
+//    immediately with value s->code. This will help users to propagate errors.
 //    Otherwise, it contains the error code and message.
 //  - api: [output] The address of a pointer to struct container_api. The
 //    pointer of the container api will be stored in this address.
@@ -104,7 +104,7 @@ void lmctfy_delete_container_api(struct container_api *api);
 //  - s: [output] s will be used as output.
 //    If the original value of s->code is not
 //    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
-//    immediately with value s->code. This will help users to propagete errors.
+//    immediately with value s->code. This will help users to propagate errors.
 //    Otherwise, it contains the error code and message.
 //  - container: [output] The address of a pointer to struct container. It will
 //    be used to store the pointer to the container.
@@ -128,7 +128,7 @@ int lmctfy_container_api_get_container(
 //  - s: [output] s will be used as output.
 //    If the original value of s->code is not
 //    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
-//    immediately with value s->code. This will help users to propagete errors.
+//    immediately with value s->code. This will help users to propagate errors.
 //    Otherwise, it contains the error code and message.
 //  - container: [output] The address of a pointer to struct container. It will
 //    be used to store the newly created container.
@@ -156,7 +156,7 @@ int lmctfy_container_api_create_container(
 //  - s: [output] s will be used as output.
 //    If the original value of s->code is not
 //    UTIL__ERROR__CODE__INVALID_ARGUMENT, then the function will return
-//    immediately with value s->code. This will help users to propagete errors.
+//    immediately with value s->code. This will help users to propagate errors.
 //    Otherwise, it contains the error code and message.
 //  - api: A container api.
 //  - container: The pointer to struct container. The pointer will become
