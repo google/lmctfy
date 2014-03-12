@@ -1,5 +1,5 @@
-#ifndef LMCTFY_C_BINDING_STATUS_INTERNAL_H_
-#define LMCTFY_C_BINDING_STATUS_INTERNAL_H_
+#ifndef LMCTFY_CLMCTFY_CLMCTFY_INTERNAL_H_
+#define LMCTFY_CLMCTFY_CLMCTFY_INTERNAL_H_
 
 #include <unordered_map>
 
@@ -86,15 +86,4 @@ int status_copy(struct status *dst, const Status &src);
 } // namespace internal
 } // namespace util
 
-namespace containers {
-namespace lmctfy {
-namespace internal {
-
-ContainerApi *lmctfy_container_api_strip(struct container_api *api);
-Container *lmctfy_container_strip(struct container *container);
-
-} // internal
-} // lmctfy
-} // containers
-
-#endif // LMCTFY_C_BINDING_STATUS_INTERNAL_H_
+#endif // LMCTFY_CLMCTFY_CLMCTFY_INTERNAL_H_

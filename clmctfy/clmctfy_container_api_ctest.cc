@@ -63,13 +63,13 @@ class ClmctfyContainerApiTest : public ::testing::Test {
 };
 
 StrictMockContainerApi *ClmctfyContainerApiTest::GetMockApi() {
-  ContainerApi *capi = internal::lmctfy_container_api_strip(container_api_);
+  ContainerApi *capi = container_api_->container_api_;
   StrictMockContainerApi *mock_api = dynamic_cast<StrictMockContainerApi *>(capi);
   return mock_api;
 }
 
 StrictMockContainer *ClmctfyContainerApiTest::GetMockContainer() {
-  Container *ctnr = internal::lmctfy_container_strip(container_);
+  Container *ctnr = container_->container_;
   StrictMockContainer *mock_container = dynamic_cast<StrictMockContainer *>(ctnr);
   return mock_container;
 }

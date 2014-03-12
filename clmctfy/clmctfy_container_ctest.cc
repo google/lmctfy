@@ -74,13 +74,13 @@ class ClmctfyContainerTest : public ::testing::Test {
 };
 
 StrictMockContainerApi *ClmctfyContainerTest::GetMockApi() {
-  ContainerApi *capi = internal::lmctfy_container_api_strip(container_api_);
+  ContainerApi *capi = container_api_->container_api_;
   StrictMockContainerApi *mock_api = dynamic_cast<StrictMockContainerApi *>(capi);
   return mock_api;
 }
 
 StrictMockContainer *ClmctfyContainerTest::GetMockContainer() {
-  Container *ctnr = internal::lmctfy_container_strip(container_);
+  Container *ctnr = container_->container_;
   StrictMockContainer *mock_container = dynamic_cast<StrictMockContainer *>(ctnr);
   return mock_container;
 }
@@ -212,7 +212,7 @@ TEST_F(ClmctfyContainerTest, ListSubContainers) {
   vector<Container *>::iterator iter;
   int i = 0;
   for (i = 0, iter = subcontainers_vector.begin(); iter != subcontainers_vector.end(); iter++, i++) {
-    Container *ctnr = internal::lmctfy_container_strip(subcontainers[i]);
+    Container *ctnr = subcontainers[i]->container_;
     EXPECT_EQ(*iter, ctnr);
     lmctfy_delete_container(subcontainers[i]);
   }

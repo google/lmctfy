@@ -177,19 +177,3 @@ int lmctfy_container_api_detect_container(struct container_api *api,
   }
   return ret;
 }
-
-namespace containers {
-namespace lmctfy {
-namespace internal {
-
-ContainerApi *lmctfy_container_api_strip(struct container_api *api) {
-  return api->container_api_;
-}
-
-Container *lmctfy_container_strip(struct container *c) {
-  return c->container_;
-}
-
-} // internal
-} // lmctfy
-} // containers

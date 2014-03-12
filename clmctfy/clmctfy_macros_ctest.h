@@ -1,5 +1,5 @@
-#ifndef LMCTFY__CLMCTFY_MACROS_CTEST_H_
-#define LMCTFY__CLMCTFY_MACROS_CTEST_H_
+#ifndef LMCTFY_CLMCTFY_CLMCTFY_MACROS_CTEST_H_
+#define LMCTFY_CLMCTFY_CLMCTFY_MACROS_CTEST_H_
 
 // Some useful macros for writing test cases.
 
@@ -66,5 +66,5 @@
   } \
 } while (0)
 
-#endif // LMCTFY__CLMCTFY_MACROS_CTEST_H_
+#endif // LMCTFY_CLMCTFY_CLMCTFY_MACROS_CTEST_H_
 
