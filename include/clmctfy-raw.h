@@ -22,6 +22,24 @@ extern "C" {
 //  status_get_code(s).
 int lmctfy_init_machine_raw(const void *spec, const size_t spec_size, struct status *s);
 
+// Create a container
+//
+// Arguments:
+//
+//  - api: A container api.
+//  - container_name: the container name.
+//  - spec: Serialized data (protobuf format) containing the specification.
+//    Caller takes the ownership.
+//  - spec_size: Size of the serialized data.
+//  - container: [output] The address of a pointer to struct container. It will
+//    be used to store the newly created container.
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_api_create_container_raw(
     struct container_api *api,
     const char *container_name,
@@ -45,6 +63,11 @@ int lmctfy_container_api_create_container_raw(
 //  - tid: [output] On success, tid stores the PID of the command.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_run_raw(struct container *container,
                              const int argc,
                              const char **argv,
@@ -69,6 +92,11 @@ int lmctfy_container_run_raw(struct container *container,
 //  - spec_size: Size of the serialized data.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_update_raw(struct container *container,
                                 int policy,
                                 const void *spec,
@@ -92,6 +120,11 @@ int lmctfy_container_update_raw(struct container *container,
 //    notification
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_register_notification_raw(struct container *container,
                                                lmctfy_event_callback_f callback,
                                                void *user_data,

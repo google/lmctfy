@@ -173,6 +173,11 @@ int lmctfy_container_api_destroy_container(struct container_api *api,
 //    It's the caller's responsibility to free() *container_name.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_api_detect_container(struct container_api *api,
                                           pid_t pid,
                                           char **container_name,
@@ -185,6 +190,11 @@ int lmctfy_container_api_detect_container(struct container_api *api,
 //
 //  - container: The container. This pointer will be invalid after the call to
 //    this function
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 void lmctfy_delete_container(struct container *container);
 
 // Moves the specified threads into this container. Enter is atomic.
@@ -198,6 +208,11 @@ void lmctfy_delete_container(struct container *container);
 //    ownership.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_enter(struct container *container,
                            const pid_t *tids,
                            const int tids_size,
@@ -217,6 +232,11 @@ int lmctfy_container_enter(struct container *container,
 //  - tid: [output] On success, tid stores the PID of the command.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_run(struct container *container,
                          const int argc,
                          const char **argv,
@@ -237,6 +257,11 @@ int lmctfy_container_run(struct container *container,
 //    and must be an absolute path.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_exec(struct container *container,
                           const int argc,
                           const char **argv,
@@ -256,6 +281,11 @@ int lmctfy_container_exec(struct container *container,
 //  - spec: The specification of the desired updates.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_update(struct container *container,
                             int policy,
                             const Containers__Lmctfy__ContainerSpec *spec,
@@ -272,6 +302,11 @@ int lmctfy_container_update(struct container *container,
 //    be released by calling free().
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_spec(struct container *container,
                           Containers__Lmctfy__ContainerSpec **spec,
                           struct status *s);
@@ -291,6 +326,11 @@ int lmctfy_container_spec(struct container *container,
 //    of subcontainers in the array.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_list_subcontainers(struct container *container,
                                         int list_policy,
                                         struct container **subcontainers[],
@@ -307,6 +347,11 @@ int lmctfy_container_list_subcontainers(struct container *container,
 //  - threads_size: [output] *threads_size is the number of TIDs stored in *threads.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_list_threads(struct container *container,
                                   int list_policy,
                                   pid_t *threads[],
@@ -324,6 +369,11 @@ int lmctfy_container_list_threads(struct container *container,
 //    *processes.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_list_processes(struct container *container,
                                     int list_policy,
                                     pid_t *processes[],
@@ -339,6 +389,11 @@ int lmctfy_container_list_processes(struct container *container,
 //  - container: The container.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_pause(struct container *container,
                            struct status *s);
 
@@ -350,6 +405,11 @@ int lmctfy_container_pause(struct container *container,
 //  - container: The container.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_resume(struct container *container,
                             struct status *s);
 
@@ -367,6 +427,11 @@ int lmctfy_container_resume(struct container *container,
 //  - container: The container.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_killall(struct container *container,
                              struct status *s);
 
@@ -381,6 +446,11 @@ int lmctfy_container_killall(struct container *container,
 //    free()'ed.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_stats(struct container *container,
                           int stats_type,
                           Containers__Lmctfy__ContainerStats **stats,
@@ -412,6 +482,11 @@ const char *lmctfy_container_name(struct container *container);
 //    notification
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_register_notification(struct container *container,
                                            lmctfy_event_callback_f callback,
                                            void *user_data,
@@ -427,6 +502,11 @@ int lmctfy_container_register_notification(struct container *container,
 //    notification.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
 int lmctfy_container_unregister_notification(struct container *container,
                                              const notification_id_t notif_id,
                                              struct status *s);
