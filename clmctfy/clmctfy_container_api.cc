@@ -22,7 +22,7 @@ using ::util::internal::status_new;
 using ::util::Status;
 using ::util::StatusOr;
 
-int lmctfy_init_machine_raw(struct status *s, const void *spec, const size_t spec_size) {
+int lmctfy_init_machine_raw(const void *spec, const size_t spec_size, struct status *s) {
   InitSpec init_spec;
   CHECK_NOTFAIL_OR_RETURN(s);
   if (spec != NULL && spec_size > 0) {
@@ -33,7 +33,7 @@ int lmctfy_init_machine_raw(struct status *s, const void *spec, const size_t spe
   return status_copy(s, v);
 }
 
-int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec) {
+int lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec, struct status *s) {
   uint8_t *buf = NULL;
   size_t sz = 0;
   int ret = 0;
@@ -46,14 +46,14 @@ int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *sp
     buf = new uint8_t[sz];
     containers__lmctfy__init_spec__pack(spec, buf);
   }
-  ret = lmctfy_init_machine_raw(s, buf, sz);
+  ret = lmctfy_init_machine_raw(buf, sz, s);
   if (buf != NULL) {
     delete []buf;
   }
   return ret;
 }
 
-int lmctfy_new_container_api(struct status *s, struct container_api **api) {
+int lmctfy_new_container_api(struct container_api **api, struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   *api = new container_api();
@@ -79,10 +79,10 @@ void lmctfy_delete_container_api(struct container_api *api) {
   }   \
 } while(0)
 
-int lmctfy_container_api_get_container(struct status *s,
+int lmctfy_container_api_get_container(const struct container_api *api,
+                                       const char *container_name,
                                        struct container **c,
-                                       const struct container_api *api,
-                                       const char *container_name) {
+                                       struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
@@ -97,12 +97,12 @@ int lmctfy_container_api_get_container(struct status *s,
   return STATUS_OK;
 }
 
-int lmctfy_container_api_create_container_raw(struct status *s,
-                                       struct container **c,
-                                       struct container_api *api,
+int lmctfy_container_api_create_container_raw(struct container_api *api,
                                        const char *container_name,
                                        const void *spec,
-                                       const size_t spec_size) {
+                                       const size_t spec_size,
+                                       struct container **c,
+                                       struct status *s) {
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
   CHECK_NOTNULL_OR_RETURN(s, c);
@@ -120,11 +120,11 @@ int lmctfy_container_api_create_container_raw(struct status *s,
   return STATUS_OK;
 }
 
-int lmctfy_container_api_create_container(struct status *s,
-                                          struct container **c,
-                                          struct container_api *api,
+int lmctfy_container_api_create_container(struct container_api *api,
                                           const char *container_name,
-                                          const Containers__Lmctfy__ContainerSpec *spec) {
+                                          const Containers__Lmctfy__ContainerSpec *spec,
+                                          struct container **c,
+                                          struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
@@ -140,16 +140,16 @@ int lmctfy_container_api_create_container(struct status *s,
     buf = new uint8_t[sz];
   }
   containers__lmctfy__container_spec__pack(spec, buf);
-  ret = lmctfy_container_api_create_container_raw(s, c, api, container_name, buf, sz);
+  ret = lmctfy_container_api_create_container_raw(api, container_name, buf, sz, c, s);
   if (buf != NULL) {
     delete []buf;
   }
   return ret;
 }
 
-int lmctfy_container_api_destroy_container(struct status *s,
-                                           struct container_api *api,
-                                           struct container *c) {
+int lmctfy_container_api_destroy_container(struct container_api *api,
+                                           struct container *c,
+                                           struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);
   CHECK_NOTNULL_OR_RETURN(s, api->container_api_);
@@ -161,10 +161,10 @@ int lmctfy_container_api_destroy_container(struct status *s,
   return ret;
 }
 
-int lmctfy_container_api_detect_container(struct status *s,
+int lmctfy_container_api_detect_container(struct container_api *api,
+                                          pid_t pid,
                                           char **container_name,
-                                          struct container_api *api,
-                                          pid_t pid) {
+                                          struct status *s) {
   int ret = STATUS_OK;
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, api);

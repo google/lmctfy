@@ -28,13 +28,13 @@ using ::std::unordered_map;
 
 #define STATUS_OK UTIL__ERROR__CODE__OK
 
-int lmctfy_container_run_raw(struct status *s,
-                             pid_t *tid,
-                             struct container *container,
+int lmctfy_container_run_raw(struct container *container,
                              const int argc,
                              const char **argv,
                              const void *spec,
-                             const size_t spec_size) {
+                             const size_t spec_size,
+                             pid_t *tid,
+                             struct status *s) {
   RunSpec run_spec;
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
@@ -54,13 +54,12 @@ int lmctfy_container_run_raw(struct status *s,
   return STATUS_OK;
 }
 
-int lmctfy_container_run(struct status *s,
-                         pid_t *tid,
-                         struct container *container,
+int lmctfy_container_run(struct container *container,
                          const int argc,
                          const char **argv,
-                         const Containers__Lmctfy__RunSpec *spec) {
-
+                         const Containers__Lmctfy__RunSpec *spec,
+                         pid_t *tid,
+                         struct status *s) {
   uint8_t *buf = NULL;
   size_t sz = 0;
   int ret = 0;
@@ -74,39 +73,39 @@ int lmctfy_container_run(struct status *s,
     buf = new uint8_t[sz];
     containers__lmctfy__run_spec__pack(spec, buf);
   }
-  ret = lmctfy_container_run_raw(s, tid, container, argc, argv, buf, sz);
+  ret = lmctfy_container_run_raw(container, argc, argv, buf, sz, tid, s);
   if (buf != NULL) {
     delete []buf;
   }
   return ret;
 }
 
-int lmctfy_container_enter(struct status *s,
-                           struct container *container,
+int lmctfy_container_enter(struct container *container,
                            const pid_t *tids,
-                           const int n) {
+                           const int tids_size,
+                           struct status *s) {
   int ret = STATUS_OK;
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
 
-  if (tids == NULL || n <= 0) {
+  if (tids == NULL || tids_size <= 0) {
     return ret;
   }
 
-  vector<pid_t> tids_v(n);
+  vector<pid_t> tids_v(tids_size);
   int i = 0;
-  for (i = 0; i < n; i++) {
+  for (i = 0; i < tids_size; i++) {
     tids_v[i] = tids[i];
   }
   Status status = container->container_->Enter(tids_v);
   return status_copy(s, status);
 }
 
-int lmctfy_container_exec(struct status *s,
-                          struct container *container,
+int lmctfy_container_exec(struct container *container,
                           const int argc,
-                          const char **argv) {
+                          const char **argv,
+                          struct status *s) {
   int ret = STATUS_OK;
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
@@ -141,11 +140,11 @@ void lmctfy_delete_container(struct container *container) {
   }
 }
 
-int lmctfy_container_update_raw(struct status *s,
-                                struct container *container,
-                                int policy,
-                                const void *spec,
-                                const size_t spec_size) {
+int lmctfy_container_update_raw(struct container *container,
+                            int policy,
+                            const void *spec,
+                            const size_t spec_size,
+                            struct status *s) {
   ContainerSpec container_spec;
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
@@ -169,11 +168,10 @@ int lmctfy_container_update_raw(struct status *s,
   return status_copy(s, status);
 }
 
-int lmctfy_container_update(struct status *s,
-                            struct container *container,
+int lmctfy_container_update(struct container *container,
                             int policy,
-                            const Containers__Lmctfy__ContainerSpec *spec) {
-
+                            const Containers__Lmctfy__ContainerSpec *spec,
+                            struct status *s) {
   uint8_t *buf = NULL;
   size_t sz = 0;
   int ret = STATUS_OK;
@@ -187,16 +185,16 @@ int lmctfy_container_update(struct status *s,
     buf = new uint8_t[sz];
     containers__lmctfy__container_spec__pack(spec, buf);
   }
-  ret = lmctfy_container_update_raw(s, container, policy, buf, sz);
+  ret = lmctfy_container_update_raw(container, policy, buf, sz, s);
   if (buf != NULL) {
     delete []buf;
   }
   return ret;
 }
 
-int lmctfy_container_spec(struct status *s,
-                          struct container *container,
-                          Containers__Lmctfy__ContainerSpec **spec) {
+int lmctfy_container_spec(struct container *container,
+                          Containers__Lmctfy__ContainerSpec **spec,
+                          struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
@@ -221,18 +219,18 @@ int lmctfy_container_spec(struct status *s,
   return ret;
 }
 
-int lmctfy_container_list_subcontainers(struct status *s,
+int lmctfy_container_list_subcontainers(struct container *c,
+                                        int list_policy,
                                         struct container **subcontainers[],
-                                        int *nr_subcontainers,
-                                        struct container *c,
-                                        int list_policy) {
+                                        int *subcontainers_size, 
+                                        struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, c);
   CHECK_NOTNULL_OR_RETURN(s, c->container_);
   CHECK_NOTNULL_OR_RETURN(s, subcontainers);
-  CHECK_NOTNULL_OR_RETURN(s, nr_subcontainers);
+  CHECK_NOTNULL_OR_RETURN(s, subcontainers_size);
 
-  *nr_subcontainers = 0;
+  *subcontainers_size = 0;
   *subcontainers = NULL;
   Container::ListPolicy policy;
 
@@ -263,7 +261,7 @@ int lmctfy_container_list_subcontainers(struct status *s,
     return status_new(s, UTIL__ERROR__CODE__RESOURCE_EXHAUSTED, "out of memory");
   }
   *subcontainers = subctnrs;
-  *nr_subcontainers = subcontainers_vector.size();
+  *subcontainers_size = subcontainers_vector.size();
 
   vector<Container *>::const_iterator container_iter = subcontainers_vector.begin();
   for (container_iter = subcontainers_vector.begin(); container_iter != subcontainers_vector.end(); container_iter++) {
@@ -275,19 +273,19 @@ int lmctfy_container_list_subcontainers(struct status *s,
   return STATUS_OK;
 }
 
-int lmctfy_container_list_threads(struct status *s,
+int lmctfy_container_list_threads(struct container *container,
+                                  int list_policy,
                                   pid_t *threads[],
-                                  int *nr_threads,
-                                  struct container *c,
-                                  int list_policy) {
+                                  int *threads_size,
+                                  struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
-  CHECK_NOTNULL_OR_RETURN(s, c);
-  CHECK_NOTNULL_OR_RETURN(s, c->container_);
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
   CHECK_NOTNULL_OR_RETURN(s, threads);
-  CHECK_NOTNULL_OR_RETURN(s, nr_threads);
+  CHECK_POSITIVE_OR_RETURN(s, threads_size);
 
   *threads = NULL;
-  *nr_threads = 0;
+  *threads_size = 0;
   Container::ListPolicy policy;
   switch (list_policy) {
     case CONTAINER_LIST_POLICY_SELF:
@@ -300,13 +298,13 @@ int lmctfy_container_list_threads(struct status *s,
       return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "Unknown list policy: %d", list_policy);
   }
 
-  StatusOr<vector<pid_t>> statusor_pids = c->container_->ListThreads(policy);
+  StatusOr<vector<pid_t>> statusor_pids = container->container_->ListThreads(policy);
   if (!statusor_pids.ok()) {
     return status_copy(s, statusor_pids.status());
   }
   const vector<pid_t> &pids = statusor_pids.ValueOrDie();
-  *nr_threads = pids.size();
-  if (*nr_threads == 0) {
+  *threads_size = pids.size();
+  if (*threads_size == 0) {
     return STATUS_OK;
   }
 
@@ -319,19 +317,19 @@ int lmctfy_container_list_threads(struct status *s,
   return STATUS_OK;
 }
 
-int lmctfy_container_list_processes(struct status *s,
+int lmctfy_container_list_processes(struct container *c,
+                                    int list_policy,
                                     pid_t *processes[],
-                                    int *nr_processes,
-                                    struct container *c,
-                                    int list_policy) {
+                                    int *processes_size,
+                                    struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, c);
   CHECK_NOTNULL_OR_RETURN(s, c->container_);
   CHECK_NOTNULL_OR_RETURN(s, processes);
-  CHECK_NOTNULL_OR_RETURN(s, nr_processes);
+  CHECK_NOTNULL_OR_RETURN(s, processes_size);
 
   *processes = NULL;
-  *nr_processes = 0;
+  *processes_size = 0;
   Container::ListPolicy policy;
   switch (list_policy) {
     case CONTAINER_LIST_POLICY_SELF:
@@ -349,8 +347,8 @@ int lmctfy_container_list_processes(struct status *s,
     return status_copy(s, statusor_pids.status());
   }
   const vector<pid_t> &pids = statusor_pids.ValueOrDie();
-  *nr_processes = pids.size();
-  if (*nr_processes == 0) {
+  *processes_size = pids.size();
+  if (*processes_size == 0) {
     return STATUS_OK;
   }
 
@@ -363,8 +361,7 @@ int lmctfy_container_list_processes(struct status *s,
   return STATUS_OK;
 }
 
-int lmctfy_container_pause(struct status *s,
-                           struct container *container) {
+int lmctfy_container_pause(struct container *container, struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
@@ -373,8 +370,7 @@ int lmctfy_container_pause(struct status *s,
   return status_copy(s, status);
 }
 
-int lmctfy_container_resume(struct status *s,
-                           struct container *container) {
+int lmctfy_container_resume(struct container *container, struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
@@ -383,8 +379,7 @@ int lmctfy_container_resume(struct status *s,
   return status_copy(s, status);
 }
 
-int lmctfy_container_killall(struct status *s,
-                           struct container *container) {
+int lmctfy_container_killall(struct container *container, struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
@@ -393,10 +388,10 @@ int lmctfy_container_killall(struct status *s,
   return status_copy(s, status);
 }
 
-int lmctfy_container_stats(struct status *s,
-                          struct container *container,
+int lmctfy_container_stats(struct container *container,
                           int stats_type,
-                          Containers__Lmctfy__ContainerStats **stats) {
+                          Containers__Lmctfy__ContainerStats **stats,
+                          struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
@@ -480,13 +475,13 @@ inline void EventCallbackWrapper::Run(Container *c, Status s) {
   }
 }
 
-int lmctfy_container_register_notification_raw(struct status *s,
-                                               notification_id_t *notif_id,
-                                               struct container *container,
+int lmctfy_container_register_notification_raw(struct container *container,
                                                lmctfy_event_callback_f callback,
                                                void *user_data,
                                                const void *spec,
-                                               const size_t spec_size) {
+                                               const size_t spec_size,
+                                               notification_id_t *notif_id,
+                                               struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);
@@ -513,13 +508,12 @@ int lmctfy_container_register_notification_raw(struct status *s,
   return STATUS_OK;
 }
 
-int lmctfy_container_register_notification(struct status *s,
-                                           notification_id_t *notif_id,
-                                           struct container *container,
+int lmctfy_container_register_notification(struct container *container,
                                            lmctfy_event_callback_f callback,
                                            void *user_data,
-                                           Containers__Lmctfy__EventSpec *spec) {
-
+                                           Containers__Lmctfy__EventSpec *spec,
+                                           notification_id_t *notif_id,
+                                           struct status *s) {
   uint8_t *buf = NULL;
   size_t sz = 0;
   int ret = 0;
@@ -535,22 +529,22 @@ int lmctfy_container_register_notification(struct status *s,
     buf = new uint8_t[sz];
     containers__lmctfy__event_spec__pack(spec, buf);
   }
-  ret = lmctfy_container_register_notification_raw(s,
-                                                   notif_id,
-                                                   container,
+  ret = lmctfy_container_register_notification_raw(container,
                                                    callback,
                                                    user_data,
                                                    buf,
-                                                   sz);
+                                                   sz,
+                                                   notif_id,
+                                                   s);
   if (buf != NULL) {
     delete []buf;
   }
   return ret;
 }
 
-int lmctfy_container_unregister_notification(struct status *s,
-                                             struct container *container,
-                                             const notification_id_t notif_id) {
+int lmctfy_container_unregister_notification(struct container *container,
+                                             const notification_id_t notif_id,
+                                             struct status *s) {
   CHECK_NOTFAIL_OR_RETURN(s);
   CHECK_NOTNULL_OR_RETURN(s, container);
   CHECK_NOTNULL_OR_RETURN(s, container->container_);

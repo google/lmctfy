@@ -69,29 +69,29 @@ typedef uint64_t notification_id_t;
 // Initializes the machine to start being able to create containers.
 //
 // Arguments:
+//  - spec: The specification. Caller owns the pointer.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
-//  - spec: The specification. Caller owns the pointer.
 //
 // Returns:
 //
 //  Returns the error code. 0 on success. When there's an error, the return code
 //  is same as s->error_code when s is not NULL.
-int lmctfy_init_machine(struct status *s, const Containers__Lmctfy__InitSpec *spec);
+int lmctfy_init_machine(const Containers__Lmctfy__InitSpec *spec, struct status *s);
 
 // Create a new container_api.
 //
 // Arguments:
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
 //  - api: [output] The address of a pointer to struct container_api. The
 //    pointer of the container api will be stored in this address.
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
 //
 // Returns:
 //
 //  Returns the error code. 0 on success. When there's an error, the return code
 //  is same as s->error_code when s is not NULL.
-int lmctfy_new_container_api(struct status *s, struct container_api **api);
+int lmctfy_new_container_api(struct container_api **api, struct status *s);
 
 // Release the container api. 
 //
@@ -104,45 +104,46 @@ void lmctfy_delete_container_api(struct container_api *api);
 //
 // Arguments:
 //
+//  - api: A container api.
+//  - container_name: the container name.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
 //  - container: [output] The address of a pointer to struct container. It will
-//    be used to store the pointer to the container.
-//  - api: A container api.
-//  - container_name: the container name.
+//    be used to store the pointer to the container. The caller takes the
+//    ownership.
 //
 // Returns:
 //
 //  Returns the error code. 0 on success. When there's an error, the return code
 //  is same as s->error_code when s is not NULL.
 int lmctfy_container_api_get_container(
-    struct status *s,
-    struct container **container,
     const struct container_api *api,
-    const char *container_name);
+    const char *container_name,
+    struct container **container,
+    struct status *s);
 
 // Create a container
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
-//  - container: [output] The address of a pointer to struct container. It will
-//    be used to store the newly created container.
 //  - api: A container api.
 //  - container_name: the container name.
 //  - spec: container specification. Caller owns the pointer.
+//  - container: [output] The address of a pointer to struct container. It will
+//    be used to store the newly created container.
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
 //
 // Returns:
 //
 //  Returns the error code. 0 on success. When there's an error, the return code
 //  is same as s->error_code when s is not NULL.
 int lmctfy_container_api_create_container(
-    struct status *s,
-    struct container **container,
     struct container_api *api,
     const char *container_name,
-    const Containers__Lmctfy__ContainerSpec *spec);
+    const Containers__Lmctfy__ContainerSpec *spec,
+    struct container **container,
+    struct status *s);
 
 // Destroy a container. The caller has to call lmctfy_delete_container after
 // detroying a container. Otherwise, the memory occupied by the container
@@ -150,40 +151,39 @@ int lmctfy_container_api_create_container(
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
 //  - api: A container api.
 //  - container: The pointer to struct container. The pointer will become
 //    invalid after a successful destroy().
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
 //
 // Returns:
 //
 //  Returns the error code. 0 on success. When there's an error, the return code
 //  is same as s->error_code when s is not NULL.
-int lmctfy_container_api_destroy_container(struct status *s,
-                                           struct container_api *api,
-                                           struct container *container);
-
+int lmctfy_container_api_destroy_container(struct container_api *api,
+                                           struct container *container,
+                                           struct status *s);
 // Detect what container the specified thread is in.
 //
 // Arguments:
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
-//  - container_name: [output] Will be used to store the container name.
-//    It's the caller's responsibility to free() *container_name.
 //  - api: The container api.
 //  - pid: The thread ID to check. 0 refers to self.
-int lmctfy_container_api_detect_container(struct status *s,
+//  - container_name: [output] Will be used to store the container name.
+//    It's the caller's responsibility to free() *container_name.
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_api_detect_container(struct container_api *api,
+                                          pid_t pid,
                                           char **container_name,
-                                          struct container_api *api,
-                                          pid_t pid);
+                                          struct status *s);
 
 // Release the memory used by the container structure. The refered container
 // will not be affected.
 //
 // Arguments:
 //
-//  - container: The container.  This pointer will be invalid after the call to
+//  - container: The container. This pointer will be invalid after the call to
 //    this function
 void lmctfy_delete_container(struct container *container);
 
@@ -191,36 +191,38 @@ void lmctfy_delete_container(struct container *container);
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
-//  - container
+//  - container: The container.
 //  - tids: Array of thread IDs to move into the container. Caller takes the
 //    ownership.
 //  - tids_size: Number of thread IDs stored in tids. Caller takes the
 //    ownership.
-int lmctfy_container_enter(struct status *s,
-                           struct container *container,
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_enter(struct container *container,
                            const pid_t *tids,
-                           const int tids_size);
+                           const int tids_size,
+                           struct status *s);
 
 // Run the specified command inside the container. Multiple instances of run
 // can be active simultaneously. Processes MUST be reaped by the caller.
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
-//  - tid: [output] On success, tid stores the PID of the command.
-//  - container
+//  - container: The container.
 //  - argc: number of arguments (including the binary file path).
 //  - argv: All arguments. The first element is the binary that will be executed
 //    and must be an absolute path.
-int lmctfy_container_run(struct status *s,
-                         pid_t *tid,
-                         struct container *container,
+//  - spec: The specification of the runtime environment to use for the
+//    execution of the command.
+//  - tid: [output] On success, tid stores the PID of the command.
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_run(struct container *container,
                          const int argc,
                          const char **argv,
-                         const Containers__Lmctfy__RunSpec *spec);
+                         const Containers__Lmctfy__RunSpec *spec,
+                         pid_t *tid,
+                         struct status *s);
 
 // Execute the specified command inside the container.  This replaces the
 // current process image with the specified command.  The PATH environment
@@ -229,16 +231,16 @@ int lmctfy_container_run(struct status *s,
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
 //  - container
 //  - argc: number of arguments (including the binary file path).
 //  - argv: All arguments. The first element is the binary that will be executed
 //    and must be an absolute path.
-int lmctfy_container_exec(struct status *s,
-                          struct container *container,
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_exec(struct container *container,
                           const int argc,
-                          const char **argv);
+                          const char **argv,
+                          struct status *s);
 
 // Updates the container according to the specification. The set of resource
 // types being isolated cannot change during an Update. This means that a
@@ -248,38 +250,38 @@ int lmctfy_container_exec(struct status *s,
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
 //  - container
 //  - policy: Update policy. Can be either CONTAINER_UPDATE_POLICY_DIFF, or
 //    CONTAINER_UPDATE_POLICY_REPLACE.
 //  - spec: The specification of the desired updates.
-int lmctfy_container_update(struct status *s,
-                            struct container *container,
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_update(struct container *container,
                             int policy,
-                            const Containers__Lmctfy__ContainerSpec *spec);
+                            const Containers__Lmctfy__ContainerSpec *spec,
+                            struct status *s);
 
 // Returns the resource isolation specification (ContainerSpec) of this
 // container.
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
 //  - container: The container
 //  - spec: [output] An address of a ContainerSpec pointer. *spec will points to
 //    the ContainerSpec of the container. Caller takes the ownership. *spec can
 //    be released by calling free().
-int lmctfy_container_spec(struct status *s,
-                          struct container *container,
-                          Containers__Lmctfy__ContainerSpec **spec);
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_spec(struct container *container,
+                          Containers__Lmctfy__ContainerSpec **spec,
+                          struct status *s);
 
 // List all subcontainers.
 //
 // Arguments:
 //
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
+//  - container: The container
+//  - list_policy: CONTAINER_LIST_POLICY_SELF or CONTAINER_LIST_POLICY_RECURSIVE
 //  - subcontainers: [output] The address of a pointer points to an array of
 //    struct container pointers. The caller takes the onwership. On success, the
 //    pointer will be assigned an address to an array of containers. The pointed 
@@ -287,44 +289,46 @@ int lmctfy_container_spec(struct status *s,
 //    should be deleted/destroyed individually.
 //  - subcontainers_size: [output] The address of an integer used to store number
 //    of subcontainers in the array.
-//  - container: The container
-//  - list_policy: CONTAINER_LIST_POLICY_SELF or CONTAINER_LIST_POLICY_RECURSIVE
-int lmctfy_container_list_subcontainers(struct status *s,
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_list_subcontainers(struct container *container,
+                                        int list_policy,
                                         struct container **subcontainers[],
-                                        int *subcontainers_size,
-                                        struct container *container,
-                                        int list_policy);
+                                        int *subcontainers_size, 
+                                        struct status *s);
 
 // List all TIDs in the container.
 //
 // Arguments:
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
+//  - container
+//  - list_policy: List policy. 
 //  - threads: [output] The address of a pointer points to an array of pid_t.
 //    The caller takes the ownership. The array can be released with free().
 //  - threads_size: [output] *threads_size is the number of TIDs stored in *threads.
-//  - list_policy: List policy. 
-int lmctfy_container_list_threads(struct status *s,
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_list_threads(struct container *container,
+                                  int list_policy,
                                   pid_t *threads[],
                                   int *threads_size,
-                                  struct container *container,
-                                  int list_policy);
+                                  struct status *s);
 
 // Get all PIDs in this container.
 //
 // Arguments:
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
+//  - container
+//  - list_policy: List policy. 
 //  - processes: [output] The address of a pointer points to an array of pid_t.
 //    The caller takes the ownership. The array can be released with free().
 //  - processes_size: [output] *processes_size is the number of PIDs stored in
 //    *processes.
-//  - list_policy: List policy. 
-int lmctfy_container_list_processes(struct status *s,
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_list_processes(struct container *container,
+                                    int list_policy,
                                     pid_t *processes[],
                                     int *processes_size,
-                                    struct container *container,
-                                    int list_policy);
+                                    struct status *s);
 
 // Atomically stops the execution of all threads inside the container and all
 // subcontainers (recursively). All threads moved to a paused container will
@@ -332,22 +336,22 @@ int lmctfy_container_list_processes(struct status *s,
 // guarantees to get all threads.
 //
 // Arguments:
+//  - container: The container.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
-//  - container: The container.
-int lmctfy_container_pause(struct status *s,
-                           struct container *container);
+int lmctfy_container_pause(struct container *container,
+                           struct status *s);
 
 // Atomically resumes the execution of all threads inside the container and
 // all subcontainers (recursively). All paused threads moved to a non-paused
 // container will be resumed.
 //
 // Arguments:
+//  - container: The container.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
-//  - container: The container.
-int lmctfy_container_resume(struct status *s,
-                           struct container *container);
+int lmctfy_container_resume(struct container *container,
+                            struct status *s);
 
 // Kills all processes running in the container. This operation is atomic and
 // is synchronized with any mutable operations on this container.
@@ -360,27 +364,27 @@ int lmctfy_container_resume(struct status *s,
 // blocks all mutable container operations while it is in progress.
 //
 // Arguments:
+//  - container: The container.
 //  - s: [output] The status of the operations and an error message if the
 //    status is not OK.
-//  - container: The container.
-int lmctfy_container_killall(struct status *s,
-                           struct container *container);
+int lmctfy_container_killall(struct container *container,
+                             struct status *s);
 
 // Gets usage and state information for the container. Note that the snapshot
 // is not atomic.
 //
 // Arguments:
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
 //  - container: The container.
 //  - stats_type: The type of statistics to output.
 //  - stats: [output] Used to store a pointer points to the container's
 //    statistics. The call takes the ownership of *stats, which should be
 //    free()'ed.
-int lmctfy_container_stats(struct status *s,
-                          struct container *container,
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_stats(struct container *container,
                           int stats_type,
-                          Containers__Lmctfy__ContainerStats **stats);
+                          Containers__Lmctfy__ContainerStats **stats,
+                          struct status *s);
 
 // Get the name of the container.
 //
@@ -396,11 +400,6 @@ const char *lmctfy_container_name(struct container *container);
 // are unregistered when the container is destroyed.
 //
 // Arguments:
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
-//  - notif_id: [output] The ID for the notification. The ID is unique within
-//    the current container_api instance. It will be used to unregister the
-//    notification
 //  - container: The container.
 //  - callback: The callback to run when the event is triggered. The caller
 //    takes ownership of the callback which MUST be a repeatable callback.
@@ -408,24 +407,29 @@ const char *lmctfy_container_name(struct container *container);
 //    its last parameter. The caller takes the ownership.
 //  - spec: The specification for the event for which to register notifications.
 //    The caller takes the ownership.
-int lmctfy_container_register_notification(struct status *s,
-                                           notification_id_t *notif_id,
-                                           struct container *container,
+//  - notif_id: [output] The ID for the notification. The ID is unique within
+//    the current container_api instance. It will be used to unregister the
+//    notification
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_register_notification(struct container *container,
                                            lmctfy_event_callback_f callback,
                                            void *user_data,
-                                           Containers__Lmctfy__EventSpec *spec);
+                                           Containers__Lmctfy__EventSpec *spec,
+                                           notification_id_t *notif_id,
+                                           struct status *s);
 
 // Unregister (stop) the specified notification from being received.
 //
 // Arguments:
-//  - s: [output] The status of the operations and an error message if the
-//    status is not OK.
 //  - container: The container.
 //  - notif_id: The unique notification ID for the container
 //    notification.
-int lmctfy_container_unregister_notification(struct status *s,
-                                             struct container *container,
-                                             const notification_id_t notif_id);
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+int lmctfy_container_unregister_notification(struct container *container,
+                                             const notification_id_t notif_id,
+                                             struct status *s);
 
 #ifdef __cplusplus
 }

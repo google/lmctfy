@@ -52,16 +52,13 @@ class ClmctfyContainerTest : public ::testing::Test {
     container_ = NULL;
     const char *container_name = "/test";
     container_name_ = container_name;
-    lmctfy_new_container_api(NULL, &container_api_);
+    lmctfy_new_container_api(&container_api_, NULL);
     StrictMockContainerApi *mock_api = GetMockApi();
     Container *ctnr = new StrictMockContainer(container_name);
     StatusOr<Container *> statusor = StatusOr<Container *>(ctnr);
     EXPECT_CALL(*mock_api, Get(StringPiece(container_name))).WillOnce(Return(statusor));
 
-    lmctfy_container_api_get_container(NULL,
-                                       &container_,
-                                       container_api_,
-                                       container_name);
+    lmctfy_container_api_get_container(container_api_, container_name, &container_, NULL);
   }
 
   virtual void TearDown() {
@@ -146,10 +143,10 @@ TEST_F(ClmctfyContainerTest, Run) {
       .WillOnce(Return(statusor_success))
       .WillOnce(Return(statusor_fail));
 
-  SHOULD_SUCCEED(lmctfy_container_run, &tid, container_, argc, argv, &runspec);
-  SHOULD_FAIL_WITH_ERROR(err_status, lmctfy_container_run, &tid, container_, argc, argv, &runspec);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_run, &tid, container_, 0, NULL, &runspec);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_run, &tid, container_, argc, argv, &runspec);
+  SHOULD_SUCCEED(lmctfy_container_run, container_, argc, argv, &runspec, &tid);
+  SHOULD_FAIL_WITH_ERROR(err_status, lmctfy_container_run, container_, argc, argv, &runspec, &tid);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_run, container_, 0, NULL, &runspec, &tid);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_run, container_, argc, argv, &runspec, &tid);
 }
 
 TEST_F(ClmctfyContainerTest, Enter) {
@@ -210,7 +207,7 @@ TEST_F(ClmctfyContainerTest, ListSubContainers) {
 
   struct container **subcontainers;
   int nr_containers;
-  SHOULD_SUCCEED(lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_SUCCEED(lmctfy_container_list_subcontainers, container_, CONTAINER_LIST_POLICY_SELF, &subcontainers, &nr_containers);
   EXPECT_EQ(nr_containers, subcontainers_vector.size());
   vector<Container *>::iterator iter;
   int i = 0;
@@ -222,14 +219,14 @@ TEST_F(ClmctfyContainerTest, ListSubContainers) {
   free(subcontainers);
 
   subcontainers = NULL;
-  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_subcontainers, container_, CONTAINER_LIST_POLICY_SELF, &subcontainers, &nr_containers);
   EXPECT_EQ(nr_containers, 0);
   EXPECT_EQ(subcontainers, (struct container **)NULL);
 
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, NULL, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, &subcontainers, NULL, container_, CONTAINER_LIST_POLICY_SELF);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, -1);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_subcontainers, &subcontainers, &nr_containers, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, container_, CONTAINER_LIST_POLICY_SELF, NULL, &nr_containers);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, container_, CONTAINER_LIST_POLICY_SELF, &subcontainers, NULL);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_subcontainers, container_, -1, &subcontainers, &nr_containers);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_subcontainers, container_, CONTAINER_LIST_POLICY_SELF, &subcontainers, &nr_containers);
 }
 
 TEST_F(ClmctfyContainerTest, ListThreads) {
@@ -252,7 +249,7 @@ TEST_F(ClmctfyContainerTest, ListThreads) {
 
   pid_t *pids;
   int nr_threads;
-  SHOULD_SUCCEED(lmctfy_container_list_threads, &pids, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_SUCCEED(lmctfy_container_list_threads, container_, CONTAINER_LIST_POLICY_SELF, &pids, &nr_threads);
   EXPECT_EQ(nr_threads, pids_vector.size());
   vector<pid_t>::const_iterator iter;
   int i = 0;
@@ -262,13 +259,13 @@ TEST_F(ClmctfyContainerTest, ListThreads) {
   free(pids);
 
   pids = NULL;
-  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_threads, &pids, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_threads, container_, CONTAINER_LIST_POLICY_SELF, &pids, &nr_threads);
   EXPECT_EQ(nr_threads, 0);
   EXPECT_EQ(pids, (pid_t *)NULL);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, NULL, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, &pids, NULL, container_, CONTAINER_LIST_POLICY_SELF);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, &pids, &nr_threads, container_, -1);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_threads, &pids, &nr_threads, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, container_, CONTAINER_LIST_POLICY_SELF, NULL, &nr_threads);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, container_, CONTAINER_LIST_POLICY_SELF, &pids, NULL);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_threads, container_, -1, &pids, &nr_threads);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_threads, container_, CONTAINER_LIST_POLICY_SELF, &pids, &nr_threads);
 }
 
 TEST_F(ClmctfyContainerTest, ListProcesses) {
@@ -291,7 +288,7 @@ TEST_F(ClmctfyContainerTest, ListProcesses) {
 
   pid_t *pids;
   int nr_processes;
-  SHOULD_SUCCEED(lmctfy_container_list_processes, &pids, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_SUCCEED(lmctfy_container_list_processes, container_, CONTAINER_LIST_POLICY_SELF, &pids, &nr_processes);
   EXPECT_EQ(nr_processes, pids_vector.size());
   vector<pid_t>::const_iterator iter;
   int i = 0;
@@ -301,13 +298,13 @@ TEST_F(ClmctfyContainerTest, ListProcesses) {
   free(pids);
 
   pids = NULL;
-  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_processes, &pids, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_FAIL_WITH_ERROR(status, lmctfy_container_list_processes, container_, CONTAINER_LIST_POLICY_SELF, &pids, &nr_processes);
   EXPECT_EQ(nr_processes, 0);
   EXPECT_EQ(pids, (pid_t *)NULL);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, NULL, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, &pids, NULL, container_, CONTAINER_LIST_POLICY_SELF);
-  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, &pids, &nr_processes, container_, -1);
-  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_processes, &pids, &nr_processes, container_, CONTAINER_LIST_POLICY_SELF);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, container_, CONTAINER_LIST_POLICY_SELF, NULL, &nr_processes);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, container_, CONTAINER_LIST_POLICY_SELF, &pids, NULL);
+  SHOULD_BE_INVALID_ARGUMENT(lmctfy_container_list_processes, container_, -1, &pids, &nr_processes);
+  WITH_NULL_CONTAINER_RUN(lmctfy_container_list_processes, container_, CONTAINER_LIST_POLICY_SELF, &pids, &nr_processes);
 }
 
 TEST_F(ClmctfyContainerTest, Pause) {
@@ -385,11 +382,11 @@ TEST_F(ClmctfyContainerTest, RegisterThenUnRegister) {
       .WillOnce(Return(Status::OK));
 
   SHOULD_SUCCEED(lmctfy_container_register_notification,
-                 &notif_id,
                  container_,
                  event_callback_counter,
                  &evt_counter,
-                 &spec);
+                 &spec,
+                 &notif_id);
   EXPECT_EQ(notif_id, 1);
 }
 
