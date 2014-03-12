@@ -21,13 +21,16 @@ int main() {
 	if (err != 0) {
 		printf("Failed to instantiate container_api: %s\n", s.message); 
 		free(s.message);
+		lmctfy_delete_container_api(lmctfy);
 		return -1;
 	}
 
-	err = lmctfy_container_api_detect_self(&s, &container_name, lmctfy);
+	// Get what container the current thread is in.
+	err = lmctfy_container_api_detect_container(&s, &container_name, lmctfy, 0);
 	if (err != 0) {
 		printf("Failed to detect the current container: %s\n", s.message);
 		free(s.message);
+		lmctfy_delete_container_api(lmctfy);
 		return -1;
 	}
 	printf("Current container: %s\n", container_name);
@@ -36,6 +39,8 @@ int main() {
 	if (err != 0) {
 		printf("Failed to get container: %s\n", s.message);
 		free(s.message);
+		free(container_name);
+		lmctfy_delete_container_api(lmctfy);
 		return -1;
 	}
 
@@ -43,12 +48,19 @@ int main() {
 	if (err != 0) {
 		printf("Failed to get container stats: %s\n", s.message);
 		free(s.message);
+		free(container_name);
+		lmctfy_delete_container(container);
+		lmctfy_delete_container_api(lmctfy);
 		return -1;
 	}
 
 	printf("Memory usage: %ld\nWorking set: %ld\n",
 			stats->memory->usage,
 			stats->memory->working_set);
+	free(container_name);
+	free(stats);
+	lmctfy_delete_container(container);
+	lmctfy_delete_container_api(lmctfy);
 
 	return 0;
 }
