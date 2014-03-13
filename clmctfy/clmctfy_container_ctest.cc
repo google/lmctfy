@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "clmctfy.h"
+#include "clmctfy_container.h"
 
 #include <vector>
 
@@ -22,8 +22,10 @@
 #include "strings/stringpiece.h"
 
 #include "lmctfy_mock.h"
+#include "lmctfy.pb.h"
 #include "clmctfy_macros_ctest.h"
-#include "clmctfy_internal.h"
+#include "clmctfy_container_struct.h"
+#include "clmctfy_container_api_struct.h"
 
 using ::testing::NotNull;
 using ::testing::Return;

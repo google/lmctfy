@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "clmctfy.h"
+#include "clmctfy_container_api.h"
 
 #include "gtest/gtest.h"
 #include "gmock/gmock.h"
+#include "util/task/status.h"
 #include "util/task/statusor.h"
+#include "util/task/codes.pb-c.h"
 #include "strings/stringpiece.h"
 
 #include "lmctfy_mock.h"
 #include "lmctfy.h"
 #include "clmctfy_macros_ctest.h"
-#include "clmctfy_internal.h"
+#include "clmctfy_container_struct.h"
+#include "clmctfy_container_api_struct.h"
 
 using ::testing::NotNull;
 using ::testing::Return;

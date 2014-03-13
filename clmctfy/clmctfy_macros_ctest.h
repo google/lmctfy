@@ -1,6 +1,18 @@
 #ifndef LMCTFY_CLMCTFY_CLMCTFY_MACROS_CTEST_H_
 #define LMCTFY_CLMCTFY_CLMCTFY_MACROS_CTEST_H_
 
+#include "gtest/gtest.h"
+#include "gmock/gmock.h"
+#include "util/task/status.h"
+#include "util/task/statusor.h"
+#include "util/task/codes.pb-c.h"
+
+#include "clmctfy_status.h"
+#include "clmctfy_container_api.h"
+#include "clmctfy_container.h"
+#include "clmctfy_container_struct.h"
+#include "clmctfy_container_api_struct.h"
+
 // Some useful macros for writing test cases.
 
 #define WITH_NULL_CONTAINER_API_RUN(func, ...) do { \

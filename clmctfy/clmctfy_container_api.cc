@@ -1,5 +1,4 @@
-#include "clmctfy.h"
-#include "clmctfy-raw.h"
+#include "clmctfy_container_api.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -9,7 +8,9 @@
 #include "util/task/codes.pb-c.h"
 #include "lmctfy.h"
 
-#include "clmctfy_internal.h"
+#include "clmctfy_macros.h"
+#include "clmctfy_container_struct.h"
+#include "clmctfy_container_api_struct.h"
 
 #define STATUS_OK UTIL__ERROR__CODE__OK
 
