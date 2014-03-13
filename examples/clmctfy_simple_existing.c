@@ -17,7 +17,7 @@ int main() {
 	char *container_name = NULL;
 	Containers__Lmctfy__ContainerStats *stats = NULL;
 
-	err = lmctfy_new_container_api(&s, &lmctfy);
+	err = lmctfy_new_container_api(&lmctfy, &s);
 	if (err != 0) {
 		printf("Failed to instantiate container_api: %s\n", s.message); 
 		free(s.message);
@@ -26,7 +26,7 @@ int main() {
 	}
 
 	// Get what container the current thread is in.
-	err = lmctfy_container_api_detect_container(&s, &container_name, lmctfy, 0);
+	err = lmctfy_container_api_detect_container(lmctfy, 0, &container_name, &s);
 	if (err != 0) {
 		printf("Failed to detect the current container: %s\n", s.message);
 		free(s.message);
@@ -35,7 +35,7 @@ int main() {
 	}
 	printf("Current container: %s\n", container_name);
 
-	err = lmctfy_container_api_get_container(&s, &container, lmctfy, ".");
+	err = lmctfy_container_api_get_container(lmctfy, ".", &container, &s);
 	if (err != 0) {
 		printf("Failed to get container: %s\n", s.message);
 		free(s.message);
@@ -44,7 +44,7 @@ int main() {
 		return -1;
 	}
 
-	err = lmctfy_container_stats(&s, container, CONTAINER_STATS_TYPE_SUMMARY, &stats);
+	err = lmctfy_container_stats(container, CONTAINER_STATS_TYPE_SUMMARY, &stats, &s);
 	if (err != 0) {
 		printf("Failed to get container stats: %s\n", s.message);
 		free(s.message);
