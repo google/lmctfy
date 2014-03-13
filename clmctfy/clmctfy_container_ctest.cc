@@ -23,7 +23,7 @@
 
 #include "lmctfy_mock.h"
 #include "lmctfy.pb.h"
-#include "clmctfy_macros_ctest.h"
+#include "clmctfy_test_macros.h"
 #include "clmctfy_container_struct.h"
 #include "clmctfy_container_api_struct.h"
 
