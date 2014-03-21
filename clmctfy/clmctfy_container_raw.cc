@@ -1,8 +1,8 @@
+#include "clmctfy_container_raw.h"
+
 #include <unistd.h>
 #include <vector>
 using ::std::vector;
-
-#include "clmctfy_container_raw.h"
 
 #include "util/task/codes.pb.h"
 
