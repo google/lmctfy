@@ -97,7 +97,28 @@ int lmctfy_container_register_notification_raw(struct container *container,
                                                notification_id_t *notif_id,
                                                struct status *s);
 
-
+// Gets usage and state information for the container. Note that the snapshot
+// is not atomic.
+//
+// Arguments:
+//  - container: The container.
+//  - stats_type: The type of statistics to output.
+//  - spec: [output] Used to store a pointer points to the container's
+//    statistics, which is serialized. The call takes the ownership of
+//    *spec, which should be free()'ed.
+//  - stats_size: [output] The size of the serialized data.
+//  - s: [output] The status of the operations and an error message if the
+//    status is not OK.
+//
+// Returns:
+//
+//  Returns the error code. 0 on success. When there's an error, the return code
+//  is same as s->error_code when s is not NULL.
+int lmctfy_container_stats_raw(struct container *container,
+                          int stats_type,
+                          void **stats,
+                          size_t *stats_size,
+                          struct status *s);
 #ifdef __cplusplus
 }
 #endif // __cplusplus

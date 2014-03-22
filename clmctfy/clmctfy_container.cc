@@ -346,6 +346,15 @@ int lmctfy_container_stats(struct container *container,
 
   int ret = STATUS_OK;
   uint8_t *buf = NULL;
+  size_t sz;
+  ret = lmctfy_container_stats_raw(container, stats_type, (void **)&buf, &sz, s);
+  if (ret != STATUS_OK) {
+    return ret;
+  }
+  *stats = containers__lmctfy__container_stats__unpack(NULL, sz, buf);
+  free(buf);
+  return ret;
+  /*
   Container::StatsType type;
   switch (stats_type) {
     case CONTAINER_STATS_TYPE_SUMMARY:
@@ -372,6 +381,7 @@ int lmctfy_container_stats(struct container *container,
     delete []buf;
   }
   return ret;
+  */
 }
 
 const char *lmctfy_container_name(struct container *container) {

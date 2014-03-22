@@ -113,3 +113,39 @@ int lmctfy_container_register_notification_raw(struct container *container,
 }
 
 
+int lmctfy_container_stats_raw(struct container *container,
+                          int stats_type,
+                          void **stats,
+                          size_t *sz,
+                          struct status *s) {
+  CHECK_NOTFAIL_OR_RETURN(s);
+  CHECK_NOTNULL_OR_RETURN(s, container);
+  CHECK_NOTNULL_OR_RETURN(s, container->container_);
+  CHECK_NOTNULL_OR_RETURN(s, stats);
+
+  int ret = STATUS_OK;
+  Container::StatsType type;
+  switch (stats_type) {
+    case CONTAINER_STATS_TYPE_SUMMARY:
+      type = Container::STATS_SUMMARY;
+      break;
+    case CONTAINER_STATS_TYPE_FULL:
+      type = Container::STATS_FULL;
+      break;
+    default:
+      return status_new(s, UTIL__ERROR__CODE__INVALID_ARGUMENT, "Unknown stats type: %d", stats_type);
+  }
+  StatusOr<ContainerStats> statusor_container_stats = container->container_->Stats(type);
+  if (!statusor_container_stats.ok()) {
+    return status_copy(s, statusor_container_stats.status());
+  }
+
+  const ContainerStats &container_stats = statusor_container_stats.ValueOrDie();
+  *sz = container_stats.ByteSize();
+  *stats = NULL;
+  if (sz > 0) {
+    *stats = malloc(*sz);
+    container_stats.SerializeToArray(*stats, *sz);
+  }
+  return ret;
+}
