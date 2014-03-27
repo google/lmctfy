@@ -142,6 +142,8 @@ char *LibcFsApiImpl::FGetS(char *buf, int n, FILE *stream) const {
   return fgets(buf, n, stream);
 }
 
+int LibcFsApiImpl::FError(FILE *stream) const { return ::ferror(stream); }
+
 ssize_t LibcFsApiImpl::Read(int file_descriptor, void *buf,
                             size_t nbytes) const {
   return read(file_descriptor, buf, nbytes);

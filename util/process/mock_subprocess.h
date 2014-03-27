@@ -22,11 +22,14 @@ class MockSubProcess : public SubProcess {
  public:
   MOCK_CONST_METHOD0(pid, pid_t());
   MOCK_CONST_METHOD0(running, bool());
+  MOCK_CONST_METHOD0(error_text, string());
+  MOCK_CONST_METHOD0(exit_code, int());
   MOCK_METHOD0(SetUseSession, void());
 
   MOCK_METHOD2(SetChannelAction, void(Channel chan, ChannelAction action));
   MOCK_METHOD1(SetArgv, void(const ::std::vector<::std::string> &argv));
   MOCK_METHOD0(Start, bool());
+  MOCK_METHOD2(Communicate, int(string* stdout_output, string* stderr_output));
 };
 
 #endif  // UTIL_PROCESS_MOCK_SUBPROCESS_H__

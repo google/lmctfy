@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -51,17 +51,41 @@ class MockMemoryController : public MemoryController {
 
   MOCK_METHOD1(SetLimit, ::util::Status(::util::Bytes limit));
   MOCK_METHOD1(SetSoftLimit, ::util::Status(::util::Bytes limit));
-  MOCK_METHOD1(SetStalePageAge, ::util::Status(uint64 scan_cycles));
+  MOCK_METHOD1(SetSwapLimit, ::util::Status(::util::Bytes limit));
+  MOCK_METHOD1(SetStalePageAge, ::util::Status(int32 scan_cycles));
   MOCK_METHOD1(SetOomScore, ::util::Status(int64 oom_score));
+  MOCK_METHOD1(SetCompressionSamplingRatio, ::util::Status(int32 ratio));
+  MOCK_METHOD1(SetDirtyRatio, ::util::Status(int32 ratio));
+  MOCK_METHOD1(SetDirtyBackgroundRatio, ::util::Status(int32 ratio));
+  MOCK_METHOD1(SetDirtyLimit, ::util::Status(::util::Bytes limit));
+  MOCK_METHOD1(SetDirtyBackgroundLimit,
+               ::util::Status(::util::Bytes limit));
 
-  MOCK_CONST_METHOD0(GetWorkingSet, ::util::StatusOr< ::util::Bytes>());
-  MOCK_CONST_METHOD0(GetUsage, ::util::StatusOr< ::util::Bytes>());
-  MOCK_CONST_METHOD0(GetMaxUsage, ::util::StatusOr< ::util::Bytes>());
-  MOCK_CONST_METHOD0(GetLimit, ::util::StatusOr< ::util::Bytes>());
-  MOCK_CONST_METHOD0(GetEffectiveLimit, ::util::StatusOr< ::util::Bytes>());
-  MOCK_CONST_METHOD0(GetSoftLimit, ::util::StatusOr< ::util::Bytes>());
-  MOCK_CONST_METHOD0(GetStalePageAge, ::util::StatusOr<uint64>());
+  MOCK_CONST_METHOD0(GetWorkingSet,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetUsage, ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetMaxUsage,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetSwapUsage,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetSwapMaxUsage,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetLimit, ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetEffectiveLimit,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetSoftLimit,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetSwapLimit,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetStalePageAge, ::util::StatusOr<int32>());
   MOCK_CONST_METHOD0(GetOomScore, ::util::StatusOr<int64>());
+  MOCK_CONST_METHOD0(GetCompressionSamplingRatio, ::util::StatusOr<int32>());
+  MOCK_CONST_METHOD0(GetDirtyRatio, ::util::StatusOr<int32>());
+  MOCK_CONST_METHOD0(GetDirtyBackgroundRatio, ::util::StatusOr<int32>());
+  MOCK_CONST_METHOD0(GetDirtyLimit,
+                     ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetDirtyBackgroundLimit,
+                     ::util::StatusOr<::util::Bytes>());
   MOCK_METHOD2(RegisterUsageThresholdNotification,
                ::util::StatusOr<ActiveNotifications::Handle>(
                    ::util::Bytes usage_threshold,
@@ -69,6 +93,7 @@ class MockMemoryController : public MemoryController {
   MOCK_METHOD1(RegisterOomNotification,
                ::util::StatusOr<ActiveNotifications::Handle>(
                    CgroupController::EventCallback *callback));
+  MOCK_CONST_METHOD1(GetMemoryStats, ::util::Status(MemoryStats *stats));
 };
 
 typedef ::testing::StrictMock<MockMemoryController> StrictMockMemoryController;

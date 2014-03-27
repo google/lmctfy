@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -99,6 +99,9 @@ class MemoryResourceHandler : public CgroupResourceHandler {
       const EventSpec &spec, Callback1< ::util::Status> *callback);
 
  private:
+  ::util::Status SetDirty(const MemorySpec_Dirty &dirty,
+                          Container::UpdatePolicy policy);
+
   // The Memory cgroup controller, it is owned by controllers.
   MemoryController *memory_controller_;
 

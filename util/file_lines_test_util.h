@@ -62,12 +62,15 @@ class FileLinesTestUtil {
   // Deletes mock_libc_ if it is owned by this class.
   ~FileLinesTestUtil();
 
-  // Expect the specified file to contain the specified lines.
-  void ExpectFileLines(const ::std::string& filename,
-                       const ::std::vector< ::std::string>& lines);
+  // Expect the specified file to contain the specified lines (or set of lines,
+  // one per invocation).
+  void ExpectFileLines(const string &filename,
+                       const ::std::vector<string> &lines);
+  void ExpectFileLinesMulti(const string &filename,
+                            const ::std::vector<::std::vector<string>> &lines);
 
  private:
-  FILE file_;
+  ::std::vector<::std::unique_ptr<FILE>> files_;
   ::system_api::MockLibcFsApiOverride *mock_libc_;
   bool own_mock_libc_;
 

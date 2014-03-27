@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -81,12 +81,12 @@ CgroupResourceHandler::CgroupResourceHandler(
       kernel_(CHECK_NOTNULL(kernel)) {
   // Map all controllers by type.
   for (CgroupController *controller : controllers) {
-    controllers_[controller->type()] = controller;
+    controllers_.push_back(controller);
   }
 }
 
 CgroupResourceHandler::~CgroupResourceHandler() {
-  STLDeleteValues(&controllers_);
+  STLDeleteElements(&controllers_);
 }
 
 Status CgroupResourceHandler::CreateResource(const ContainerSpec &spec) {
@@ -94,8 +94,7 @@ Status CgroupResourceHandler::CreateResource(const ContainerSpec &spec) {
     // TODO(jonathanw): Remove the if and use default once we have handed
     // ownership of this to lmctfy.
     if (spec.has_children_limit()) {
-      RETURN_IF_ERROR(controller.second->SetChildrenLimit(
-                          spec.children_limit()));
+      RETURN_IF_ERROR(controller->SetChildrenLimit(spec.children_limit()));
     }
   }
   return CreateOnlySetup(spec);
@@ -106,7 +105,7 @@ Status CgroupResourceHandler::Destroy() {
 
   // Destroy all controllers.
   for (auto it = controllers_.begin(); it != controllers_.end(); ++it) {
-    status = it->second->Destroy();
+    status = (*it)->Destroy();
     if (!status.ok()) {
       // Erase the controllers we deleted already.
       controllers_.erase(controllers_.begin(), it);
@@ -128,8 +127,8 @@ Status CgroupResourceHandler::Enter(const vector<pid_t> &tids) {
   bool some_tracked = false;
   for (pid_t tid : tids) {
     // Enter into all controllers.
-    for (const auto &type_controller_pair : controllers_) {
-      status = type_controller_pair.second->Enter(tid);
+    for (const auto controller : controllers_) {
+      status = controller->Enter(tid);
       if (!status.ok()) {
         return Status(status.CanonicalCode(),
                       Substitute("$0$1", status.error_message(),
@@ -145,8 +144,8 @@ Status CgroupResourceHandler::Enter(const vector<pid_t> &tids) {
 Status CgroupResourceHandler::Delegate(::util::UnixUid uid,
                                        ::util::UnixGid gid) {
   // Delegate all the controllers.
-  for (const auto &type_controller_pair : controllers_) {
-    RETURN_IF_ERROR(type_controller_pair.second->Delegate(uid, gid));
+  for (const auto controller : controllers_) {
+    RETURN_IF_ERROR(controller->Delegate(uid, gid));
   }
 
   return Status::OK;

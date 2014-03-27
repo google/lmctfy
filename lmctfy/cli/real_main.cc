@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -38,6 +38,8 @@ using ::std::string;
 #include "lmctfy/cli/commands/killall.h"
 #include "lmctfy/cli/commands/list.h"
 #include "lmctfy/cli/commands/notify.h"
+#include "lmctfy/cli/commands/pause.h"
+#include "lmctfy/cli/commands/resume.h"
 #include "lmctfy/cli/commands/run.h"
 #include "lmctfy/cli/commands/spec.h"
 #include "lmctfy/cli/commands/stats.h"
@@ -100,6 +102,8 @@ static void RegisterCommands() {
   RegisterSpecCommand();
   RegisterStatsCommand();
   RegisterUpdateCommand();
+  RegisterPauseCommand();
+  RegisterResumeCommand();
 }
 
 static bool ParseShortFlags(int *argc, char ***argv) {

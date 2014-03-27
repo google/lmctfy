@@ -39,6 +39,7 @@ class Status {
   // Some pre-defined Status objects
   static const Status& OK;             // Identical to 0-arg constructor
   static const Status& CANCELLED;
+  static const Status& UNKNOWN;
 
   // Accessors
   bool ok() const { return code_ == ::util::error::OK; }

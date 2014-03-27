@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -71,8 +71,8 @@ Status CpusetController::SetCpuMask(const CpuMask &mask) {
 }
 
 StatusOr<CpuMask> CpusetController::GetCpuMask() const {
-  string cpu_string;
-  RETURN_IF_ERROR(GetParamString(KernelFiles::CPUSet::kCPUs), &cpu_string);
+  string cpu_string =
+      RETURN_IF_ERROR(GetParamString(KernelFiles::CPUSet::kCPUs));
   ResSet res_set;
   res_set.ReadSetString(cpu_string, ",");
   return ResSetToCpuMask(res_set);
@@ -85,9 +85,8 @@ Status CpusetController::SetMemoryNodes(const ResSet& memory_nodes) {
 }
 
 StatusOr<ResSet> CpusetController::GetMemoryNodes() const {
-  string memory_nodes_string;
-  RETURN_IF_ERROR(GetParamString(KernelFiles::CPUSet::kMemNodes),
-                  &memory_nodes_string);
+  string memory_nodes_string =
+      RETURN_IF_ERROR(GetParamString(KernelFiles::CPUSet::kMemNodes));
   ResSet memory_nodes;
   memory_nodes.ReadSetString(memory_nodes_string, ",");
   return memory_nodes;

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -123,15 +123,14 @@ StatusOr<int> CpuController::GetNumRunnable() const {
 }
 
 StatusOr<int64> CpuController::GetMilliCpus() const {
-  int64 shares;
-  RETURN_IF_ERROR(GetParamInt(KernelFiles::Cpu::kShares), &shares);
+  int64 shares = RETURN_IF_ERROR(GetParamInt(KernelFiles::Cpu::kShares));
 
   return SharesToMilliCpus(shares);
 }
 
 StatusOr<int64> CpuController::GetMaxMilliCpus() const {
-  int64 quota_usecs;
-  RETURN_IF_ERROR(GetParamInt(KernelFiles::Cpu::kHardcapQuota), &quota_usecs);
+  int64 quota_usecs =
+      RETURN_IF_ERROR(GetParamInt(KernelFiles::Cpu::kHardcapQuota));
 
   if (quota_usecs == -1) {
     // Unthrottled container.
@@ -141,8 +140,8 @@ StatusOr<int64> CpuController::GetMaxMilliCpus() const {
 }
 
 StatusOr<SchedulingLatency> CpuController::GetLatency() const {
-  int64 latency_class;
-  RETURN_IF_ERROR(GetParamInt(KernelFiles::Cpu::kLatency), &latency_class);
+  int64 latency_class =
+      RETURN_IF_ERROR(GetParamInt(KernelFiles::Cpu::kLatency));
   SchedulingLatency latency = BEST_EFFORT;
   switch (latency_class) {
     case kPremierLatency:
@@ -166,9 +165,8 @@ StatusOr<SchedulingLatency> CpuController::GetLatency() const {
 }
 
 StatusOr<ThrottlingStats> CpuController::GetThrottlingStats() const {
-  string stats_str;
-  RETURN_IF_ERROR(GetParamString(KernelFiles::Cpu::kThrottlingStats),
-                  &stats_str);
+  string stats_str =
+      RETURN_IF_ERROR(GetParamString(KernelFiles::Cpu::kThrottlingStats));
   const int kNumThrottlingStats = 3;
   vector<string> stat_lines =
       strings::Split(stats_str, "\n", strings::SkipEmpty());

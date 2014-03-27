@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+#include "lmctfy/cli/commands/run.h"
 
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -59,8 +61,8 @@ Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
   args.push_back(argv[2]);
 
   // Ensure the container exists.
-  unique_ptr<Container> container;
-  RETURN_IF_ERROR(lmctfy->Get(container_name), &container);
+  unique_ptr<Container> container(
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   // If no wait, run and output the PID, else exec the command.
   if (FLAGS_lmctfy_no_wait) {
@@ -68,7 +70,7 @@ Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
     spec.set_fd_policy(RunSpec::DETACHED);
 
     pid_t pid =
-        XRETURN_IF_ERROR(container->Run(args, spec));
+        RETURN_IF_ERROR(container->Run(args, spec));
     output->push_back(OutputMap("pid", Substitute("$0", pid)));
   } else {
     RETURN_IF_ERROR(container->Exec(args));

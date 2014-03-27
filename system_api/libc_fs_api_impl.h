@@ -95,6 +95,8 @@ class LibcFsApiImpl : public LibcFsApi {
 
   virtual char *FGetS(char *buf, int n, FILE *stream) const;
 
+  virtual int FError(FILE *stream) const;
+
   virtual ssize_t Read(int file_descriptor, void *buf, size_t nbytes) const;
 
   virtual ssize_t Write(int file_descriptor, const void *buf,

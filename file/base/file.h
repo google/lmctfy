@@ -31,8 +31,6 @@ class File {
   static string Basename(const string& fname);
 
   static string StripBasename(const string &fname);
-
-  static const string CleanPath(const string& pathname);
 };
 
 #endif  // FILE_BASE_FILE_H__

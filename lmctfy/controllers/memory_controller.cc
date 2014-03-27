@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -61,7 +61,12 @@ Status MemoryController::SetSoftLimit(Bytes limit) {
                        ModifyLimit(limit));
 }
 
-Status MemoryController::SetStalePageAge(uint64 scan_cycles) {
+Status MemoryController::SetSwapLimit(Bytes limit) {
+  return SetParamBytes(KernelFiles::Memory::Memsw::kLimitInBytes,
+                       ModifyLimit(limit));
+}
+
+Status MemoryController::SetStalePageAge(int32 scan_cycles) {
   return SetParamInt(KernelFiles::Memory::kStalePageAge, scan_cycles);
 }
 
@@ -69,27 +74,154 @@ Status MemoryController::SetOomScore(int64 oom_score) {
   return SetParamInt(KernelFiles::Memory::kOomScoreBadness, oom_score);
 }
 
+Status MemoryController::SetCompressionSamplingRatio(int32 ratio) {
+  return SetParamInt(KernelFiles::Memory::kCompressionSamplingRatio, ratio);
+}
+
+Status MemoryController::SetDirtyRatio(int32 ratio) {
+  return SetParamInt(KernelFiles::Memory::kDirtyRatio, ratio);
+}
+
+Status MemoryController::SetDirtyBackgroundRatio(int32 ratio) {
+  return SetParamInt(KernelFiles::Memory::kDirtyBackgroundRatio, ratio);
+}
+
+Status MemoryController::SetDirtyLimit(Bytes limit) {
+  return SetParamBytes(KernelFiles::Memory::kDirtyLimitInBytes, limit);
+}
+
+Status MemoryController::SetDirtyBackgroundLimit(Bytes limit) {
+  return SetParamBytes(KernelFiles::Memory::kDirtyBackgroundLimitInBytes,
+                       limit);
+}
+
+StatusOr<Bytes> MemoryController::GetStaleBytes() const {
+  map<string, int64> stats =
+      RETURN_IF_ERROR(GetStats(KernelFiles::Memory::kIdlePageStats));
+  int64 stale = RETURN_IF_ERROR(GetValueFromStats(stats,
+      KernelFiles::Memory::IdlePageStats::kStale));
+  return Bytes(stale);
+}
+
+StatusOr<Bytes> MemoryController::GetInactiveBytes() const {
+  map<string, int64> stats =
+      RETURN_IF_ERROR(GetStats(KernelFiles::Memory::kStat));
+  int64 inactive_anon = RETURN_IF_ERROR(GetValueFromStats(stats,
+      KernelFiles::Memory::Stat::kTotalInactiveAnon));
+
+  int64 inactive_file = RETURN_IF_ERROR(GetValueFromStats(stats,
+      KernelFiles::Memory::Stat::kTotalInactiveFile));
+  return Bytes(inactive_anon + inactive_file);
+}
+
+// POPULATE_STAT requires the proto buffer field name to match the post-prefix
+// part of the stat name.
+#define POPULATE_STAT(stats, prefix, output, name)         \
+{                                                          \
+  int64 val;                                               \
+  if (GetStatFromMap(stats, prefix + #name, &val)) {  \
+    output->set_##name(val);                               \
+  }                                                        \
+}
+
+namespace {
+bool GetStatFromMap(const map<string, int64> &stats, const string &key,
+                    int64 *val) {
+  const auto it = stats.find(key);
+  if (it == stats.end()) return false;
+  *val = it->second;
+  return true;
+}
+
+void ProcessKernelStats(const map<string, int64> &stats,
+                        const string &prefix,
+                        MemoryStats_MemoryData_Kernel *output) {
+  POPULATE_STAT(stats, prefix, output, memory);
+  POPULATE_STAT(stats, prefix, output, slab_memory);
+  POPULATE_STAT(stats, prefix, output, stack_memory);
+  POPULATE_STAT(stats, prefix, output, pgtable_memory);
+  POPULATE_STAT(stats, prefix, output, vmalloc_memory);
+  POPULATE_STAT(stats, prefix, output, misc_memory);
+  POPULATE_STAT(stats, prefix, output, targeted_slab_memory);
+  POPULATE_STAT(stats, prefix, output, compressed_memory);
+}
+
+void ProcessThpStats(const map<string, int64> &stats,
+                     const string &prefix,
+                     MemoryStats_MemoryData_THP *output) {
+  POPULATE_STAT(stats, prefix, output, fault_alloc);
+  POPULATE_STAT(stats, prefix, output, fault_fallback);
+  POPULATE_STAT(stats, prefix, output, collapse_alloc);
+  POPULATE_STAT(stats, prefix, output, collapse_alloc_failed);
+  POPULATE_STAT(stats, prefix, output, split);
+}
+
+void ProcessMemoryStats(const map<string, int64> &stats,
+                        const string &prefix,
+                        MemoryStats_MemoryData *output) {
+  POPULATE_STAT(stats, prefix, output, cache);
+  POPULATE_STAT(stats, prefix, output, rss);
+  POPULATE_STAT(stats, prefix, output, rss_huge);
+  POPULATE_STAT(stats, prefix, output, mapped_file);
+  POPULATE_STAT(stats, prefix, output, pgpgin);
+  POPULATE_STAT(stats, prefix, output, pgfault);
+  POPULATE_STAT(stats, prefix, output, pgmajfault);
+  POPULATE_STAT(stats, prefix, output, dirty);
+  POPULATE_STAT(stats, prefix, output, writeback);
+  POPULATE_STAT(stats, prefix, output, inactive_anon);
+  POPULATE_STAT(stats, prefix, output, active_anon);
+  POPULATE_STAT(stats, prefix, output, inactive_file);
+  POPULATE_STAT(stats, prefix, output, active_file);
+  POPULATE_STAT(stats, prefix, output, unevictable);
+
+  ProcessThpStats(stats, prefix + "thp_", output->mutable_thp());
+
+  ProcessKernelStats(stats, prefix + "kernel_", output->mutable_kernel());
+  ProcessKernelStats(stats, prefix + "kernel_noncharged_",
+                     output->mutable_kernel_noncharged());
+
+  POPULATE_STAT(stats, prefix, output, compressed_pool_pages);
+  POPULATE_STAT(stats, prefix, output, compressed_stored_pages);
+  POPULATE_STAT(stats, prefix, output, compressed_reject_compress_poor);
+  POPULATE_STAT(stats, prefix, output, zswap_zsmalloc_fail);
+  POPULATE_STAT(stats, prefix, output, zswap_kmemcache_fail);
+  POPULATE_STAT(stats, prefix, output, zswap_duplicate_entry);
+  POPULATE_STAT(stats, prefix, output, zswap_compressed_pages);
+  POPULATE_STAT(stats, prefix, output, zswap_decompressed_pages);
+  POPULATE_STAT(stats, prefix, output, zswap_compression_nsec);
+  POPULATE_STAT(stats, prefix, output, zswap_decompression_nsec);
+  POPULATE_STAT(stats, prefix, output, cache);
+}
+
+}  // namespace
+
+Status MemoryController::GetMemoryStats(MemoryStats *memory_stats) const {
+  map<string, int64> stats =
+      RETURN_IF_ERROR(GetStats(KernelFiles::Memory::kStat));
+  ProcessMemoryStats(stats, "", memory_stats->mutable_container_data());
+  ProcessMemoryStats(stats, "total_", memory_stats->mutable_total_data());
+  POPULATE_STAT(stats, , memory_stats, hierarchical_memory_limit);
+  return Status::OK;
+}
+#undef POPULATE_STAT
+
 StatusOr<Bytes> MemoryController::GetWorkingSet() const {
   // Get usage in bytes.
-  StatusOr<Bytes> statusor_bytes =
-      GetParamBytes(KernelFiles::Memory::kUsageInBytes);
-  if (!statusor_bytes.ok()) {
-    return statusor_bytes.status();
-  }
-  Bytes usage_in_bytes = statusor_bytes.ValueOrDie();
+  Bytes usage_in_bytes =
+      RETURN_IF_ERROR(GetParamBytes(KernelFiles::Memory::kUsageInBytes));
 
   // Get stale bytes
-  StatusOr<map<string, int64>> statusor_stats =
-      GetStats(KernelFiles::Memory::kIdlePageStats);
-  if (!statusor_stats.ok()) {
-    return statusor_stats.status();
+  StatusOr<Bytes> statusor_stale = GetStaleBytes();
+  if (!statusor_stale.ok()) {
+    if (statusor_stale.status().error_code() != ::util::error::NOT_FOUND) {
+      return statusor_stale.status();
+    } else {
+      // Either the idle page stat file is not found, or entry for stale pages
+      // in the file is not found. Use total inactive bytes.
+      statusor_stale = RETURN_IF_ERROR(GetInactiveBytes());
+    }
   }
-  StatusOr<int64> statusor = GetValueFromStats(
-      statusor_stats.ValueOrDie(), KernelFiles::Memory::IdlePageStats::kStale);
-  if (!statusor.ok()) {
-    return statusor.status();
-  }
-  Bytes stale = Bytes(statusor.ValueOrDie());
+  Bytes stale = Bytes(statusor_stale.ValueOrDie());
 
   // Working set is the usage minus the cold bytes (those that are stale).
   return max(usage_in_bytes - stale, Bytes(0));
@@ -101,6 +233,14 @@ StatusOr<Bytes> MemoryController::GetUsage() const {
 
 StatusOr<Bytes> MemoryController::GetMaxUsage() const {
   return GetParamBytes(KernelFiles::Memory::kMaxUsageInBytes);
+}
+
+StatusOr<Bytes> MemoryController::GetSwapMaxUsage() const {
+  return GetParamBytes(KernelFiles::Memory::Memsw::kMaxUsageInBytes);
+}
+
+StatusOr<Bytes> MemoryController::GetSwapLimit() const {
+  return GetParamBytes(KernelFiles::Memory::Memsw::kLimitInBytes);
 }
 
 StatusOr<Bytes> MemoryController::GetLimit() const {
@@ -128,12 +268,36 @@ StatusOr<Bytes> MemoryController::GetSoftLimit() const {
   return GetParamBytes(KernelFiles::Memory::kSoftLimitInBytes);
 }
 
-StatusOr<uint64> MemoryController::GetStalePageAge() const {
+StatusOr<Bytes> MemoryController::GetSwapUsage() const {
+  return GetParamBytes(KernelFiles::Memory::Memsw::kUsageInBytes);
+}
+
+StatusOr<int32> MemoryController::GetStalePageAge() const {
   return GetParamInt(KernelFiles::Memory::kStalePageAge);
 }
 
 StatusOr<int64> MemoryController::GetOomScore() const {
   return GetParamInt(KernelFiles::Memory::kOomScoreBadness);
+}
+
+StatusOr<int32> MemoryController::GetCompressionSamplingRatio() const {
+  return GetParamInt(KernelFiles::Memory::kCompressionSamplingRatio);
+}
+
+StatusOr<int32> MemoryController::GetDirtyRatio() const {
+  return GetParamInt(KernelFiles::Memory::kDirtyRatio);
+}
+
+StatusOr<int32> MemoryController::GetDirtyBackgroundRatio() const {
+  return GetParamInt(KernelFiles::Memory::kDirtyBackgroundRatio);
+}
+
+StatusOr<Bytes> MemoryController::GetDirtyLimit() const {
+  return GetParamBytes(KernelFiles::Memory::kDirtyLimitInBytes);
+}
+
+StatusOr<Bytes> MemoryController::GetDirtyBackgroundLimit() const {
+  return GetParamBytes(KernelFiles::Memory::kDirtyBackgroundLimitInBytes);
 }
 
 StatusOr<map<string, int64>> MemoryController::GetStats(

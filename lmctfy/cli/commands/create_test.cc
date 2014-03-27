@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,8 +19,10 @@
 
 #include "gflags/gflags.h"
 #include "file/memfile/inlinefile.h"
+#include "lmctfy/cli/output_map.h"
 #include "include/lmctfy.pb.h"
 #include "include/lmctfy_mock.h"
+#include "strings/substitute.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "util/task/codes.pb.h"
@@ -29,6 +31,7 @@ DECLARE_string(lmctfy_config);
 
 using ::std::unique_ptr;
 using ::std::vector;
+using ::strings::Substitute;
 #include "util/testing/equals_initialized_proto.h"
 using ::testing::EqualsInitializedProto;
 using ::testing::Return;
@@ -193,6 +196,36 @@ TEST_F(CreateTest, CommandLineAndFlagNotSpecified) {
   Status status = CreateContainer(args, mock_lmctfy_.get(), nullptr);
   EXPECT_FALSE(status.ok());
   EXPECT_EQ(::util::error::INVALID_ARGUMENT, status.error_code());
+}
+
+TEST_F(CreateTest, ReturnsInitPid) {
+  ContainerSpec spec;
+  spec.mutable_virtual_host();
+  string serialized;
+  spec.SerializeToString(&serialized);
+  const vector<string> args = {"create", kContainerName, serialized};
+
+  const pid_t kInitPid = 1;
+
+  EXPECT_CALL(*mock_lmctfy_,
+              Create(kContainerName, EqualsInitializedProto(spec)))
+      .WillOnce(Return(mock_container_));
+
+  EXPECT_CALL(*mock_container_, GetInitPid())
+      .WillOnce(Return(kInitPid));
+
+  vector<OutputMap> output;
+  EXPECT_TRUE(CreateContainer(args, mock_lmctfy_.get(), &output).ok());
+
+  bool found_init_pid = false;
+  for (const OutputMap &output_map : output) {
+    if (output_map.GetValueByKey("init_pid") == SimpleItoa(kInitPid)) {
+      found_init_pid = true;
+      break;
+    }
+  }
+  EXPECT_TRUE(found_init_pid)
+      << "Expected to find 'Init PID' in the output map of create.";
 }
 
 }  // namespace

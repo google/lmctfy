@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,7 +58,7 @@ Status UpdateContainer(Container::UpdatePolicy policy,
 
   // Ensure the container exists.
   unique_ptr<Container> container(
-      XRETURN_IF_ERROR(lmctfy->Get(container_name)));
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   return container->Update(spec, policy);
 }

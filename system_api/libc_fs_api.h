@@ -27,8 +27,10 @@
 #include <sys/statfs.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <string>
 
 #include "base/macros.h"
+#include "util/scoped_cleanup.h"
 
 namespace system_api {
 
@@ -115,6 +117,10 @@ class LibcFsApi {
   // Get a newline-terminated string of finite length (at most n) from stream.
   virtual char *FGetS(char *buf, int n, FILE *stream) const = 0;
 
+  // Checks if the error indicator associated with 'file' is set, returning a
+  // value different from zero if it is.
+  virtual int FError(FILE *stream) const = 0;
+
   // Read/Write at most nbytes bytes. Returns bytes read.
   virtual ssize_t Read(int file_descriptor, void *buf, size_t nbytes) const = 0;
 
@@ -140,7 +146,7 @@ class LibcFsApi {
   // Dangerous as you cannot specify max length of |resolved|.
   virtual char *RealPath(const char *name, char *resolved) const = 0;
 
-  virtual int FnMatch(const char *pattern, const char *string,
+  virtual int FnMatch(const char *pattern, const char *str,
                       int flags) const = 0;
 
   virtual int Ioctl(int fd, int request, void *argp) const = 0;
@@ -163,6 +169,22 @@ class LibcFsApi {
 
 // Returns a singleton instance of the LibcFsApi interface implementation.
 const LibcFsApi *GlobalLibcFsApi();
+
+// An RAII file-descriptor closer.
+struct ScopedFileCloser : public util::ScopedCleanup {
+  explicit ScopedFileCloser(int fd)
+      : util::ScopedCleanup(&ScopedFileCloser::Close, fd) {}
+  static void Close(int fd) { GlobalLibcFsApi()->Close(fd); }
+};
+
+// An RAII file unlinker.
+struct ScopedFileUnlinker : public util::ScopedCleanup {
+  explicit ScopedFileUnlinker(const ::std::string &path)
+      : util::ScopedCleanup(&ScopedFileUnlinker::Unlink, path) {}
+  static void Unlink(const ::std::string &path) {
+    GlobalLibcFsApi()->Unlink(path.c_str());
+  }
+};
 
 }  // namespace system_api
 

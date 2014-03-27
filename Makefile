@@ -15,7 +15,7 @@ CXX ?= g++
 AR ?= ar
 
 # Version number of lmctfy.
-VERSION = "\"0.3.1\""
+VERSION = "\"0.4.5\""
 
 # TODO(vmarmol): Ensure our dependencies are installed
 PROTOC = protoc
@@ -23,7 +23,7 @@ PROTOC = protoc
 # Function for getting a set of source files.
 get_srcs = $(shell find $(1) -name \*.cc -a ! -name \*_test.cc | tr "\n" " ")
 
-INCLUDE_PROTOS = include/lmctfy
+INCLUDE_PROTOS = include/virtual_host include/lmctfy include/namespaces
 UTIL_PROTOS = util/task/codes
 BASE_SOURCES = $(call get_srcs,base/)
 FILE_SOURCES = $(call get_srcs,file/)
@@ -35,19 +35,32 @@ THREAD_SOURCES = $(call get_srcs,thread/)
 LIBLMCTFY_SOURCES =$(shell find lmctfy/ -name \*.cc -a ! -name \*_test.cc \
 		   -a ! -path \*cli/\* | tr "\n" " ")
 CLI_SOURCES = $(call get_srcs,lmctfy/cli/)
+NSINIT_SOURCES = nscon/init.cc nscon/init_impl.cc
+NSCON_SOURCES = $(filter-out $(NSINIT_SOURCES),$(call get_srcs,nscon/))
 
 # The objects for the system API (both release and test versions).
-SYSTEM_API_OBJS = system_api/kernel_api.o \
+SYSTEM_API_OBJS = global_utils/mount_utils.o \
+		  global_utils/time_utils.o \
+		  system_api/kernel_api.o \
 		  system_api/kernel_api_singleton.o \
 		  system_api/libc_fs_api_impl.o \
-		  system_api/libc_fs_api_singleton.o
-SYSTEM_API_TEST_OBJS = system_api/kernel_api.o \
+		  system_api/libc_fs_api_singleton.o \
+		  system_api/libc_net_api.o \
+		  system_api/libc_process_api.o \
+		  system_api/libc_time_api.o
+SYSTEM_API_TEST_OBJS = global_utils/mount_utils_test_util.o \
+		       global_utils/time_utils_test_util.o \
+		       system_api/kernel_api.o \
 		       system_api/kernel_api_test_util.o \
 		       system_api/libc_fs_api_impl.o \
-		       system_api/libc_fs_api_test_util.o
+		       system_api/libc_fs_api_test_util.o \
+		       system_api/libc_net_api_test_util.o \
+		       system_api/libc_process_api_test_util.o \
+		       system_api/libc_time_api_test_util.o
 
 # Gets all *_test.cc files in lmtcfy/.
-TESTS = $(basename $(shell find lmctfy/ -name \*_test.cc))
+TESTS = $(basename $(shell find lmctfy/ nscon/ -name \*_test.cc \
+	-a ! -name \*_integration_test.cc))
 
 # Where to place the binary outputs.
 OUT_DIR = bin
@@ -63,7 +76,7 @@ GCC_VERSION = $(shell $(CXX) -dumpversion | awk -F'.' \
 	      '{printf "%d%02d%02d", $$1, $$2, $$3}')
 
 # Helper comparison function.
-IF = $(if $(shell [[ $(1) -$(2) $(3) ]] && echo "1"),$(4),$(5))
+IF = $(if $(shell [ "$(1)" -$(2) "$(3)" ] && echo "1"),$(4),$(5))
 
 # Use c++11 for GCC >=4.7.0 and c++0x for earlier versions. Additionally,
 # set -fpermissive for 4.7.x to work around '<::'.
@@ -88,6 +101,8 @@ CXXFLAGS += -I. -I./include -I./base -I./lmctfy -I$(GTEST_DIR)/include \
 CXXFLAGS += `pkg-config --cflags --libs protobuf`
 
 CLI = lmctfy
+NSCON = lmctfy-nscon
+NSINIT = lmctfy-nsinit
 LIBRARY = liblmctfy.a
 
 # Function for ensuring the output directory has been created.
@@ -101,7 +116,15 @@ source_to_object = $(addsuffix .o,$(basename $(1)))
 
 default: all
 
-all: $(LIBRARY) $(CLI) $(TESTS)
+all: $(LIBRARY) $(NSINIT) $(NSCON) $(CLI)
+
+install:
+	cp ./bin/lmctfy/cli/$(CLI) /usr/local/bin
+	chmod +x /usr/local/bin/$(CLI)
+	cp ./bin/nscon/cli/$(NSCON) /usr/local/bin
+	chmod +x /usr/local/bin/$(NSCON)
+	cp ./bin/nscon/$(NSINIT) /usr/local/bin
+	chmod +x /usr/local/bin/$(NSINIT)
 
 TEST_TMPDIR = "/tmp/lmctfy_test.$$"
 check: $(TESTS)
@@ -110,7 +133,7 @@ check: $(TESTS)
 			echo "***** Running $$t"; \
 			rm -rf $(TEST_TMPDIR); \
 			mkdir $(TEST_TMPDIR); \
-			./$$t --test_tmpdir=$(TEST_TMPDIR); \
+			./$$t --test_tmpdir=$(TEST_TMPDIR) || exit 1; \
 		done; \
 	rm -rf $(TEST_TMPDIR)
 	echo "All tests pass!"
@@ -123,12 +146,15 @@ examples/simple_existing: examples/simple_existing.o $(LIBRARY)
 	$(create_bin)
 	$(CXX) -o $(OUT_DIR)/$@ $(addprefix $(OUT_DIR)/,$^) $(CXXFLAGS)
 
-# All sources needed by the library (minus the system API).
-LIBRARY_SOURCES = $(INCLUDE_SOURCES) $(LIBLMCTFY_SOURCES) $(BASE_SOURCES) \
-		  $(STRINGS_SOURCES) $(FILE_SOURCES) $(THREAD_SOURCES) \
-		  $(UTIL_SOURCES)
+# All common base sources (non-lmctfy and non-nscon).
+COMMON_SOURCES = $(INCLUDE_SOURCES) $(BASE_SOURCES) $(STRINGS_SOURCES) \
+		 $(FILE_SOURCES) $(THREAD_SOURCES) $(UTIL_SOURCES)
 
-# The lmctfy library without the system API. This is primarity an internal
+# All sources needed by the library (minus the system API).
+LIBRARY_SOURCES = $(COMMON_SOURCES) $(LIBLMCTFY_SOURCES) $(NSCON_SOURCES)
+
+
+# The lmctfy library without the system API. This is primarily an internal
 # target.
 lmctfy_no_system_api.a: $(call source_to_object,$(LIBRARY_SOURCES))
 	$(create_bin)
@@ -148,7 +174,25 @@ $(CLI): lmctfy_cli.a $(LIBRARY)
 	$(create_bin)
 	$(CXX) -o $(OUT_DIR)/lmctfy/cli/$@ $(addprefix $(OUT_DIR)/,$^) $(CXXFLAGS)
 
-%_test: gtest_main.a $(SYSTEM_API_TEST_OBJS) lmctfy_cli.a lmctfy_no_system_api.a
+# Objects of the nscon CLI.
+nscon_cli.a: $(call source_to_object,$(NSCON_SOURCES) $(COMMON_SOURCES)) $(SYSTEM_API_OBJS)
+	$(create_bin)
+	$(archive_all)
+
+$(NSCON): nscon_cli.a
+	$(create_bin)
+	$(CXX) -o $(OUT_DIR)/nscon/cli/$@ $(addprefix $(OUT_DIR)/,$^) $(CXXFLAGS)
+
+# Objects of the nsinit CLI.
+nsinit_cli.a: $(call source_to_object,$(NSINIT_SOURCES) $(COMMON_SOURCES))
+	$(create_bin)
+	$(archive_all)
+
+$(NSINIT): nsinit_cli.a
+	$(create_bin)
+	$(CXX) -o $(OUT_DIR)/nscon/$@ $(addprefix $(OUT_DIR)/,$^) $(CXXFLAGS)
+
+%_test: gtest_main.a $(SYSTEM_API_TEST_OBJS) nscon_cli.a lmctfy_cli.a lmctfy_no_system_api.a
 	$(create_bin)
 	$(CXX) -o $(OUT_DIR)/$@ $*.cc $*_test.cc $(addprefix $(OUT_DIR)/,$^) \
 		$(CXXFLAGS)

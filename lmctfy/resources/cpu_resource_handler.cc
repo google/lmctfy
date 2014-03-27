@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -174,29 +174,27 @@ CpuResourceHandlerFactory::CpuResourceHandlerFactory(
 StatusOr<ResourceHandler *> CpuResourceHandlerFactory::GetResourceHandler(
     const string &container_name) const {
   // Get the hierarchy paths for cpu and cpuacct.
-  string cpu_hierarchy_path;
-  RETURN_IF_ERROR(
-      GetCpuHierarchyPath(cpu_controller_factory_.get(), container_name),
-      &cpu_hierarchy_path);
+  string cpu_hierarchy_path = RETURN_IF_ERROR(
+      GetCpuHierarchyPath(cpu_controller_factory_.get(), container_name));
 
   // Cpu and cpuacct have the same hierarchy and depend on the type of job.
-  CpuController *cpu_controller = nullptr;
-  RETURN_IF_ERROR(cpu_controller_factory_->Get(cpu_hierarchy_path),
-                  &cpu_controller);
-  CpuAcctController *cpuacct_controller = nullptr;
-  RETURN_IF_ERROR(cpuacct_controller_factory_->Get(cpu_hierarchy_path),
-                  &cpuacct_controller);
+  unique_ptr<CpuController> cpu_controller(
+      RETURN_IF_ERROR(cpu_controller_factory_->Get(cpu_hierarchy_path)));
+  unique_ptr<CpuAcctController> cpuacct_controller(
+      RETURN_IF_ERROR(cpuacct_controller_factory_->Get(cpu_hierarchy_path)));
 
   // Only create cpuset if available.
-  CpusetController *cpuset_controller = nullptr;
+  unique_ptr<CpusetController> cpuset_controller;
   if (cpuset_controller_factory_ != nullptr) {
     // Cpuset is flat.
-    cpuset_controller = XRETURN_IF_ERROR(cpuset_controller_factory_->Get(
-        JoinPath("/", file::Basename(container_name).ToString())));
+    cpuset_controller.reset(RETURN_IF_ERROR(cpuset_controller_factory_->Get(
+        JoinPath("/", file::Basename(container_name).ToString()))));
   }
 
-  return new CpuResourceHandler(container_name, kernel_, cpu_controller,
-                                cpuacct_controller, cpuset_controller);
+  return new CpuResourceHandler(container_name, kernel_,
+                                cpu_controller.release(),
+                                cpuacct_controller.release(),
+                                cpuset_controller.release());
 }
 
 // TODO(vmarmol): Be able to create non-hierarchical LS CPU if that is
@@ -213,41 +211,40 @@ StatusOr<ResourceHandler *> CpuResourceHandlerFactory::CreateResourceHandler(
   string cpu_hierarchy_path;
   if (parent_name == "/") {
     // For top-level containers, we place batch in /batch and on top-level
-    // otherwise. Batch are those with scheduling_latency of NORMAL (the
-    // default) or BEST_EFFORT.
+    // otherwise. Batch are those with scheduling_latency of NORMAL
+    // or BEST_EFFORT. PRIORITY is the default.
     if (!spec.cpu().has_scheduling_latency() ||
-        (spec.cpu().scheduling_latency() == BEST_EFFORT) ||
-        (spec.cpu().scheduling_latency() == NORMAL)) {
-      cpu_hierarchy_path = JoinPath(kBatchSubsystem, container_name);
-    } else {
+        (spec.cpu().scheduling_latency() == PRIORITY) ||
+        (spec.cpu().scheduling_latency() == PREMIER)) {
       cpu_hierarchy_path = container_name;
+    } else {
+      cpu_hierarchy_path = JoinPath(kBatchSubsystem, container_name);
     }
   } else {
     // For subcontainers the following logic always creates cpu and cpuacct
     // cgroups under the parent path irrespective of latency setting.
-    RETURN_IF_ERROR(
-        GetCpuHierarchyPath(cpu_controller_factory_.get(), parent_name),
-        &cpu_hierarchy_path);
+    cpu_hierarchy_path = RETURN_IF_ERROR(
+        GetCpuHierarchyPath(cpu_controller_factory_.get(), parent_name));
     cpu_hierarchy_path = JoinPath(cpu_hierarchy_path, base_container_name);
   }
 
-  CpuController *cpu_controller = nullptr;
-  RETURN_IF_ERROR(cpu_controller_factory_->Create(cpu_hierarchy_path),
-                  &cpu_controller);
-  CpuAcctController *cpuacct_controller = nullptr;
-  RETURN_IF_ERROR(cpuacct_controller_factory_->Create(cpu_hierarchy_path),
-                  &cpuacct_controller);
+  unique_ptr<CpuController> cpu_controller(
+      RETURN_IF_ERROR(cpu_controller_factory_->Create(cpu_hierarchy_path)));
+  unique_ptr<CpuAcctController> cpuacct_controller(
+      RETURN_IF_ERROR(cpuacct_controller_factory_->Create(cpu_hierarchy_path)));
 
   // Only create cpuset if available.
-  CpusetController *cpuset_controller = nullptr;
+  unique_ptr<CpusetController> cpuset_controller;
   if (cpuset_controller_factory_ != nullptr) {
     // Cpuset is flat.
-    cpuset_controller = XRETURN_IF_ERROR(cpuset_controller_factory_->Create(
-        JoinPath("/", file::Basename(base_container_name).ToString())));
+    cpuset_controller.reset(RETURN_IF_ERROR(cpuset_controller_factory_->Create(
+        JoinPath("/", file::Basename(base_container_name).ToString()))));
   }
 
-  return new CpuResourceHandler(container_name, kernel_, cpu_controller,
-                                cpuacct_controller, cpuset_controller);
+  return new CpuResourceHandler(container_name, kernel_,
+                                cpu_controller.release(),
+                                cpuacct_controller.release(),
+                                cpuset_controller.release());
 }
 
 Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
@@ -267,8 +264,8 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
                ::util::error::ALREADY_EXISTS) {
       return statusor.status();
     } else {
-      RETURN_IF_ERROR(cpu_controller_factory_->Get(kBatchSubsystem),
-                      &cpu_controller);
+      cpu_controller.reset(
+          RETURN_IF_ERROR(cpu_controller_factory_->Get(kBatchSubsystem)));
     }
   }
   unique_ptr<CpuAcctController> cpuacct_controller;
@@ -281,8 +278,8 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
                ::util::error::ALREADY_EXISTS) {
       return statusor.status();
     } else {
-      RETURN_IF_ERROR(cpuacct_controller_factory_->Get(kBatchSubsystem),
-                      &cpuacct_controller);
+      cpuacct_controller.reset(
+          RETURN_IF_ERROR(cpuacct_controller_factory_->Get(kBatchSubsystem)));
     }
   }
 
@@ -299,8 +296,8 @@ Status CpuResourceHandlerFactory::InitMachine(const InitSpec &spec) {
   // If available, set cpuset to inherit from the parent. We do this for root
   // and that is inherited by its children.
   if (cpuset_controller_factory_ != nullptr) {
-    unique_ptr<CpusetController> cpuset_controller;
-    RETURN_IF_ERROR(cpuset_controller_factory_->Get("/"), &cpuset_controller);
+    unique_ptr<CpusetController> cpuset_controller(
+        RETURN_IF_ERROR(cpuset_controller_factory_->Get("/")));
     RETURN_IF_ERROR(cpuset_controller->EnableCloneChildren());
   }
 
@@ -332,9 +329,12 @@ CpuResourceHandler::CpuResourceHandler(const string &container_name,
 
 Status CpuResourceHandler::CreateOnlySetup(const ContainerSpec &spec) {
   // Setup latency before calling update. Ignore if latency is not supported.
-  if (spec.has_cpu() && spec.cpu().has_scheduling_latency()) {
-    Status status =
-        cpu_controller_->SetLatency(spec.cpu().scheduling_latency());
+  if (spec.has_cpu()) {
+    SchedulingLatency latency = PRIORITY;
+    if (spec.cpu().has_scheduling_latency()) {
+      latency = spec.cpu().scheduling_latency();
+    }
+    Status status = cpu_controller_->SetLatency(latency);
     if (!status.ok() && status.error_code() != ::util::error::NOT_FOUND) {
       return status;
     }
@@ -378,7 +378,8 @@ Status CpuResourceHandler::Update(const ContainerSpec &spec,
 
     // Check if the default latency is being changed through a replace.
     if (policy == Container::UPDATE_REPLACE &&
-        !cpu_spec.has_scheduling_latency() && statusor.ValueOrDie() != NORMAL) {
+        !cpu_spec.has_scheduling_latency() &&
+        statusor.ValueOrDie() != PRIORITY) {
       return Status(::util::error::INVALID_ARGUMENT,
                     "Cannot change latency setting.");
     }
@@ -472,18 +473,18 @@ Status CpuResourceHandler::Stats(Container::StatsType type,
 
 Status CpuResourceHandler::Spec(ContainerSpec *spec) const {
   {
-    int64 milli_cpus;
-    RETURN_IF_ERROR(cpu_controller_->GetMilliCpus(), &milli_cpus);
+    int64 milli_cpus =
+        RETURN_IF_ERROR(cpu_controller_->GetMilliCpus());
     spec->mutable_cpu()->set_limit(milli_cpus);
   }
   {
-    int64 max_milli_cpus;
-    RETURN_IF_ERROR(cpu_controller_->GetMaxMilliCpus(), &max_milli_cpus);
+    int64 max_milli_cpus =
+        RETURN_IF_ERROR(cpu_controller_->GetMaxMilliCpus());
     spec->mutable_cpu()->set_max_limit(max_milli_cpus);
   }
   if (cpuset_controller_ != nullptr) {
-    CpuMask cpu_mask;
-    RETURN_IF_ERROR(cpuset_controller_->GetCpuMask(), &cpu_mask);
+    CpuMask cpu_mask =
+        RETURN_IF_ERROR(cpuset_controller_->GetCpuMask());
     cpu_mask.WriteToProtobuf(
         spec->mutable_cpu()->mutable_mask()->mutable_data());
   }

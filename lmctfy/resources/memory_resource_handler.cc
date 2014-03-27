@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ using ::std::string;
 
 #include "base/integral_types.h"
 #include "base/logging.h"
-#include "util/bytes.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/bytes.h"
 #include "util/safe_types/unix_gid.h"
 #include "util/safe_types/unix_uid.h"
 #include "util/errors.h"
@@ -52,6 +52,8 @@ namespace lmctfy {
 static const int32 kDefaultEvictionPriority = 5000;
 static const int32 kMinEvictionPriority = 0;
 static const int32 kMaxEvictionPriority = 10000;
+static const int32 kDefaultDirtyRatio = 75;
+static const int32 kDefaultDirtyBackgroundRatio = 10;
 
 StatusOr<MemoryResourceHandlerFactory *> MemoryResourceHandlerFactory::New(
     CgroupFactory *cgroup_factory, const KernelApi *kernel,
@@ -111,14 +113,79 @@ MemoryResourceHandler::MemoryResourceHandler(
                             vector<CgroupController *>({memory_controller})),
       memory_controller_(CHECK_NOTNULL(memory_controller)) {}
 
-Status MemoryResourceHandler::CreateOnlySetup(const ContainerSpec &spec) {
-  // TODO(rgooch): make this configurable.
-  // Some kernels do not support setting stale page age, ignore in those cases.
-  Status status = memory_controller_->SetStalePageAge(1);
-  if (!status.ok() && (status.error_code() != ::util::error::NOT_FOUND)) {
+// TODO(vmarmol): Move this elsewhere to be used by other files that need it.
+// Ignores errors of NOT_FOUND.
+Status IgnoreNotFound(const Status &status) {
+  if (!status.ok() && status.error_code() != ::util::error::NOT_FOUND) {
     return status;
   }
 
+  return Status::OK;
+}
+
+Status MemoryResourceHandler::CreateOnlySetup(const ContainerSpec &spec) {
+  // TODO(rgooch): make this configurable.
+  // Some kernels do not support setting stale page age, ignore in those cases.
+  return IgnoreNotFound(memory_controller_->SetStalePageAge(1));
+}
+
+Status MemoryResourceHandler::SetDirty(const MemorySpec_Dirty &dirty,
+                                       Container::UpdatePolicy policy) {
+  // If we're told that a limit or ratio is being set to -1, that's clearing
+  // and the other type may be used.  Rely on the kernel invalidating the type
+  // that's not being used.
+  const bool has_setable_ratio = (dirty.has_ratio() && dirty.ratio() != -1);
+  const bool has_setable_bg_ratio =
+      (dirty.has_background_ratio() && dirty.background_ratio() != -1);
+  const bool has_setable_limit = (dirty.has_limit() && dirty.limit() != -1);
+  const bool has_setable_bg_limit =
+      (dirty.has_background_limit() && dirty.background_limit() != -1);
+
+  // First do error checking and make sure only one type is used.
+  if (has_setable_ratio || has_setable_bg_ratio) {
+    if (has_setable_limit || has_setable_bg_limit) {
+      return Status(
+          ::util::error::INVALID_ARGUMENT,
+          "Cannot set both dirty ratio and limit");
+    }
+  }
+
+  // Expect to have both ratios or both limits
+  if (has_setable_ratio != has_setable_bg_ratio) {
+    return Status(
+        ::util::error::INVALID_ARGUMENT,
+        "Need both dirty ratio and dirty background ratio");
+  }
+  if (has_setable_limit != has_setable_bg_limit) {
+    return Status(
+        ::util::error::INVALID_ARGUMENT,
+        "Need both dirty limit and dirty background limit");
+  }
+
+  if (has_setable_ratio) {
+    RETURN_IF_ERROR(memory_controller_->SetDirtyRatio(dirty.ratio()));
+    RETURN_IF_ERROR(memory_controller_->SetDirtyBackgroundRatio(
+        dirty.background_ratio()));
+  }
+  if (has_setable_limit) {
+    RETURN_IF_ERROR(memory_controller_->SetDirtyLimit(Bytes(dirty.limit())));
+    RETURN_IF_ERROR(memory_controller_->SetDirtyBackgroundLimit(
+        Bytes(dirty.background_limit())));
+  }
+
+  // Set any that need to be set which aren't included
+  if (policy == Container::UPDATE_REPLACE) {
+    // If there is no limit set, we must be setting ratios
+    if (!has_setable_limit && !has_setable_bg_limit) {
+      if (!has_setable_ratio) {
+        RETURN_IF_ERROR(IgnoreNotFound(
+            memory_controller_->SetDirtyRatio(kDefaultDirtyRatio)));
+        RETURN_IF_ERROR(
+            IgnoreNotFound(memory_controller_->SetDirtyBackgroundRatio(
+                kDefaultDirtyBackgroundRatio)));
+      }
+    }
+  }
   return Status::OK;
 }
 
@@ -161,6 +228,22 @@ Status MemoryResourceHandler::Update(const ContainerSpec &spec,
     RETURN_IF_ERROR(memory_controller_->SetLimit(Bytes(-1)));
   }
 
+  // Set the swap limit if it was specified. The default is -1 if it was not
+  // specified during a replace.
+  // TODO(zohaib): swap_limit must be greater than or equal to the limit. We
+  // need to check that this is true.
+  if (memory_spec.has_swap_limit()) {
+    RETURN_IF_ERROR(
+        memory_controller_->SetSwapLimit(Bytes(memory_spec.swap_limit())));
+  } else if (policy == Container::UPDATE_REPLACE) {
+    Status status = memory_controller_->SetSwapLimit(Bytes(-1));
+    // This may not be supported in all kernels so don't fail if it is not
+    // supported and not specified.
+    if (!status.ok() && status.error_code() != ::util::error::NOT_FOUND) {
+      return status;
+    }
+  }
+
   // Set the reservation if it was specified. The default is 0 if it was not
   // specified during a replace.
   if (memory_spec.has_reservation()) {
@@ -169,6 +252,32 @@ Status MemoryResourceHandler::Update(const ContainerSpec &spec,
   } else if (policy == Container::UPDATE_REPLACE) {
     RETURN_IF_ERROR(memory_controller_->SetSoftLimit(Bytes(0)));
   }
+
+  // Set the compression sampling ratio.
+  if (memory_spec.has_compression_sampling_ratio()) {
+    RETURN_IF_ERROR(memory_controller_->SetCompressionSamplingRatio(
+        memory_spec.compression_sampling_ratio()));
+  } else if (policy == Container::UPDATE_REPLACE) {
+    Status status = memory_controller_->SetCompressionSamplingRatio(0);
+    // This may not be supported in all kernels so don't fail if it is not
+    // supported and not specified.
+    if (!status.ok() && status.error_code() != ::util::error::NOT_FOUND) {
+      return status;
+    }
+  }
+
+  // Set the stale page age.
+  if (memory_spec.has_stale_page_age()) {
+    RETURN_IF_ERROR(memory_controller_->SetStalePageAge(
+        memory_spec.stale_page_age()));
+  } else if (policy == Container::UPDATE_REPLACE) {
+    // This may not be supported in all kernels so don't fail if it is not
+    // supported and not specified.
+    RETURN_IF_ERROR(IgnoreNotFound(memory_controller_->SetStalePageAge(1)));
+  }
+
+  // Set dirty [background] ratio/limit data
+  RETURN_IF_ERROR(SetDirty(memory_spec.dirty(), policy));
 
   return Status::OK;
 }
@@ -189,6 +298,8 @@ Status MemoryResourceHandler::Stats(Container::StatsType type,
   SET_IF_PRESENT_VAL(memory_controller_->GetSoftLimit(),
                      stats->set_reservation);
 
+  RETURN_IF_ERROR(memory_controller_->GetMemoryStats(stats));
+
   return Status::OK;
 }
 
@@ -198,9 +309,21 @@ Status MemoryResourceHandler::Spec(ContainerSpec *spec) const {
   SET_IF_PRESENT(memory_controller_->GetOomScore(),
                  memory_spec->set_eviction_priority);
   memory_spec->set_limit(
-      XRETURN_IF_ERROR(memory_controller_->GetLimit()).value());
+      RETURN_IF_ERROR(memory_controller_->GetLimit()).value());
   memory_spec->set_reservation(
-      XRETURN_IF_ERROR(memory_controller_->GetSoftLimit()).value());
+      RETURN_IF_ERROR(memory_controller_->GetSoftLimit()).value());
+  SET_IF_PRESENT(memory_controller_->GetCompressionSamplingRatio(),
+                 memory_spec->set_compression_sampling_ratio);
+  SET_IF_PRESENT(memory_controller_->GetStalePageAge(),
+                 memory_spec->set_stale_page_age);
+  SET_IF_PRESENT(memory_controller_->GetDirtyRatio(),
+                 memory_spec->mutable_dirty()->set_ratio);
+  SET_IF_PRESENT(memory_controller_->GetDirtyBackgroundRatio(),
+                 memory_spec->mutable_dirty()->set_background_ratio);
+  SET_IF_PRESENT_VAL(memory_controller_->GetDirtyLimit(),
+                     memory_spec->mutable_dirty()->set_limit);
+  SET_IF_PRESENT_VAL(memory_controller_->GetDirtyBackgroundLimit(),
+                     memory_spec->mutable_dirty()->set_background_limit);
 
   return Status::OK;
 }

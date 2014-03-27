@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -237,8 +237,8 @@ class CgroupResourceHandler : public ResourceHandler {
   // Checks if container state described in @spec is correct.
   virtual ::util::Status VerifyFullSpec(const ContainerSpec &spec) const;
 
-  // Map of controller hierarchies to their controllers.
-  ::std::map<CgroupHierarchy, CgroupController *> controllers_;
+  // List of controllers.
+  ::std::vector<CgroupController *> controllers_;
 
   // Wrapper for all calls to the kernel.
   const KernelApi *kernel_;

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,9 +21,9 @@ using ::std::string;
 
 #include "base/integral_types.h"
 #include "base/macros.h"
-#include "util/bytes.h"
 #include "lmctfy/controllers/cgroup_controller.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/bytes.h"
 #include "util/task/statusor.h"
 
 namespace containers {
@@ -67,41 +67,75 @@ class MemoryController : public CgroupController {
   // Set the reserved memory or "soft limit" of this cgroup.
   virtual ::util::Status SetSoftLimit(::util::Bytes limit);
 
+  // Set the swap memory limit of this cgroup.
+  virtual ::util::Status SetSwapLimit(::util::Bytes limit);
+
   // Set the age at which pages are considered stale in this cgroup. The age is
   // counted in kstaled scan cycles.
-  virtual ::util::Status SetStalePageAge(uint64 scan_cycles);
+  virtual ::util::Status SetStalePageAge(int32 scan_cycles);
 
   // Sets the OOM score of the cgroup. Higher scores are of higher priority and
   // thus less likely to OOM.
   virtual ::util::Status SetOomScore(int64 oom_score);
 
+  // Sets the compression sampling ratio
+  virtual ::util::Status SetCompressionSamplingRatio(int32 ratio);
+
+  // Set dirty ratios or limits
+  virtual ::util::Status SetDirtyRatio(int32 ratio);
+  virtual ::util::Status SetDirtyBackgroundRatio(int32 ratio);
+  virtual ::util::Status SetDirtyLimit(::util::Bytes limit);
+  virtual ::util::Status SetDirtyBackgroundLimit(
+      ::util::Bytes limit);
+
   // All statistics return NOT_FOUND if they were not found or available.
 
   // Gets the working set of this cgroup. This is the currently hot memory.
-  virtual ::util::StatusOr< ::util::Bytes> GetWorkingSet() const;
+  virtual ::util::StatusOr<::util::Bytes> GetWorkingSet() const;
 
   // Gets the raw usage of this cgroup.
-  virtual ::util::StatusOr< ::util::Bytes> GetUsage() const;
+  virtual ::util::StatusOr<::util::Bytes> GetUsage() const;
 
   // Gets the max usage seen in this cgroup.
-  virtual ::util::StatusOr< ::util::Bytes> GetMaxUsage() const;
+  virtual ::util::StatusOr<::util::Bytes> GetMaxUsage() const;
+
+  // Gets the raw swap usage of this cgroup.
+  virtual ::util::StatusOr<::util::Bytes> GetSwapUsage() const;
+
+  // Gets the max swap usage seen in this cgroup.
+  virtual ::util::StatusOr<::util::Bytes> GetSwapMaxUsage() const;
 
   // Gets the memory limit of this cgroup.
-  virtual ::util::StatusOr< ::util::Bytes> GetLimit() const;
+  virtual ::util::StatusOr<::util::Bytes> GetLimit() const;
 
   // Gets the effective limit of this cgroup. This limit may be less than
   // GetLimit() if the hierarchy has less memory available (i.e.: the parent
   // does not have enough memory to satisfy the value returned by GetLimit()).
-  virtual ::util::StatusOr< ::util::Bytes> GetEffectiveLimit() const;
+  // TODO(zohaib): Figure out if memory swap space should be counted as a part
+  // of the effective memory limit.
+  virtual ::util::StatusOr<::util::Bytes> GetEffectiveLimit() const;
 
   // Gets the reserved memory or "soft limit" for this cgroup.
-  virtual ::util::StatusOr< ::util::Bytes> GetSoftLimit() const;
+  virtual ::util::StatusOr<::util::Bytes> GetSoftLimit() const;
+
+  // Gets the swap memory limit of this cgroup.
+  virtual ::util::StatusOr<::util::Bytes> GetSwapLimit() const;
 
   // Gets the age at which pages are considered stale in this cgroup.
-  virtual ::util::StatusOr<uint64> GetStalePageAge() const;
+  virtual ::util::StatusOr<int32> GetStalePageAge() const;
 
   // Gets the OOM score of this cgroup.
   virtual ::util::StatusOr<int64> GetOomScore() const;
+
+  // Gets the compression sampling ratio.
+  virtual ::util::StatusOr<int32> GetCompressionSamplingRatio() const;
+
+  // Get dirty ratios and limits
+  virtual ::util::StatusOr<int32> GetDirtyRatio() const;
+  virtual ::util::StatusOr<int32> GetDirtyBackgroundRatio() const;
+  virtual ::util::StatusOr<::util::Bytes> GetDirtyLimit() const;
+  virtual ::util::StatusOr<::util::Bytes> GetDirtyBackgroundLimit()
+      const;
 
   // Register a notification for an OOM event. The handler for the event is
   // returned on success.
@@ -114,6 +148,9 @@ class MemoryController : public CgroupController {
       RegisterUsageThresholdNotification(
           ::util::Bytes usage_threshold,
           CgroupController::EventCallback *callback);
+
+  // Get all stats from the memory.stat file
+  virtual ::util::Status GetMemoryStats(MemoryStats *memory_stats) const;
 
  private:
   // Gets a mapping of field_name to integer value of the specified stats file.
@@ -134,6 +171,12 @@ class MemoryController : public CgroupController {
   //       map of field_name to integer value.
   ::util::StatusOr< ::std::map<string, int64>> GetStats(
       const string &stats_type) const;
+
+  // Get the stale bytes.
+  ::util::StatusOr<::util::Bytes> GetStaleBytes() const;
+
+  // Gets the total inactive bytes (file and anonymous).
+  ::util::StatusOr<::util::Bytes> GetInactiveBytes() const;
 
   // Gets the specified value from the specified stats if it is available.
   ::util::StatusOr<int64> GetValueFromStats(

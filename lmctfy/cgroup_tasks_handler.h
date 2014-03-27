@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -54,8 +54,10 @@ class CgroupTasksHandler : public TasksHandler {
   //   cgroup_controller: Controller for the underlying cgroup hierarchy. Takes
   //       ownership of pointer.
   //   kernel: Wrapper for kernel syscalls. Does not take ownership.
+  //   tasks_handler_factory: Factory of TasksHandlers. Does not take ownership.
   CgroupTasksHandler(const string &container_name,
-                     CgroupController *cgroup_controller);
+                     CgroupController *cgroup_controller,
+                     const TasksHandlerFactory *tasks_handler_factory);
   ~CgroupTasksHandler() override;
 
   // Further documentation on these methods can be found in the TasksHandler
@@ -65,16 +67,31 @@ class CgroupTasksHandler : public TasksHandler {
   ::util::Status TrackTasks(const ::std::vector<pid_t> &tids) override;
   ::util::Status Delegate(::util::UnixUid uid,
                           ::util::UnixGid gid) override;
-  ::util::StatusOr< ::std::vector<string>> ListSubcontainers() const override;
-  ::util::StatusOr< ::std::vector<pid_t>> ListProcesses() const override;
-  ::util::StatusOr< ::std::vector<pid_t>> ListThreads() const override;
+  ::util::StatusOr<::std::vector<string>> ListSubcontainers(
+      TasksHandler::ListType type) const override;
+  ::util::StatusOr<::std::vector<pid_t>> ListProcesses(
+      ListType type) const override;
+  ::util::StatusOr<::std::vector<pid_t>> ListThreads(
+      ListType type) const override;
 
  private:
+  enum class PidsOrTids {
+    PIDS,
+    TIDS,
+  };
+  // Lists the PIDs or TIDs inside the container, as specified by the ListType.
+  ::util::Status ListProcessesOrThreads(TasksHandler::ListType type,
+                                        PidsOrTids pids_or_tids,
+                                        vector<pid_t> *output) const;
+
   // Controller for the underlying cgroup hierarchy.
   ::std::unique_ptr<CgroupController> cgroup_controller_;
 
   // Wrapper for all calls to the kernel.
   const KernelApi *kernel_;
+
+  // Factory of TasksHandlers for recursive calls.
+  const TasksHandlerFactory *tasks_handler_factory_;
 };
 
 // Factory of Cgroup-based TasksHandlers.
@@ -105,21 +122,19 @@ class CgroupTasksHandlerFactory : public TasksHandlerFactory {
     // controller to ensure things like this are valid (i.e.: CgroupTasksHandler
     // expects a 1:1 controller, make sure it gets one).
     // Create the controller. Hierarchy is 1:1.
-    CgroupController *cgroup_controller;
-    RETURN_IF_ERROR(cgroup_controller_factory_->Create(container_name),
-                    &cgroup_controller);
+    CgroupController *cgroup_controller =
+        RETURN_IF_ERROR(cgroup_controller_factory_->Create(container_name));
 
-    return new CgroupTasksHandler(container_name, cgroup_controller);
+    return new CgroupTasksHandler(container_name, cgroup_controller, this);
   }
 
   ::util::StatusOr<TasksHandler *> Get(const string &container_name)
       const override {
     // Get the controller. Hierarchy is 1:1.
-    CgroupController *cgroup_controller;
-    RETURN_IF_ERROR(cgroup_controller_factory_->Get(container_name),
-                    &cgroup_controller);
+    CgroupController *cgroup_controller =
+        RETURN_IF_ERROR(cgroup_controller_factory_->Get(container_name));
 
-    return new CgroupTasksHandler(container_name, cgroup_controller);
+    return new CgroupTasksHandler(container_name, cgroup_controller, this);
   }
 
   bool Exists(const string &container_name) const override {

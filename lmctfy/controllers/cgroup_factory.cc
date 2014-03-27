@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 #include "base/macros.h"
 #include "base/mutex.h"
 #include "file/base/path.h"
+#include "lmctfy/util/proc_cgroup.h"
 #include "util/errors.h"
 #include "util/proc_mounts.h"
 #include "strings/join.h"
@@ -70,7 +71,8 @@ void InitSupportedHierarchies() {
         {"cpuset", CGROUP_CPUSET}, {"job", CGROUP_JOB},
         {"freezer", CGROUP_FREEZER}, {"memory", CGROUP_MEMORY},
         {"net", CGROUP_NET}, {"io", CGROUP_IO},
-        {"perf_event", CGROUP_PERF_EVENT}, {"rlimit", CGROUP_RLIMIT}, };
+        {"perf_event", CGROUP_PERF_EVENT}, {"rlimit", CGROUP_RLIMIT},
+        { "devices", CGROUP_DEVICE}, };
   }
 }
 
@@ -124,8 +126,8 @@ StatusOr<CgroupFactory *> CgroupFactory::New(const KernelApi *kernel) {
     // and add those that we support to the detected mounts.
     for (const string &option : mount.options) {
       if (supported_cgroups.find(option) != supported_cgroups.end()) {
-        CgroupHierarchy hierarchy;
-        RETURN_IF_ERROR(GetCgroupHierarchy(option), &hierarchy);
+        CgroupHierarchy hierarchy =
+            RETURN_IF_ERROR(GetCgroupHierarchy(option));
 
         detected_mounts.insert(make_pair(hierarchy, mount.mountpoint));
       }
@@ -319,6 +321,31 @@ StatusOr<string> CgroupFactory::GetCgroupPath(
   }
 
   return JoinPath(mount_path_it->second.path, hierarchy_path);
+}
+
+StatusOr<string> CgroupFactory::DetectCgroupPath(
+    pid_t tid, CgroupHierarchy hierarchy) const {
+  // Get the name of the subsystem (cgroup hierarchy).
+  const string subsystem_name = GetHierarchyName(hierarchy);
+  if (subsystem_name.empty()) {
+    return Status(::util::error::NOT_FOUND,
+                  Substitute("Failed to get name for hierarchy with ID \"$0\"",
+                             hierarchy));
+  }
+
+  // Find path for the specified subsystem.
+  for (const ProcCgroupData &cgroup : ProcCgroup(tid)) {
+    // Check all co-mounted subsystems.
+    auto it = ::std::find(cgroup.subsystems.begin(), cgroup.subsystems.end(),
+                          subsystem_name);
+    if (it != cgroup.subsystems.end()) {
+      return cgroup.hierarchy_path;
+    }
+  }
+
+  return ::util::Status(
+      ::util::error::NOT_FOUND,
+      Substitute("Could not detect the container for TID \"$0\"", tid));
 }
 
 string CgroupFactory::GetHierarchyName(

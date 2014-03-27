@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -62,9 +62,6 @@ class CpuResourceHandlerFactoryTest : public ::testing::Test {
 
   void SetUpFactory(bool cpuset_enabled) {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
-    mock_cpu_controller_.reset(new StrictMockCpuController());
-    mock_cpuacct_controller_.reset(new StrictMockCpuAcctController());
-    mock_cpuset_controller_.reset(new StrictMockCpusetController());
     mock_cgroup_factory_.reset(new NiceMockCgroupFactory());
     mock_cpu_controller_factory_ =
         new StrictMockCpuControllerFactory(mock_cgroup_factory_.get());
@@ -105,9 +102,6 @@ class CpuResourceHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
-  unique_ptr<MockCpuController> mock_cpu_controller_;
-  unique_ptr<MockCpuAcctController> mock_cpuacct_controller_;
-  unique_ptr<MockCpusetController> mock_cpuset_controller_;
   MockCpuControllerFactory *mock_cpu_controller_factory_;
   MockCpuAcctControllerFactory *mock_cpuacct_controller_factory_;
   MockCpusetControllerFactory *mock_cpuset_controller_factory_;
@@ -172,14 +166,19 @@ TEST_F(CpuResourceHandlerFactoryTest, NewNotMounted) {
 // Tests for Get().
 
 TEST_F(CpuResourceHandlerFactoryTest, GetSuccess) {
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor = CallGetResourceHandler(kContainerName);
   ASSERT_TRUE(statusor.ok());
@@ -187,10 +186,6 @@ TEST_F(CpuResourceHandlerFactoryTest, GetSuccess) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAlloc) {
@@ -198,6 +193,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAlloc) {
   const string kBatchContainerName = "/batch/alloc/task";
   const string kBaseContainerName = "/task";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchContainerName))
@@ -205,11 +205,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAlloc) {
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBaseContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -218,25 +218,25 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAlloc) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAllocWithHierarchicalCpu) {
   const string kFullContainerName = "/alloc/task";
   const string kBaseContainerName = "/task";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kFullContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kFullContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -245,11 +245,6 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAllocWithHierarchicalCpu) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAlloc) {
@@ -258,6 +253,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAlloc) {
   const string kBaseContainerName = "/task";
   const string kBatchBaseContainerName = "/batch/task";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchContainerName))
@@ -267,11 +267,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAlloc) {
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchBaseContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kBatchBaseContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kBatchBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -280,25 +280,25 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAlloc) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskSubcontainer) {
   const string kFullContainerName = "/task/sub";
   const string kBaseContainerName = "/sub";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kFullContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kFullContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -307,11 +307,6 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskSubcontainer) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskSubcontainer) {
@@ -319,16 +314,21 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskSubcontainer) {
   const string kBatchContainerName = "/batch/task/sub";
   const string kBaseContainerName = "/sub";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -337,11 +337,6 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskSubcontainer) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -349,14 +344,19 @@ TEST_F(CpuResourceHandlerFactoryTest,
   const string kFullContainerName = "/alloc/task/sub";
   const string kBaseContainerName = "/sub";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kFullContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kFullContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -365,11 +365,6 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAllocSubcontainer) {
@@ -378,6 +373,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAllocSubcontainer) {
   const string kBaseLsContainerName = "/task/sub";
   const string kBaseContainerName = "/sub";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchContainerName))
@@ -385,11 +385,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAllocSubcontainer) {
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBaseLsContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kBaseLsContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kBaseLsContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -398,11 +398,6 @@ TEST_F(CpuResourceHandlerFactoryTest, GetLsTaskInAllocSubcontainer) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAllocSubcontainer) {
@@ -412,6 +407,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAllocSubcontainer) {
   const string kBatchBaseContainerName = "/batch/task/sub";
   const string kBaseContainerName = "/sub";
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kFullContainerName))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchContainerName))
@@ -421,11 +421,11 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAllocSubcontainer) {
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchBaseContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kBatchBaseContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kBatchBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kBaseContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallGetResourceHandler(kFullContainerName);
@@ -434,11 +434,6 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchTaskInAllocSubcontainer) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kFullContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetNonExistentTopLevelContainer) {
@@ -492,12 +487,15 @@ TEST_F(CpuResourceHandlerFactoryTest, GetNonExistentContainerThreeLayers) {
 TEST_F(CpuResourceHandlerFactoryTest, GetSuccessNoCpuset) {
   SetUpFactory(false);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
 
   StatusOr<ResourceHandler *> statusor = CallGetResourceHandler(kContainerName);
   ASSERT_TRUE(statusor.ok());
@@ -505,22 +503,24 @@ TEST_F(CpuResourceHandlerFactoryTest, GetSuccessNoCpuset) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetBatchContainer) {
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kContainerName))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kBatchHierarchyPath))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kBatchHierarchyPath))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kBatchHierarchyPath))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor = CallGetResourceHandler(kContainerName);
   ASSERT_TRUE(statusor.ok());
@@ -528,10 +528,6 @@ TEST_F(CpuResourceHandlerFactoryTest, GetBatchContainer) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetUnknownContainer) {
@@ -548,34 +544,32 @@ TEST_F(CpuResourceHandlerFactoryTest, GetCpuControllerFails) {
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
-  EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
 
   EXPECT_EQ(Status::CANCELLED, CallGetResourceHandler(kContainerName).status());
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetCpuAcctControllerFails) {
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
 
   EXPECT_EQ(Status::CANCELLED, CallGetResourceHandler(kContainerName).status());
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, GetCpusetControllerFails) {
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists(kContainerName))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -589,14 +583,19 @@ TEST_F(CpuResourceHandlerFactoryTest,
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallCreateResourceHandler(kContainerName, spec);
@@ -605,10 +604,6 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -618,12 +613,15 @@ TEST_F(CpuResourceHandlerFactoryTest,
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallCreateResourceHandler(kContainerName, spec);
@@ -632,25 +630,26 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
        CreateResourceHandlerSucceedsTopLevelDefaultTask) {
   ContainerSpec spec;
 
-  // The default latency of NORMAL corresponds to a batch task.
-  const string kBatchContainerName = kBatchHierarchyPath;
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
+  // The default latency of PRIORITY corresponds to a top-level task.
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
-  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
+      .WillRepeatedly(Return(mock_cpu_controller));
+  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallCreateResourceHandler(kContainerName, spec);
@@ -659,11 +658,6 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -671,15 +665,20 @@ TEST_F(CpuResourceHandlerFactoryTest,
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(BEST_EFFORT);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   const string kBatchContainerName = kBatchHierarchyPath;
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallCreateResourceHandler(kContainerName, spec);
@@ -688,11 +687,6 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -700,16 +694,21 @@ TEST_F(CpuResourceHandlerFactoryTest,
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   const char kContainerFullName[] = "/alloc/test";
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/alloc"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerFullName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerFullName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   // cpuset is flat.
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallCreateResourceHandler(kContainerFullName, spec);
@@ -718,10 +717,6 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerFullName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -731,13 +726,16 @@ TEST_F(CpuResourceHandlerFactoryTest,
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   const char kContainerFullName[] = "/alloc/test";
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/alloc"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerFullName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerFullName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallCreateResourceHandler(kContainerFullName, spec);
@@ -746,9 +744,6 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerFullName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -756,6 +751,11 @@ TEST_F(CpuResourceHandlerFactoryTest,
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(BEST_EFFORT);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   const char kContainerFullName[] = "/alloc/test";
   const char kExpectedName[] = "/batch/alloc/test";
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/alloc"))
@@ -763,12 +763,12 @@ TEST_F(CpuResourceHandlerFactoryTest,
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/batch/alloc"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kExpectedName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kExpectedName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   // cpuset is flat.
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
       CallCreateResourceHandler(kContainerFullName, spec);
@@ -777,10 +777,6 @@ TEST_F(CpuResourceHandlerFactoryTest,
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerFullName, handler->container_name());
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 
@@ -792,10 +788,6 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateCpuControllerFails) {
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
-  EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
 
   EXPECT_EQ(Status::CANCELLED,
             CallCreateResourceHandler(kContainerName, spec).status());
@@ -805,14 +797,13 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateCpuAcctControllerFails) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
 
   EXPECT_EQ(Status::CANCELLED,
             CallCreateResourceHandler(kContainerName, spec).status());
@@ -822,12 +813,15 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateCpusetControllerFails) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -838,17 +832,22 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateCpusetControllerFails) {
 TEST_F(CpuResourceHandlerFactoryTest, CreateResourceHandlerFailsMissingParent) {
   ContainerSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   const char kContainerFullName[] = "/alloc/test";
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/alloc"))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/batch/alloc"))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerFullName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerFullName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerFullName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   StatusOr<ResourceHandler *> statusor =
             CallCreateResourceHandler(kContainerFullName, spec);
@@ -859,21 +858,25 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateResourceHandlerFailsMissingParent) {
 TEST_F(CpuResourceHandlerFactoryTest, CreateSucceeds) {
   ContainerSpec spec;
 
-  // The default latency of NORMAL corresponds to a batch task.
-  const string kBatchContainerName = kBatchHierarchyPath;
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
+  // The default latency of PRIORITY corresponds to a top-level task.
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
-  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
+      .WillRepeatedly(Return(mock_cpu_controller));
+  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
-  // Latency should be set to NORMAL (kernel default).
-  EXPECT_CALL(*mock_cpu_controller_.get(), SetLatency(NORMAL))
+  // Latency should be set to PRIORITY.
+  EXPECT_CALL(*mock_cpu_controller, SetLatency(PRIORITY))
       .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_.get(), SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillRepeatedly(Return(Status::OK));
 
   StatusOr<ResourceHandler *> statusor = CallCreate(kContainerName, spec);
@@ -882,29 +885,16 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateSucceeds) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, CreateCpuCreateFails) {
   ContainerSpec spec;
 
-  // The default latency of NORMAL corresponds to a batch task.
-  const string kBatchContainerName = kBatchHierarchyPath;
+  // The default latency of PRIORITY corresponds to a top-level taks.
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kBatchContainerName))
+  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
-  EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
-
-  EXPECT_CALL(*mock_cpuacct_controller_.get(), SetupHistograms())
-      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED, CallCreate(kContainerName, spec).status());
 }
@@ -913,21 +903,26 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateSetLatencyNotFound) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_.get(), SetLatency(PRIORITY))
+  EXPECT_CALL(*mock_cpu_controller, SetLatency(PRIORITY))
       .WillRepeatedly(Return(Status(NOT_FOUND, "")));
-  EXPECT_CALL(*mock_cpuacct_controller_.get(), SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillRepeatedly(Return(Status::OK));
 
-  EXPECT_CALL(*mock_cpu_controller_, GetLatency())
+  EXPECT_CALL(*mock_cpu_controller, GetLatency())
       .WillRepeatedly(Return(PRIORITY));
 
   // We ignore SetLatency() when it is NOT_FOUND.
@@ -937,31 +932,30 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateSetLatencyNotFound) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, CreateSetupHistogramsNotFound) {
   ContainerSpec spec;
 
-  // The default latency of NORMAL corresponds to a batch task.
-  const string kBatchContainerName = kBatchHierarchyPath;
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
+  // The default latency of PRIORITY corresponds to a top-level task.
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
-  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
-  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kBatchContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+  EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
+      .WillRepeatedly(Return(mock_cpu_controller));
+  EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
-  // Latency should be set to NORMAL (kernel default).
-  EXPECT_CALL(*mock_cpu_controller_.get(), SetLatency(NORMAL))
+  // Latency should be set to PRIORITY.
+  EXPECT_CALL(*mock_cpu_controller, SetLatency(PRIORITY))
       .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_.get(), SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillRepeatedly(Return(Status(NOT_FOUND, "")));
 
   // We ignore SetupHistograms() not being supported.
@@ -971,11 +965,6 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateSetupHistogramsNotFound) {
   unique_ptr<ResourceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_CPU, handler->type());
   EXPECT_EQ(kContainerName, handler->container_name());
-
-  // Controllers ownership transferred to resource handler.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, CreateSetLatencyFails) {
@@ -983,55 +972,55 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateSetLatencyFails) {
   CpuSpec *cpu_spec = spec.mutable_cpu();
   cpu_spec->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
   // Fail to set up latency.
-  EXPECT_CALL(*mock_cpu_controller_.get(), SetLatency(PRIORITY))
+  EXPECT_CALL(*mock_cpu_controller, SetLatency(PRIORITY))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpuacct_controller_.get(), SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED, CallCreate(kContainerName, spec).status());
-
-  // Controllers get cleaned up at resource handler creation failure.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, CreateSettingHistogramsFails) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PRIORITY);
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Exists("/"))
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cpu_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpu_controller_.get()));
+      .WillRepeatedly(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuacct_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Create(kContainerName))
-      .WillRepeatedly(Return(mock_cpuset_controller_.get()));
+      .WillRepeatedly(Return(mock_cpuset_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_.get(), SetLatency(PRIORITY))
+  EXPECT_CALL(*mock_cpu_controller, SetLatency(PRIORITY))
       .WillRepeatedly(Return(Status::OK));
 
   // Fail to set up histograms.
-  EXPECT_CALL(*mock_cpuacct_controller_.get(), SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, CallCreate(kContainerName, spec).status());
-
-  // Controllers get cleaned up at resource handler creation failure.
-  mock_cpu_controller_.release();
-  mock_cpuset_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 // Tests for InitMachine().
@@ -1039,48 +1028,46 @@ TEST_F(CpuResourceHandlerFactoryTest, CreateSettingHistogramsFails) {
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineSuccess) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
-      .WillOnce(Return(mock_cpuset_controller_.get()));
+      .WillOnce(Return(mock_cpuset_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
+  EXPECT_CALL(*mock_cpuset_controller, EnableCloneChildren())
       .WillOnce(Return(Status::OK));
 
   EXPECT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
-  mock_cpuset_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineSuccessNoCpuset) {
   SetUpFactory(false);
-
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status::OK));
 
   EXPECT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineCpuCreateFails) {
@@ -1095,96 +1082,91 @@ TEST_F(CpuResourceHandlerFactoryTest, InitMachineCpuCreateFails) {
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineCpuAcctCreateFails) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
       .WillOnce(Return(Status::CANCELLED));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillRepeatedly(Return(Status::OK));
 
   EXPECT_NOT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineCpusetGetFails) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
       .WillOnce(Return(Status::CANCELLED));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED, CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineAlreadyInitializedSuccess) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
       .WillRepeatedly(Return(Status(::util::error::ALREADY_EXISTS, "")));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
       .WillRepeatedly(Return(Status(::util::error::ALREADY_EXISTS, "")));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
-      .WillOnce(Return(mock_cpuset_controller_.get()));
+      .WillOnce(Return(mock_cpuset_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
+  EXPECT_CALL(*mock_cpuset_controller, EnableCloneChildren())
       .WillOnce(Return(Status::OK));
 
   EXPECT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
-  mock_cpuset_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
        InitMachineAlreadyInitializedSuccessNoCpuset) {
   SetUpFactory(false);
-
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
       .WillRepeatedly(Return(Status(::util::error::ALREADY_EXISTS, "")));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
       .WillRepeatedly(Return(Status(::util::error::ALREADY_EXISTS, "")));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status::OK));
 
   EXPECT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest,
@@ -1203,113 +1185,109 @@ TEST_F(CpuResourceHandlerFactoryTest,
        InitMachineAlreadyInitializedCpuAcctGetFails) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
       .WillRepeatedly(Return(Status(::util::error::ALREADY_EXISTS, "")));
   EXPECT_CALL(*mock_cpu_controller_factory_, Get("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
       .WillRepeatedly(Return(Status(::util::error::ALREADY_EXISTS, "")));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Get("/batch"))
       .WillRepeatedly(Return(Status::CANCELLED));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillRepeatedly(Return(Status::OK));
 
   EXPECT_NOT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineSetMilliCpusFails) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillRepeatedly(Return(Status::OK));
 
   EXPECT_NOT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineSetupHistogramsFails) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status::CANCELLED));
 
   EXPECT_NOT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineSetupHistogramsNotFound) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
-      .WillOnce(Return(mock_cpuset_controller_.get()));
+      .WillOnce(Return(mock_cpuset_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status(NOT_FOUND, "")));
-  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
+  EXPECT_CALL(*mock_cpuset_controller, EnableCloneChildren())
       .WillOnce(Return(Status::OK));
 
   // SetupHistogram() is allowed to be NOT_FOUND.
   EXPECT_OK(CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
-  mock_cpuset_controller_.release();
 }
 
 TEST_F(CpuResourceHandlerFactoryTest, InitMachineEnableCloneChildrenFails) {
   InitSpec spec;
 
+  StrictMockCpuController *mock_cpu_controller = new StrictMockCpuController();
+  StrictMockCpusetController *mock_cpuset_controller =
+      new StrictMockCpusetController();
+  StrictMockCpuAcctController *mock_cpuacct_controller =
+      new StrictMockCpuAcctController();
   EXPECT_CALL(*mock_cpu_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpu_controller_.get()));
+      .WillOnce(Return(mock_cpu_controller));
   EXPECT_CALL(*mock_cpuacct_controller_factory_, Create("/batch"))
-      .WillOnce(Return(mock_cpuacct_controller_.get()));
+      .WillOnce(Return(mock_cpuacct_controller));
   EXPECT_CALL(*mock_cpuset_controller_factory_, Get("/"))
-      .WillOnce(Return(mock_cpuset_controller_.get()));
+      .WillOnce(Return(mock_cpuset_controller));
 
-  EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(0))
+  EXPECT_CALL(*mock_cpu_controller, SetMilliCpus(0))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuacct_controller_, SetupHistograms())
+  EXPECT_CALL(*mock_cpuacct_controller, SetupHistograms())
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_cpuset_controller_, EnableCloneChildren())
+  EXPECT_CALL(*mock_cpuset_controller, EnableCloneChildren())
       .WillOnce(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, CallInitMachine(spec));
-
-  // Controllers are owned by the caller of Create().
-  mock_cpu_controller_.release();
-  mock_cpuacct_controller_.release();
-  mock_cpuset_controller_.release();
 }
 
 class CpuResourceHandlerTest : public ::testing::Test {
@@ -1502,7 +1480,7 @@ TEST_F(CpuResourceHandlerTest, UpdateDiffSwitchingLatencyFails) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PREMIER);
   EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-      .WillOnce(Return(NORMAL));
+      .WillOnce(Return(PRIORITY));
 
   // Trying to update latency to PREMIER should fail.
   EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
@@ -1513,7 +1491,7 @@ TEST_F(CpuResourceHandlerTest, UpdateDiffNoLatencySpecPasses) {
   // Add empty cpu spec.
   spec.mutable_cpu();
   EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-      .WillOnce(Return(NORMAL));
+      .WillOnce(Return(PRIORITY));
 
   EXPECT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
 }
@@ -1523,7 +1501,7 @@ TEST_F(CpuResourceHandlerTest, UpdateThroughputSucceeds) {
   spec.mutable_cpu()->set_limit(42);
   for (auto policy : kUpdatePolicy) {
     EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-        .WillOnce(Return(NORMAL));
+        .WillOnce(Return(PRIORITY));
     EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(42))
         .WillOnce(Return(Status::OK));
 
@@ -1537,7 +1515,7 @@ TEST_F(CpuResourceHandlerTest, UpdateThroughputFails) {
 
   for (auto policy : kUpdatePolicy) {
     EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-        .WillOnce(Return(NORMAL));
+        .WillOnce(Return(PRIORITY));
     EXPECT_CALL(*mock_cpu_controller_, SetMilliCpus(42))
         .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -1551,7 +1529,7 @@ TEST_F(CpuResourceHandlerTest, UpdateMaxThroughputSucceeds) {
 
   for (auto policy : kUpdatePolicy) {
     EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-        .WillOnce(Return(NORMAL));
+        .WillOnce(Return(PRIORITY));
     EXPECT_CALL(*mock_cpu_controller_, SetMaxMilliCpus(42))
         .WillOnce(Return(Status::OK));
 
@@ -1565,7 +1543,7 @@ TEST_F(CpuResourceHandlerTest, UpdateMaxThroughputFails) {
 
   for (auto policy : kUpdatePolicy) {
     EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-        .WillOnce(Return(NORMAL));
+        .WillOnce(Return(PRIORITY));
     EXPECT_CALL(*mock_cpu_controller_, SetMaxMilliCpus(42))
         .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -1580,7 +1558,7 @@ TEST_F(CpuResourceHandlerTest, UpdateMaskSucceeds) {
 
   for (auto policy : kUpdatePolicy) {
     EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-        .WillOnce(Return(NORMAL));
+        .WillOnce(Return(PRIORITY));
     // TODO(jnagal): Check actual value passed down with CpuMask
     // comparator.
     EXPECT_CALL(*mock_cpuset_controller_, SetCpuMask(testing::_))
@@ -1599,7 +1577,7 @@ TEST_F(CpuResourceHandlerTest, UpdateMaskNoCpuset) {
 
   for (auto policy : kUpdatePolicy) {
     EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-        .WillOnce(Return(NORMAL));
+        .WillOnce(Return(PRIORITY));
 
     EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                       handler_->Update(spec, policy));
@@ -1613,7 +1591,7 @@ TEST_F(CpuResourceHandlerTest, UpdateMaskFails) {
 
   for (auto policy : kUpdatePolicy) {
     EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-        .WillOnce(Return(NORMAL));
+        .WillOnce(Return(PRIORITY));
     EXPECT_CALL(*mock_cpuset_controller_, SetCpuMask(testing::_))
         .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -1632,7 +1610,7 @@ TEST_F(CpuResourceHandlerTest, UpdateReplaceEmptyWithDefaultLatency) {
   spec.mutable_cpu();
 
   EXPECT_CALL(*mock_cpu_controller_, GetLatency())
-      .WillOnce(Return(NORMAL));
+      .WillOnce(Return(PRIORITY));
 
   // Staying with default Latency is ok.
   EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
@@ -1654,7 +1632,7 @@ TEST_F(CpuResourceHandlerTest, UpdateReplaceEmptyWithNonDefaultLatency) {
 TEST_F(CpuResourceHandlerTest, UpdateReplaceSwitchingLatencyFails) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_scheduling_latency(PREMIER);
-  EXPECT_CALL(*mock_cpu_controller_, GetLatency()).WillOnce(Return(NORMAL));
+  EXPECT_CALL(*mock_cpu_controller_, GetLatency()).WillOnce(Return(PRIORITY));
 
   // Trying to update latency to PREMIER should fail.
   EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));

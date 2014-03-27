@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -46,10 +46,12 @@ class MockTasksHandler : public TasksHandler {
   MOCK_METHOD1(TrackTasks, ::util::Status(const ::std::vector<pid_t> &tids));
   MOCK_METHOD2(Delegate, ::util::Status(::util::UnixUid uid,
                                         ::util::UnixGid gid));
-  MOCK_CONST_METHOD0(ListSubcontainers,
-                     ::util::StatusOr< ::std::vector<string>>());
-  MOCK_CONST_METHOD0(ListProcesses, ::util::StatusOr< ::std::vector<pid_t>>());
-  MOCK_CONST_METHOD0(ListThreads, ::util::StatusOr< ::std::vector<pid_t>>());
+  MOCK_CONST_METHOD1(ListSubcontainers,
+                     ::util::StatusOr< ::std::vector<string>>(ListType type));
+  MOCK_CONST_METHOD1(ListProcesses,
+                     ::util::StatusOr<::std::vector<pid_t>>(ListType type));
+  MOCK_CONST_METHOD1(ListThreads,
+                     ::util::StatusOr<::std::vector<pid_t>>(ListType type));
 };
 
 typedef ::testing::NiceMock<MockTasksHandler> NiceMockTasksHandler;

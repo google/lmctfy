@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,14 +27,11 @@ using ::std::string;
 #include "base/macros.h"
 #include "base/thread_annotations.h"
 #include "system_api/kernel_api.h"
+#include "lmctfy/namespace_handler.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.h"
 #include "strings/stringpiece.h"
-#include <memory>
-using ::std::shared_ptr;
 #include "util/task/statusor.h"
-
-class SubProcess;
 
 namespace containers {
 namespace lmctfy {
@@ -45,6 +42,8 @@ class ContainerInfo;
 class ContainerSpec;
 class ContainerStats;
 class EventFdNotifications;
+class FreezerController;
+class FreezerControllerFactory;
 class InitSpec;
 class LockHandler;
 class LockHandlerFactory;
@@ -53,8 +52,6 @@ class TasksHandlerFactory;
 
 typedef ::system_api::KernelAPI KernelApi;
 typedef ::std::map<ResourceType, ResourceHandlerFactory *> ResourceFactoryMap;
-typedef ResultCallback<SubProcess *> SubProcessFactory;
-
 
 // Implementation of util::containers::lmctfy::ContainerApi. All methods assume
 // that the machine has already initialized (with the exception of
@@ -75,8 +72,12 @@ class ContainerApiImpl : public ContainerApi {
       TasksHandlerFactory *tasks_handler_factory,
       const CgroupFactory *cgroup_factory,
       const ::std::vector<ResourceHandlerFactory *> &resource_factories,
-      const KernelApi *kernel, ActiveNotifications *active_notifications,
-      EventFdNotifications *eventfd_notifications);
+      const KernelApi *kernel,
+      ActiveNotifications *active_notifications,
+      NamespaceHandlerFactory *namespace_handler_factory,
+      EventFdNotifications *eventfd_notifications,
+      ::std::unique_ptr<FreezerControllerFactory> freezer_controller_factory);
+
   ~ContainerApiImpl() override;
 
   // These methods are documented in //include/lmctfy.h
@@ -119,17 +120,18 @@ class ContainerApiImpl : public ContainerApi {
   // Wrapper for all calls to the kernel.
   const KernelApi *kernel_;
 
-  // Factory for creating SubProcess instances.
-  ::std::unique_ptr<SubProcessFactory> subprocess_factory_;
-
   // Factory for cgroup paths. Auto-detects where the cgroups are located.
   ::std::unique_ptr<const CgroupFactory> cgroup_factory_;
 
   // Notifications currently active and in use.
   ::std::unique_ptr<ActiveNotifications> active_notifications_;
 
+  ::std::unique_ptr<NamespaceHandlerFactory> namespace_handler_factory_;
+
   // Eventfd-based notifications.
   ::std::unique_ptr<EventFdNotifications> eventfd_notifications_;
+
+  ::std::unique_ptr<FreezerControllerFactory> freezer_controller_factory_;
 
   friend class ContainerApiImplTest;
 
@@ -140,15 +142,16 @@ class ContainerApiImpl : public ContainerApi {
 class ContainerImpl : public Container {
  public:
   // Takes ownership of tasks_handler. Does not take ownership of the resource
-  // factories, lmctfy, kernel API, subprocess_factory, or
-  // active_notifications.
+  // factories, lmctfy, kernel API or active_notifications.
   ContainerImpl(const string &name,
                 TasksHandler *tasks_handler,
                 const ResourceFactoryMap &resource_factories,
                 const ContainerApiImpl *lmctfy,
                 const KernelApi *kernel,
-                SubProcessFactory *subprocess_factory,
-                ActiveNotifications *active_notifications);
+                NamespaceHandlerFactory *namespace_handler_factory_,
+                ActiveNotifications *active_notifications,
+                ::std::unique_ptr<FreezerController> freezer_controller);
+
   ~ContainerImpl() override;
 
   ::util::Status Update(const ContainerSpec &spec,
@@ -179,6 +182,7 @@ class ContainerImpl : public Container {
   ::util::Status UnregisterNotification(NotificationId notification_id)
       override;
   ::util::Status KillAll() override;
+  ::util::StatusOr<pid_t> GetInitPid() const override;
 
   // Listable types for any given container.
   enum ListType {
@@ -187,6 +191,9 @@ class ContainerImpl : public Container {
   };
 
  private:
+  ::util::StatusOr<NamespaceHandler *> GetNamespaceHandler(
+      const string &name) const;
+
   // Get the ResourceHandlers for the container. If the handler is not found for
   // this container, it tries to get one of the parent container's. i.e.: If
   // /sys/subcont is not found, it uses /sys (if that exists) or / (if /sys does
@@ -198,18 +205,18 @@ class ContainerImpl : public Container {
   //       owns all pointers.
   ::util::StatusOr< ::std::vector<ResourceHandler *>>
   GetResourceHandlers() const;
+  ::util::StatusOr< ::std::vector<GeneralResourceHandler *>>
+  GetGeneralResourceHandlers() const;
 
-  // Lists processes or threads as specified in the list type. Can list
-  // recursively if specified.
+  // Lists processes or threads as specified in the list type. Lists
+  // non-recursively by default.
   //
   // Arguments:
-  //   policy: The listing policy, whether to list self or recursive.
   //   type: The type of resource to list, either processes or threads.
   // Return:
   //   StatusOr<vector<pid_t>>: The status of the action. Iff OK, vector is
   //       populated with the PIDs/TIDs that were requested.
   ::util::StatusOr< ::std::vector<pid_t>> ListProcessesOrThreads(
-      ListPolicy policy,
       ListType type) const;
 
   // Send a SIGKILL signal to the PIDs/TIDs in the container until the container
@@ -222,17 +229,13 @@ class ContainerImpl : public Container {
   //   Status: OK iff all PIDs/TIDs are now dead.
   ::util::Status KillTasks(ListType type) const;
 
-  // Enters the current TID into this containers and starts the subprocess sp.
-  // Any errors are returned through the status outparam.
-  void EnterAndRun(SubProcess *sp, ::util::Status *status);
-
-  // Same as ListSubcontainers() but the output is not guaranteed to be sorted.
-  ::util::StatusOr< ::std::vector<Container *>> ListSubcontainersUnsorted(
-      ListPolicy policy) const;
+  // Runs the command using namespace handler.
+  ::util::StatusOr<pid_t> RunInNamespace(const ::std::vector<string> *command,
+                                         const RunSpec *spec) const;
 
   // Handles a notification event by calling the user's callback with this
   // container and the specified status as arguments.
-  void HandleNotification(shared_ptr<Container::EventCallback> callback,
+  void HandleNotification(std::shared_ptr<Container::EventCallback> callback,
                           ::util::Status status);
 
   // Returns OK iff this container still exists. This is necessary since a
@@ -251,11 +254,12 @@ class ContainerImpl : public Container {
   // Wrapper for all calls to the kernel.
   const KernelApi *kernel_;
 
-  // Factory for creating SubProcess instances.
-  SubProcessFactory *subprocess_factory_;
+  NamespaceHandlerFactory *namespace_handler_factory_;
 
   // Notifications currently active and in use.
   ActiveNotifications *active_notifications_;
+
+  ::std::unique_ptr<FreezerController> freezer_controller_;
 
   friend class ContainerImplTest;
 

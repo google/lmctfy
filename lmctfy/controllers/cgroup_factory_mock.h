@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -43,6 +43,9 @@ class MockCgroupFactory : public CgroupFactory {
   MOCK_CONST_METHOD1(OwnsCgroup, bool(CgroupHierarchy type));
   MOCK_METHOD1(Mount, ::util::Status(const CgroupMount &cgroup));
   MOCK_CONST_METHOD1(IsMounted, bool(CgroupHierarchy type));
+  MOCK_CONST_METHOD2(DetectCgroupPath,
+                     ::util::StatusOr<string>(pid_t tid,
+                                              CgroupHierarchy hierarchy));
   MOCK_CONST_METHOD1(GetHierarchyName, string(CgroupHierarchy hierarchy));
 
  private:

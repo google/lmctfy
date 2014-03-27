@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -51,16 +51,15 @@ Status DestroyContainer(const vector<string> &argv, const ContainerApi *lmctfy,
   const string container_name = argv[1];
 
   // Ensure the container exists.
-  unique_ptr<Container> container;
-  RETURN_IF_ERROR(lmctfy->Get(container_name), &container);
+  unique_ptr<Container> container(
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   // If not force, ensure no children and no PIDs/TIDs since Destroy() is
   // recursive by default.
   if (!FLAGS_lmctfy_force) {
     // Ensure no subcontainers.
-    vector<Container *> subcontainers;
-    RETURN_IF_ERROR(container->ListSubcontainers(Container::LIST_SELF),
-                    &subcontainers);
+    vector<Container *> subcontainers =
+        RETURN_IF_ERROR(container->ListSubcontainers(Container::LIST_SELF));
     if (!subcontainers.empty()) {
       return Status(
           ::util::error::FAILED_PRECONDITION,
@@ -69,8 +68,8 @@ Status DestroyContainer(const vector<string> &argv, const ContainerApi *lmctfy,
     }
 
     // Ensure no PIDs.
-    vector<pid_t> pids;
-    RETURN_IF_ERROR(container->ListProcesses(Container::LIST_SELF), &pids);
+    vector<pid_t> pids =
+        RETURN_IF_ERROR(container->ListProcesses(Container::LIST_SELF));
     if (!pids.empty()) {
       return Status(
           ::util::error::FAILED_PRECONDITION,
@@ -80,7 +79,7 @@ Status DestroyContainer(const vector<string> &argv, const ContainerApi *lmctfy,
 
     // Ensure no TIDs. At this point since there are no PIDs these are tourist
     // threads.
-    RETURN_IF_ERROR(container->ListThreads(Container::LIST_SELF), &pids);
+    pids = RETURN_IF_ERROR(container->ListThreads(Container::LIST_SELF));
     if (!pids.empty()) {
       return Status(
           ::util::error::FAILED_PRECONDITION,

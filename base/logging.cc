@@ -157,3 +157,55 @@ LogSilencer::~LogSilencer() {
   MutexLock lock(internal::log_silencer_count_mutex_);
   --internal::log_silencer_count_;
 };
+
+static int posix_strerror_r(int err, char *buf, size_t len) {
+  // Sanity check input parameters
+  if (buf == NULL || len <= 0) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  // Reset buf and errno, and try calling whatever version of strerror_r()
+  // is implemented by glibc
+  buf[0] = '\000';
+  int old_errno = errno;
+  errno = 0;
+  char* rc = reinterpret_cast<char*>(strerror_r(err, buf, len));
+
+  // Both versions set errno on failure
+  if (errno) {
+    // Should already be there, but better safe than sorry
+    buf[0] = '\000';
+    return -1;
+  }
+  errno = old_errno;
+
+  // If the function succeeded, we can use its exit code to determine the
+  // semantics implemented by glibc
+  if (!rc) {
+    // POSIX is vague about whether the string will be terminated, although
+    // is indirectly implies that typically ERANGE will be returned, instead
+    // of truncating the string. This is different from the GNU implementation.
+    // We play it safe by always terminating the string explicitly.
+    buf[len - 1] = '\000';
+    return 0;
+  } else {
+    // GNU semantics detected
+    if (rc == buf) {
+      return 0;
+    } else {
+      buf[0] = '\000';
+      strncat(buf, rc, len - 1);
+      return 0;
+    }
+  }
+}
+
+string StrError(int err) {
+  char buf[100];
+  int rc = posix_strerror_r(err, buf, sizeof(buf));
+  if ((rc < 0) || (buf[0] == '\000')) {
+    snprintf(buf, sizeof(buf), "Error number %d", err);
+  }
+  return buf;
+}

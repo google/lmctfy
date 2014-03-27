@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -63,19 +63,19 @@ Status ListContainers(const vector<string> &argv, const ContainerApi *lmctfy,
   }
 
   // Get the container name.
-  string container_name;
-  RETURN_IF_ERROR(ContainerNameOrSelf(argv, lmctfy), &container_name);
+  string container_name =
+      RETURN_IF_ERROR(ContainerNameOrSelf(argv, lmctfy));
 
   // Ensure the container exists.
-  unique_ptr<Container> container;
-  RETURN_IF_ERROR(lmctfy->Get(container_name), &container);
+  unique_ptr<Container> container(
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   // Get subcontainers.
-  vector<Container *> subcontainers;
   Container::ListPolicy list_policy =
       FLAGS_lmctfy_recursive ? Container::LIST_RECURSIVE
                                : Container::LIST_SELF;
-  RETURN_IF_ERROR(container->ListSubcontainers(list_policy), &subcontainers);
+  vector<Container *> subcontainers =
+      RETURN_IF_ERROR(container->ListSubcontainers(list_policy));
   ElementDeleter d(&subcontainers);
 
   // Output subcontainer names.

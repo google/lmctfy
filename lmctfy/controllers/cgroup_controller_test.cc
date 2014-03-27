@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -151,12 +151,17 @@ TEST_F(CgroupControllerFactoryTest, GetCgroupFactoryGetFails) {
   }
 }
 
-TEST_F(CgroupControllerFactoryTest, CreateSuccess) {
+TEST_F(CgroupControllerFactoryTest, CreateSuccess_With_Ownership) {
   for (bool owns_cgroup : kBools) {
     SetupFactory(owns_cgroup);
 
-    EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
-        .WillRepeatedly(Return(string(kCgroupPath)));
+    if (owns_cgroup) {
+      EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
+          .WillOnce(Return(string(kCgroupPath)));
+    } else {
+      EXPECT_CALL(*mock_cgroup_factory_, Get(kType, kContainerName))
+          .WillOnce(Return(string(kCgroupPath)));
+    }
 
     StatusOr<TestMemoryController *> statusor =
         factory_->Create(kContainerName);
@@ -172,9 +177,13 @@ TEST_F(CgroupControllerFactoryTest, CreateCgroupFactoryCreateFails) {
   for (bool owns_cgroup : kBools) {
     SetupFactory(owns_cgroup);
 
-    EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
-        .WillRepeatedly(Return(Status::CANCELLED));
-
+    if (owns_cgroup) {
+      EXPECT_CALL(*mock_cgroup_factory_, Create(kType, kContainerName))
+          .WillOnce(Return(Status::CANCELLED));
+    } else {
+      EXPECT_CALL(*mock_cgroup_factory_, Get(kType, kContainerName))
+          .WillOnce(Return(Status::CANCELLED));
+    }
     EXPECT_EQ(Status::CANCELLED, factory_->Create(kContainerName).status());
   }
 }
@@ -206,99 +215,21 @@ TEST_F(CgroupControllerFactoryTest, ExistsDoesNotExist) {
 TEST_F(CgroupControllerFactoryTest, DetectCgroupPathSuccess) {
   SetupFactory(false);
 
-  mock_file_lines_.ExpectFileLines(
-      "/proc/self/cgroup",
-      {"7:net:/sys\n", "6:memory:/sys\n", "5:job:/sys/subcont\n"});
-
-  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
-      .WillRepeatedly(Return(string("job")));
+  EXPECT_CALL(*mock_cgroup_factory_, DetectCgroupPath(0, kType))
+      .WillRepeatedly(Return(string(kContainerName)));
 
   StatusOr<string> statusor = factory_->DetectCgroupPath(0);
   ASSERT_OK(statusor);
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+  EXPECT_EQ(kContainerName, statusor.ValueOrDie());
 }
 
-TEST_F(CgroupControllerFactoryTest, DetectCgroupPathProcCgroupIsEmpty) {
+TEST_F(CgroupControllerFactoryTest, DetectCgroupPathFails) {
   SetupFactory(false);
 
-  mock_file_lines_.ExpectFileLines("/proc/self/cgroup", {});
+  EXPECT_CALL(*mock_cgroup_factory_, DetectCgroupPath(0, kType))
+      .WillRepeatedly(Return(Status::CANCELLED));
 
-  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
-      .WillRepeatedly(Return(string("job")));
-
-  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, factory_->DetectCgroupPath(0));
-}
-
-TEST_F(CgroupControllerFactoryTest, DetectCgroupPathWithTidSuccess) {
-  SetupFactory(false);
-
-  mock_file_lines_.ExpectFileLines(
-      "/proc/12/cgroup",
-      {"7:net:/sys\n", "6:memory:/sys\n", "5:job:/sys/subcont\n"});
-
-  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->DetectCgroupPath(12);
-  ASSERT_OK(statusor);
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
-}
-
-TEST_F(CgroupControllerFactoryTest, DetectCgroupPathLineHasBadFormat) {
-  SetupFactory(false);
-
-  mock_file_lines_.ExpectFileLines(
-      "/proc/self/cgroup",
-      {"7:net:/sys\n", "6memory/sys\n", "5:job:/sys/subcont\n"});
-
-  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->DetectCgroupPath(0);
-  ASSERT_OK(statusor);
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
-}
-
-TEST_F(CgroupControllerFactoryTest,
-       DetectCgroupPathLineHasMoreElementsThanExpected) {
-  SetupFactory(false);
-
-  mock_file_lines_.ExpectFileLines(
-      "/proc/self/cgroup",
-      {"7:net:/sys:new\n", "6:memory:/sys:new\n", "5:job:/sys/subcont:new\n"});
-
-  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
-      .WillRepeatedly(Return(string("job")));
-
-  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, factory_->DetectCgroupPath(0));
-}
-
-TEST_F(CgroupControllerFactoryTest, DetectCgroupPathComountedSubsystems) {
-  SetupFactory(false);
-
-  mock_file_lines_.ExpectFileLines(
-      "/proc/self/cgroup",
-      {"7:net:/sys\n", "6:memory:/sys\n", "4:cpuacct,job,cpu:/sys/subcont\n"});
-
-  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
-      .WillRepeatedly(Return(string("job")));
-
-  StatusOr<string> statusor = factory_->DetectCgroupPath(0);
-  ASSERT_OK(statusor);
-  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
-}
-
-TEST_F(CgroupControllerFactoryTest, DetectCgroupPathSubsystemNotFound) {
-  SetupFactory(false);
-
-  mock_file_lines_.ExpectFileLines(
-      "/proc/self/cgroup",
-      {"7:net:/sys\n", "6:memory:/sys\n"});
-
-  EXPECT_CALL(*mock_cgroup_factory_, GetHierarchyName(kType))
-      .WillRepeatedly(Return(string("job")));
-
-  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, factory_->DetectCgroupPath(0));
+  EXPECT_EQ(Status::CANCELLED, factory_->DetectCgroupPath(0).status());
 }
 
 // Tests for HierarchyName().

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -69,6 +69,17 @@ class CgroupFactory {
   // This function should only be called on hierarchies that IsMounted() return
   // true.
   virtual bool OwnsCgroup(CgroupHierarchy type) const;
+
+  // Detect the cgroup path of the specified TID in the specified hierarchy.
+  //
+  // Arguments:
+  //   tid: The TID for which to get the cgroup path.
+  //   hierarchy: The hierarchy for which to get the cgroup path.
+  // Return:
+  //   StatusOr<string>: Status or the operation. Iff OK, the cgroup path is
+  //       populated.
+  virtual ::util::StatusOr<string> DetectCgroupPath(
+      pid_t tid, CgroupHierarchy hierarchy) const;
 
   // Gets the name of the specified hierarchy. An empty string is returned if
   // there is no such hierarchy. If IsMounted() returns true, a non-empty string

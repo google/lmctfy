@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ using ::std::string;
 #include "include/lmctfy.h"
 #include "include/lmctfy.pb.h"
 #include "util/errors.h"
+#include "strings/substitute.h"
 #include "strings/stringpiece.h"
 #include "util/task/codes.pb.h"
 #include "util/task/statusor.h"
@@ -36,6 +37,7 @@ DECLARE_string(lmctfy_config);
 
 using ::std::unique_ptr;
 using ::std::vector;
+using ::strings::Substitute;
 using ::util::Status;
 using ::util::StatusOr;
 
@@ -87,8 +89,13 @@ Status CreateContainer(const vector<string> &argv, const ContainerApi *lmctfy,
   }
 
   // Create the container and delete the handle on success.
-  unique_ptr<Container> container;
-  RETURN_IF_ERROR(lmctfy->Create(container_name, spec), &container);
+  unique_ptr<Container> container(
+      RETURN_IF_ERROR(lmctfy->Create(container_name, spec)));
+
+  if (spec.has_virtual_host()) {
+    const pid_t init_pid = RETURN_IF_ERROR(container->GetInitPid());
+    output->push_back(OutputMap("init_pid", SimpleItoa(init_pid)));
+  }
 
   return Status::OK;
 }

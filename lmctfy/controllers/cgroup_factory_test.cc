@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -378,6 +378,74 @@ TEST_F(CgroupFactoryTest, MountMkDirFails) {
 
   EXPECT_EQ(::util::error::FAILED_PRECONDITION,
             factory_->Mount(cgroup).error_code());
+}
+
+// Tests for DetectCgroupPath().
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathSuccess) {
+  mock_lines_.ExpectFileLines("/proc/self/cgroup",
+                              {"7:net:/sys\n", "6:memory:/sys/subcont\n"});
+
+  StatusOr<string> statusor = factory_->DetectCgroupPath(0, CGROUP_MEMORY);
+  ASSERT_OK(statusor);
+  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+}
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathProcCgroupIsEmpty) {
+  mock_lines_.ExpectFileLines("/proc/self/cgroup", {});
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND,
+                    factory_->DetectCgroupPath(0, CGROUP_MEMORY));
+}
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathCgroupHierarchyIsNotMounted) {
+  mock_lines_.ExpectFileLines("/proc/self/cgroup", {});
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND,
+                    factory_->DetectCgroupPath(0, CGROUP_IO));
+}
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathWithTidSuccess) {
+  mock_lines_.ExpectFileLines("/proc/12/cgroup",
+                              {"7:net:/sys\n", "6:memory:/sys/subcont\n"});
+
+  StatusOr<string> statusor = factory_->DetectCgroupPath(12, CGROUP_MEMORY);
+  ASSERT_OK(statusor);
+  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+}
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathLineHasBadFormat) {
+  mock_lines_.ExpectFileLines("/proc/self/cgroup",
+                              {"7:net:/sys\n", "6memory/sys/subcont\n"});
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND,
+                    factory_->DetectCgroupPath(0, CGROUP_MEMORY));
+}
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathLineHasMoreElementsThanExpected) {
+  mock_lines_.ExpectFileLines(
+      "/proc/self/cgroup", {"7:net:/sys:new\n", "6:memory:/sys/subcont:new\n"});
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND,
+                    factory_->DetectCgroupPath(0, CGROUP_MEMORY));
+}
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathComountedSubsystems) {
+  mock_lines_.ExpectFileLines(
+      "/proc/self/cgroup",
+      {"7:net:/sys\n", "6:memory,cpu,cpuacct:/sys/subcont\n"});
+
+  StatusOr<string> statusor = factory_->DetectCgroupPath(0, CGROUP_MEMORY);
+  ASSERT_OK(statusor);
+  EXPECT_EQ("/sys/subcont", statusor.ValueOrDie());
+}
+
+TEST_F(CgroupFactoryTest, DetectCgroupPathSubsystemNotFound) {
+  mock_lines_.ExpectFileLines("/proc/self/cgroup",
+                              {"7:net:/sys\n", "6:job:/sys\n"});
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND,
+                    factory_->DetectCgroupPath(0, CGROUP_MEMORY));
 }
 
 }  // namespace lmctfy

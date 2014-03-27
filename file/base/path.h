@@ -26,10 +26,14 @@ namespace file {
 // JoinPath("/foo/", "/bar") -> "/foo/bar"
 // JoinPath("/foo", "") -> "/foo"
 
-string JoinPath(StringPiece p1, StringPiece p2, StringPiece p3);
+string JoinPath(StringPiece p1, StringPiece p2, StringPiece p3, StringPiece p4);
+
+inline string JoinPath(StringPiece p1, StringPiece p2, StringPiece p3) {
+  return JoinPath(p1, p2, p3, "");
+}
 
 inline string JoinPath(StringPiece p1, StringPiece p2) {
-  return JoinPath(p1, p2, "");
+  return JoinPath(p1, p2, "", "");
 }
 
 // Returns the part of the path before the final "/".  If there is a single
@@ -40,6 +44,22 @@ StringPiece Dirname(StringPiece path);
 // Return the "basename" for "fname".  I.e. strip out everything up to and
 // including the last "/" in the name.
 StringPiece Basename(StringPiece path);
+
+// Return true if path is absolute.
+bool IsAbsolutePath(StringPiece path);
+
+// If path is non-empty and doesn't already end with a slash, append oneto the
+// end.
+string AddSlash(StringPiece path);
+
+// Collapse duplicate "/"s, resolve ".." and "." path elements, remove trailing
+// "/".
+//
+// NOTE: This respects relative vs. absolute paths, but does not invoke any
+// system calls (getcwd(2)) in order to resolve relative paths wrt actual
+// working directory.  That is, this is purely a string manipulation, completely
+// independent of process state.
+string CleanPath(StringPiece path);
 
 }  // namespace file
 

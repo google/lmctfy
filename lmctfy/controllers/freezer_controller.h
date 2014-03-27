@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -37,13 +37,28 @@ class FreezerControllerFactory
   // Does not own cgroup_factory or kernel.
   FreezerControllerFactory(const CgroupFactory *cgroup_factory,
                            const KernelApi *kernel,
+                           EventFdNotifications *eventfd_notifications,
+                           bool owns_cgroup)
+      : CgroupControllerFactory<FreezerController, CGROUP_FREEZER>(
+            cgroup_factory, kernel, eventfd_notifications, owns_cgroup) {}
+
+  FreezerControllerFactory(const CgroupFactory *cgroup_factory,
+                           const KernelApi *kernel,
                            EventFdNotifications *eventfd_notifications)
       : CgroupControllerFactory<FreezerController, CGROUP_FREEZER>(
             cgroup_factory, kernel, eventfd_notifications) {}
+
   virtual ~FreezerControllerFactory() {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(FreezerControllerFactory);
+};
+
+enum class FreezerState {
+  UNKNOWN = 0,
+  FROZEN = 1,
+  FREEZING = 2,
+  THAWED = 3,
 };
 
 // Controller for the freezer cgroup hierarchy.
@@ -76,7 +91,22 @@ class FreezerController : public CgroupController {
   //       are unfrozen.
   virtual ::util::Status Unfreeze();
 
+  // Return the current state of the cgroup.
+  virtual ::util::StatusOr<FreezerState> State() const;
+
  private:
+  // Checks if any subcontainer exists and hierarchical freezing is supported.
+  //
+  // Returns:
+  //  FAILED_PRECONDITION: If hierarchical freezing is unsupported and
+  //  subcontainers exist.
+  //  Status: If subcontainer information cannot be identified.
+  //  OK: Otherwise.
+  ::util::Status SafeToUpdate() const;
+
+  // Returns true iff hierarchical freezing is supported in the current kernel.
+  bool IsHierarchicalFreezingSupported() const;
+
   DISALLOW_COPY_AND_ASSIGN(FreezerController);
 };
 

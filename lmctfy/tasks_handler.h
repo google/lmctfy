@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -85,17 +85,25 @@ class TasksHandler {
   virtual ::util::Status Delegate(::util::UnixUid uid,
                                   ::util::UnixGid gid) = 0;
 
-  // Lists the children containers present in this resource. This list is not
-  // recursive (i.e.: it does not include the children of the children).
-  // Subcontainer names are in their absolute form.
-  virtual ::util::StatusOr< ::std::vector<string>> ListSubcontainers()
-      const = 0;
+  // Whether to list only the current handler, or recursively for all child
+  // handlers.
+  enum class ListType {
+    SELF,
+    RECURSIVE,
+  };
+
+  // Lists the children containers present in this resource.  Subcontainer names
+  // are in their absolute form.
+  virtual ::util::StatusOr<::std::vector<string>> ListSubcontainers(
+      ListType type) const = 0;
 
   // Lists the processes running inside this handler.
-  virtual ::util::StatusOr< ::std::vector<pid_t>> ListProcesses() const = 0;
+  virtual ::util::StatusOr<::std::vector<pid_t>> ListProcesses(
+      ListType type) const = 0;
 
   // Lists the threads running inside this handler.
-  virtual ::util::StatusOr< ::std::vector<pid_t>> ListThreads() const = 0;
+  virtual ::util::StatusOr<::std::vector<pid_t>> ListThreads(
+      ListType type) const = 0;
 
   // Returns the absolute name of the container this TasksHandler manages.
   const string &container_name() const { return container_name_; }

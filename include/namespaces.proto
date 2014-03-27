@@ -1,0 +1,105 @@
+// Copyright 2014 Google Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Namespace configuration used by nscon to setup Linux namespaces.
+//
+// For internal use of lmctfy only.
+
+syntax = "proto2";
+
+package containers.nscon;
+
+import "include/virtual_host.proto";
+
+// Structure that represents a single entry in uid/gid map file when
+// usernamespace is used. These files describe the mapping from UID/GID used
+// inside the namespace (seen by the job) to corresponding UID/GID in outside
+// (global) namespace. For example, consider the following entry in the
+// /proc/<init_pid>/gid_map file:
+//        8001              9001              3
+//        <id_inside_ns>  <id_outside_ns>   <length>
+// It indicates that the global GIDs 9001, 9002 & 9003 will appear as GIDs 8001,
+// 8002 and 8003 inside the namespace (and vice-versa).
+// Note that all the processes in the namespace-jail will inherit the map set
+// for the <init_pid>. So we only need to set this on <init_pid>.
+message IdMapEntry {
+  optional uint32 id_inside_ns = 1;
+  optional uint32 id_outside_ns = 2;
+  optional uint32 length = 3;
+}
+
+// For USER NS setup
+message UserNsSpec {
+  // Entries in /proc/<init_pid>/uid_map containing map of global UIDs into the
+  // namespace.
+  repeated IdMapEntry uid_map = 1;
+  // Entries in /proc/<init_pid>/gid_map containing map of global GIDs into the
+  // namespace.
+  repeated IdMapEntry gid_map = 2;
+}
+
+// For UTS NS setup
+message UtsNsSpec {
+  // Virtual hostname to be used inside the UTS namespace.
+  optional string vhostname = 1;
+}
+
+message PidNsSpec {
+}
+
+message IpcNsSpec {
+}
+
+message Unmount {
+  // Must be absolute path.
+  optional string path = 1;
+  // All mountpoints under the directory identified by 'path' (including path
+  // itself) will be unmounted.
+  optional bool do_recursive = 2;
+}
+
+message Mount {
+  // Required.
+  optional string source = 1;
+  // Required. Must be absolute path.
+  optional string target = 2;
+  // Ex: "tmpfs", etc.
+  optional string fstype = 3;
+  // Ex: MS_BIND, MS_RDONLY, etc.
+  optional uint64 flags = 4;
+  // Ex: "size=XXM", etc.
+  optional string options = 5;
+}
+
+// This is a union type. Select exactly one.
+message MountAction {
+  optional Unmount unmount = 1;
+  optional Mount mount = 2;
+}
+
+message MntNsSpec {
+  // Mount/Unmount actions executed in the order they appear here.
+  repeated MountAction mount_action = 1;
+}
+
+message NamespaceSpec {
+  // Config options for each namespace. Only those namespaces will be enabled
+  // for which the corresponding _spec option is set.
+  optional IpcNsSpec ipc = 1;
+  optional UtsNsSpec uts = 2;
+  optional PidNsSpec pid = 3;
+  optional MntNsSpec mnt = 4;
+  optional Network net = 5;
+  optional UserNsSpec user = 6;
+}

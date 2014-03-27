@@ -1,0 +1,78 @@
+// Copyright 2014 Google Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Base configuration components used by multiple subsystems of lmctfy.
+
+syntax = "proto2";
+
+package containers;
+
+// Specified network setup in a Virtual Host.
+//
+// At most one of 'interface' and 'veth_pair' must be specified.
+// If an empty configuration is specified, a loopback interface without any
+// external connectivity is created inside the Virtual Host.
+message Network {
+  // Name of a networking interface that should be assigned to the Virtual Host.
+  // Example: "eth1".
+  optional string interface = 1;
+
+  // Describes a veth pair.  A veth pair acts as a data pipe with two virtual
+  // ethernet interfaces at its ends.  One end resides outside the Virtual Host,
+  // and the other end resides inside the Virtual Host.
+  message VethPair {
+    // Name of veth device to create outside the Virtual Host.
+    // Required.
+    // Example: "veth12345".
+    optional string outside = 1;
+
+    // Name of veth device to create inside the Virtual Host.
+    // Required.
+    // Example: "eth1".
+    optional string inside = 2;
+  }
+
+  // If specified, creates a veth pair.
+  // TODO(ameyd): We should be able to make this a repeated field.
+  optional VethPair veth_pair = 3;
+
+  // Specification for configuring IP inside the Virtual Host.
+  // TODO(ameyd): Verify if this configuration is sufficient for IPv6.
+  message VirtualIp {
+    // The IP address to use.
+    // Required.
+    // Example: "10.0.0.1".
+    optional string ip = 1;
+
+    // Example: "255.255.255.0".
+    optional string netmask = 2;
+
+    // Example: "10.0.0.254".
+    optional string gateway = 3;
+
+    // Maximum transmission unit for the network interface in network namespace.
+    // TODO(ameyd): Units?
+    optional int32 mtu = 4;
+
+    // Whether to enable IP forwarding within the namespace.
+    optional bool ip_forward = 5;
+  }
+
+  // If both interface and veth_pair are not specified, virtual_ip is ignored,
+  // because there will be no interface in the Virtual Host to assign the
+  // IP address to.
+  optional VirtualIp virtual_ip = 2;
+
+  // Next tag: 4
+}

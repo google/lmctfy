@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 syntax = "proto2";
 
 package containers.lmctfy;
+
+import "include/virtual_host.proto";
 
 // Specifies what resources to isolate (and how they should be isolated) on a
 // container. Used for container creation and updates.
@@ -38,11 +40,12 @@ message ContainerSpec {
 
   optional MonitoringSpec monitoring = 6;
   optional FilesystemSpec filesystem = 7;
+  optional DeviceSpec device = 11;
 
   // Virtual host environment.
   optional VirtualHostSpec virtual_host = 10;
 
-  // Next ID: 11
+  // Next ID: 12
 }
 
 // Specification for supported notification events.
@@ -88,45 +91,38 @@ message RunSpec {
 }
 
 // VirtualHostSpec configures a host environment for the container.
-// An empty VirtualHostSpec is invalid.
+// An empty VirtualHostSpec is invalid. Currently VirtualHostSpec can only be
+// specified for top-level containers.
+// Adding an empty VirtualHostSpec enables process, ipc, and mount isolation, if
+// enabled on the host kernel.
 message VirtualHostSpec {
   // UNIMPLEMENTED
   // Hostname visible to the tasks running inside container.
   optional string virtual_hostname = 1;
 
-  // TODO(jnagal) : virtual_hostname controls enabling of pid, uts, and user
-  // namespace. Spec details under discussion:
-  // 1. userid and groupid mappings - We want to control the uids and gids
-  // visible inside the host. We already have an owner and owner group which
-  // corresponds with the physical host uid/gid. Do we need another spec on what
-  // uid/gid does the task run as inside the host? The default would be owner
-  // uid and gid.
-  //
-  // 2. Mount config can go here too? We currently don't have chroot path as a
-  // spec. If we move chroot path to lmctfy spec, it has to be supported for
-  // the non-namespace case too. We can get around it by adding hosting type
-  // here [None, Namespaces].
-  //
-  // 3. Network config for namespaces can go here. But we need a way to
-  // distinguish it from the existing NetworkSpec. Putting network namespace
-  // config here makes it obvious that its the configuration for the virtual
-  // host. We might want to rename NetworkSpec to indicate that it is
-  // controlling the resources on physical host.
-  //
-  // 4. Do we need an option to have a network config without setting up a
-  // virtual host environment. We'll hold that back till we have a valid
-  // use-case for it. For now, virtual_hostname is required for specifying
-  // a network namespace config.
-}
+  // The command to be used for init. A default init is used if this is not
+  // provided.
+  message Init {
+    repeated string init_argv = 1;
+  }
+  optional Init init = 2;
+
+  // Network setup in the Virtual Host.
+  optional Network network = 3;
+
+  // TODO(vmarmol): Add a MountSpec, we enable mount isolation, but don't have a
+  // way to specify mounts just yet.
+
+  }
 
 enum SchedulingLatency {
   // No latency guarantee.
   BEST_EFFORT = 1;
 
-  // Default latency guarantee.
+  // Guarantee on forward progress.
   NORMAL = 2;
 
-  // Low-latency access for latency-sensitive loads.
+  // Low-latency access for latency-sensitive loads. Default.
   PRIORITY = 3;
 
   // Extremely low-latency access for latency-critical loads.
@@ -186,9 +182,25 @@ message MemorySpec {
   }
   optional TmpfsSpec tmpfs = 6;
 
-  // UNIMPLEMENTED
+  // The amount of swap space requested. Default is unlimited (-1).
   // Units: bytes.
-  optional int64 swap_size = 7;
+  optional int64 swap_limit = 7;
+
+  // The sampling ratio for idle anon memory
+  optional int32 compression_sampling_ratio = 8;
+
+  // Time (in seconds) after which a page is considered cold.
+  optional int32 stale_page_age = 9;
+
+  message Dirty {
+    // Either both ratios or both limits should be set.  A mixture of ratios
+    // and limits is incorrect, as is just one ratio or limit.
+    optional int32 ratio = 1;
+    optional int32 limit = 2;
+    optional int32 background_ratio = 3;
+    optional int32 background_limit = 4;
+  };
+  optional Dirty dirty = 10;
 }
 
 message DiskIoSpec {
@@ -240,6 +252,53 @@ message FilesystemSpec {
   optional uint64 fd_limit = 1;
 }
 
+message DeviceSpec {
+  // Controls devices that are allowed to be accessible inside a container.
+  // root container has all devices accessible. Child container
+  // inherits its parent's device access setting.
+  // A typical pattern is to add a rule to deny all device access and add
+  // the ones that are required by the container.
+  enum DeviceType {
+    // Character device.
+    DEVICE_CHAR = 0;
+    // Block device.
+    DEVICE_BLOCK = 1;
+    // All device types.
+    // When DEVICE_ALL is specified, access type is ignored and all devices
+    // are either denied or allowed depending on the permission.
+    DEVICE_ALL = 2;
+  }
+
+  enum DeviceAccess {
+    // Access type can be any combination of read, write, and mknod.
+    READ = 1;
+    WRITE = 2;
+    MKNOD = 3;
+  }
+
+  enum DevicePermission {
+    // Permission for a device can either be allowed or denied inside
+    // a container.
+    ALLOW = 1;
+    DENY = 2;
+  }
+
+  message DeviceRestrictions {
+    optional DevicePermission permission = 1;
+    optional DeviceType type = 2;
+    repeated DeviceAccess access = 3;
+    // Missing major/minor number implies any device.
+        optional int64 major = 4;
+    optional int64 minor = 5;
+  }
+
+  message DeviceRestrictionsSet {
+    repeated DeviceRestrictions restrictions = 1;
+  }
+
+  optional DeviceRestrictionsSet restrictions_set = 1;
+}
+
 // TODO(vmarmol): Design and narrow this spec down.
 // Machine-wide configurations that are not specific to any container.
 message MachineSpec {
@@ -258,6 +317,7 @@ enum CgroupHierarchy {
   CGROUP_NET = 8;
   CGROUP_PERF_EVENT = 9;
   CGROUP_RLIMIT = 10;
+  CGROUP_DEVICE = 11;
 }
 
 // A mount point for a set of cgroup subsystems.
@@ -399,6 +459,61 @@ message MemoryStats {
   // dirty memory, and kernel memmory. Working set is <= "usage".
   // Units: Bytes.
   optional int64 working_set = 6;
+
+  message MemoryData {
+    optional int64 cache = 1;
+    optional int64 rss = 2;
+    optional int64 rss_huge = 3;
+    optional int64 mapped_file = 4;
+    optional int64 pgpgin = 5;
+    optional int64 pgpgout = 6;
+    optional int64 pgfault = 7;
+    optional int64 pgmajfault = 8;
+    optional int64 dirty = 9;
+    optional int64 writeback = 10;
+    optional int64 inactive_anon = 11;
+    optional int64 active_anon = 12;
+    optional int64 inactive_file = 13;
+    optional int64 active_file = 14;
+    optional int64 unevictable = 15;
+    message THP {
+      optional int64 fault_alloc = 1;
+      optional int64 fault_fallback = 2;
+      optional int64 collapse_alloc = 3;
+      optional int64 collapse_alloc_failed = 4;
+      optional int64 split = 5;
+    }
+    optional THP thp = 16;
+    message Kernel {
+      optional int64 memory = 1;
+      optional int64 slab_memory = 2;
+      optional int64 stack_memory = 3;
+      optional int64 pgtable_memory = 4;
+      optional int64 vmalloc_memory = 5;
+      optional int64 misc_memory = 6;
+      optional int64 targeted_slab_memory = 7;
+      optional int64 compressed_memory = 8;
+    }
+    optional Kernel kernel = 17;
+    optional Kernel kernel_noncharged = 18;
+
+    optional int64 compressed_pool_pages = 19;
+    optional int64 compressed_stored_pages = 20;
+    optional int64 compressed_reject_compress_poor = 21;
+    optional int64 zswap_zsmalloc_fail = 22;
+    optional int64 zswap_kmemcache_fail = 23;
+    optional int64 zswap_duplicate_entry = 24;
+    optional int64 zswap_compressed_pages = 25;
+    optional int64 zswap_decompressed_pages = 26;
+    optional int64 zswap_compression_nsec = 27;
+    optional int64 zswap_decompression_nsec = 28;
+  }
+  // Stats about memory specific to this container
+  optional MemoryData container_data = 7;
+  // Stats about memory for this container and all of its subcontainers
+  optional MemoryData total_data = 8;
+
+  optional int64 hierarchical_memory_limit = 9;
 }
 
 

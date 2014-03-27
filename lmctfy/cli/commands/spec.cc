@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -54,15 +54,15 @@ Status SpecContainer(const vector<string> &argv,
     container_name = argv[1];
   } else {
     // Detect parent's container.
-    container_name = XRETURN_IF_ERROR(lmctfy->Detect(getppid()));
+    container_name = RETURN_IF_ERROR(lmctfy->Detect(getppid()));
   }
 
   // Ensure the container exists.
   unique_ptr<Container> container(
-      XRETURN_IF_ERROR(lmctfy->Get(container_name)));
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   // Get the container spec;
-  ContainerSpec spec = XRETURN_IF_ERROR(container->Spec());
+  ContainerSpec spec = RETURN_IF_ERROR(container->Spec());
 
   // Output the stats as a proto in binary or ASCII format as specified.
   string spec_output;

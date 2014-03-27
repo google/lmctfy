@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <unistd.h>
 #include <algorithm>
+#include <queue>
 #include <memory>
 
 #include "base/logging.h"
@@ -26,6 +27,10 @@
 #include "util/task/statusor.h"
 
 using ::file::JoinPath;
+using ::std::queue;
+using ::std::remove_if;
+using ::std::sort;
+using ::std::unique_ptr;
 using ::std::vector;
 using ::util::Status;
 using ::util::StatusOr;
@@ -33,9 +38,12 @@ using ::util::StatusOr;
 namespace containers {
 namespace lmctfy {
 
-CgroupTasksHandler::CgroupTasksHandler(const string &container_name,
-                                       CgroupController *cgroup_controller)
-    : TasksHandler(container_name), cgroup_controller_(cgroup_controller) {}
+CgroupTasksHandler::CgroupTasksHandler(
+    const string &container_name, CgroupController *cgroup_controller,
+    const TasksHandlerFactory *tasks_handler_factory)
+    : TasksHandler(container_name),
+      cgroup_controller_(cgroup_controller),
+      tasks_handler_factory_(tasks_handler_factory) {}
 
 CgroupTasksHandler::~CgroupTasksHandler() {}
 
@@ -63,41 +71,112 @@ Status CgroupTasksHandler::Delegate(::util::UnixUid uid,
   return cgroup_controller_->Delegate(uid, gid);
 }
 
-StatusOr<vector<string>> CgroupTasksHandler::ListSubcontainers() const {
-  vector<string> subdirs;
-  RETURN_IF_ERROR(cgroup_controller_->GetSubcontainers(), &subdirs);
-
+StatusOr<vector<string>> CgroupTasksHandler::ListSubcontainers(
+    TasksHandler::ListType type) const {
+  vector<string> subcontainers =
+      RETURN_IF_ERROR(cgroup_controller_->GetSubcontainers());
   // Make the container names absolute by appending the subdirectory name to the
   // current container's name.
-  for (size_t i = 0; i < subdirs.size(); ++i) {
-    subdirs[i].assign(JoinPath(container_name_, subdirs[i]));
+  for (string &subcontainer : subcontainers) {
+    subcontainer.assign(JoinPath(container_name_, subcontainer));
   }
 
-  return subdirs;
+  if (type == TasksHandler::ListType::RECURSIVE) {
+    // Get all subcontainers of the subcontainers, recursively.
+    vector<string> to_check;
+    to_check.swap(subcontainers);
+    while (!to_check.empty()) {
+      unique_ptr<TasksHandler> handler(
+          RETURN_IF_ERROR(tasks_handler_factory_->Get(to_check.back())));
+
+      // We examine all subcontainers, add them to the result after having done
+      // so.
+      subcontainers.emplace_back(to_check.back());
+      to_check.pop_back();
+
+      // Get subcontainers and add them to the ones we will check.
+      const vector<string> containers = RETURN_IF_ERROR(
+          handler->ListSubcontainers(TasksHandler::ListType::SELF));
+      to_check.insert(to_check.end(), containers.begin(), containers.end());
+    }
+
+    // Ensure the result is sorted.
+    sort(subcontainers.begin(), subcontainers.end());
+  }
+
+  return subcontainers;
 }
 
-StatusOr<vector<pid_t>> CgroupTasksHandler::ListProcesses() const {
+StatusOr<vector<pid_t>> CgroupTasksHandler::ListProcesses(
+    TasksHandler::ListType type) const {
   // Get threads.
   set<pid_t> tids;
-  for (pid_t tid : XRETURN_IF_ERROR(cgroup_controller_->GetThreads())) {
-    tids.insert(tid);
+  {
+    vector<pid_t> tmp;
+    RETURN_IF_ERROR(ListProcessesOrThreads(type, PidsOrTids::TIDS, &tmp));
+    tids.insert(tmp.begin(), tmp.end());
   }
 
   // Do not add the PIDs of visitor threads. Visitor threads show up in
   // GetThreads() and its correspoding PID shows up in GetProcesses() even
   // though it is not actually in the container.
   vector<pid_t> pids;
-  for (pid_t pid : XRETURN_IF_ERROR(cgroup_controller_->GetProcesses())) {
-    if (tids.find(pid) != tids.end()) {
-      pids.push_back(pid);
-    }
-  }
+  RETURN_IF_ERROR(ListProcessesOrThreads(type, PidsOrTids::PIDS, &pids));
+  auto it =
+      remove_if(pids.begin(), pids.end(),
+                [&tids](pid_t pid) { return tids.find(pid) == tids.end(); });
+  pids.erase(it, pids.end());
 
   return pids;
 }
 
-StatusOr<vector<pid_t>> CgroupTasksHandler::ListThreads() const {
-  return cgroup_controller_->GetThreads();
+StatusOr<vector<pid_t>> CgroupTasksHandler::ListThreads(
+    TasksHandler::ListType type) const {
+  vector<pid_t> tids;
+  RETURN_IF_ERROR(ListProcessesOrThreads(type, PidsOrTids::TIDS, &tids));
+  return tids;
+}
+
+Status CgroupTasksHandler::ListProcessesOrThreads(TasksHandler::ListType type,
+                                                  PidsOrTids pids_or_tids,
+                                                  vector<pid_t> *output) const {
+  if (pids_or_tids == PidsOrTids::PIDS) {
+    *output = RETURN_IF_ERROR(cgroup_controller_->GetProcesses());
+  } else {
+    *output = RETURN_IF_ERROR(cgroup_controller_->GetThreads());
+  }
+
+  if (type == TasksHandler::ListType::RECURSIVE) {
+    set<pid_t> unique_pids(output->begin(), output->end());
+
+    // Get all subcontainers and list the PIDs/TIDs of those too.
+    const vector<string> subcontainers =
+        RETURN_IF_ERROR(ListSubcontainers(TasksHandler::ListType::RECURSIVE));
+    for (const string &subcontainer : subcontainers) {
+      StatusOr<vector<pid_t>> statusor;
+      unique_ptr<TasksHandler> handler(
+          RETURN_IF_ERROR(tasks_handler_factory_->Get(subcontainer)));
+      if (pids_or_tids == PidsOrTids::PIDS) {
+        statusor = handler->ListProcesses(TasksHandler::ListType::SELF);
+      } else {
+        statusor = handler->ListThreads(TasksHandler::ListType::SELF);
+      }
+      if (!statusor.ok()) {
+        return statusor.status();
+      }
+
+      // Aggregate PIDs/TIDS uniquely. Although TasksHandler guarantees that no
+      // PID/TID will be in two containers at the same time, our queries to the
+      // handler are not atomic so PIDs/TIDs may have moved since the last
+      // query.
+      unique_pids.insert(statusor.ValueOrDie().begin(),
+                         statusor.ValueOrDie().end());
+    }
+
+    output->assign(unique_pids.begin(), unique_pids.end());
+  }
+
+  return Status::OK;
 }
 
 }  // namespace lmctfy

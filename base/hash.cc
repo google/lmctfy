@@ -36,7 +36,7 @@ uint32 Hash32StringWithSeedReferenceImplementation(const char *s, uint32 len,
   size_t prime1 = 0, prime2 = 8;  // Indices into kPrimes32
   union {
     uint16 n;
-    char bytes[sizeof(uint16)];  // NOLINT
+    char bytes[sizeof(uint16)];
   } chunk;
   for (const char *i = s, *const end = s + len; i != end; ) {
     chunk.bytes[0] = *i++;
@@ -57,7 +57,7 @@ uint64 Hash64StringWithSeed(const char *s, uint32 len, uint64 seed) {
   size_t prime1 = 0, prime2 = 8;  // Indices into kPrimes64
   union {
     uint32 n;
-    char bytes[sizeof(uint32)];  // NOLINT
+    char bytes[sizeof(uint32)];
   } chunk;
   for (const char *i = s, *const end = s + len; i != end; ) {
     chunk.bytes[0] = *i++;

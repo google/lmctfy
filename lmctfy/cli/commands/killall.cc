@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -44,8 +44,8 @@ Status KillAllInContainer(const vector<string> &argv, const ContainerApi *lmctfy
   const string container_name = argv[1];
 
   // Ensure the container exists.
-  unique_ptr<Container> container;
-  RETURN_IF_ERROR(lmctfy->Get(container_name), &container);
+  unique_ptr<Container> container(
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   return container->KillAll();
 }

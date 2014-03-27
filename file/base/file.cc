@@ -14,7 +14,6 @@
 
 #include "file/base/file.h"
 
-#include "file/base/cleanpath.h"
 #include "file/base/path.h"
 
 namespace file {
@@ -48,8 +47,4 @@ string File::StripBasename(const string &fname) {
   }
 
   return fname.substr(0, last_slash);
-}
-
-const string File::CleanPath(const string& pathname) {
-  return Plan9_CleanPath(pathname);
 }

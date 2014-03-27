@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -71,9 +71,8 @@ StatusOr<int64> CpuAcctController::GetCpuUsageInNs() const {
 }
 
 StatusOr<vector<int64>*> CpuAcctController::GetPerCpuUsageInNs() const {
-  string per_cpu_usage_str;
-  RETURN_IF_ERROR(GetParamString(KernelFiles::CPUAcct::kUsagePerCPU),
-                  &per_cpu_usage_str);
+  string per_cpu_usage_str =
+      RETURN_IF_ERROR(GetParamString(KernelFiles::CPUAcct::kUsagePerCPU));
   vector<string> per_cpu_values =
       Split(per_cpu_usage_str, AnyOf(" \n\t"), SkipEmpty());
   unique_ptr<vector<int64>> per_cpu_usage(new vector<int64>);
@@ -125,9 +124,8 @@ CpuAcctController::GetSchedulerHistograms() const {
   vector<CpuHistogramData *> output;
   ElementDeleter d(&output);
 
-  string histogram_str;
-  RETURN_IF_ERROR(GetParamString(KernelFiles::CPUAcct::kHistogram),
-                  &histogram_str);
+  string histogram_str =
+      RETURN_IF_ERROR(GetParamString(KernelFiles::CPUAcct::kHistogram));
   vector<string> histogram_lines = Split(histogram_str, "\n", SkipEmpty());
   CpuHistogramData *histogram_data = nullptr;
   for (const auto line : histogram_lines) {

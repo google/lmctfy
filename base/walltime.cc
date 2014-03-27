@@ -127,7 +127,7 @@ bool WallTime_Parse_Timezone(const char* time_spec,
   char junk;
   if ((*parsed == '.') &&
      (strcmp(format + strlen(format) - 2, "%S") == 0) &&
-     (sscanf(parsed, "%lf%c",  // NOLINT(runtime/printf)
+     (sscanf(parsed, "%lf%c",
              &fraction, &junk) == 1)) {
      parsed = format + strlen(format);   // Parsed it all!
   }

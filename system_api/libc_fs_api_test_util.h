@@ -66,6 +66,7 @@ class MockLibcFsApi : public LibcFsApi {
   MOCK_CONST_METHOD4(FWrite, int(const void *ptr, size_t size, size_t nmemb,
                                  FILE *stream));
   MOCK_CONST_METHOD3(FGetS, char *(char *buf, int n, FILE *));
+  MOCK_CONST_METHOD1(FError, int(FILE *stream));
   MOCK_CONST_METHOD3(Read,
                      ssize_t(int file_descriptor, void *buf, size_t nbytes));
   MOCK_CONST_METHOD3(Write, ssize_t(int file_descriptor, const void *buf,

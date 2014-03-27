@@ -30,17 +30,6 @@ using ::system_api::MockLibcFsApiOverride;
 
 namespace util {
 
-namespace file_lines_test_util_internal {
-
-// Copy the first size bytes of the first line in expected_lines into s.
-static vector<string> expected_lines;
-static void CopyString(char *s, int size, FILE *stream) {
-  strncpy(s, expected_lines.front().c_str(), size);
-  expected_lines.erase(expected_lines.begin());
-}
-
-}  // namespace file_lines_test_util_internal
-
 FileLinesTestUtil::FileLinesTestUtil()
     : mock_libc_(new MockLibcFsApiOverride()), own_mock_libc_(true) {}
 FileLinesTestUtil::FileLinesTestUtil(MockLibcFsApiOverride *mock_libc)
@@ -53,24 +42,42 @@ FileLinesTestUtil::~FileLinesTestUtil() {
 
 void FileLinesTestUtil::ExpectFileLines(const string &filename,
                                         const vector<string> &lines) {
-  // Expect Open/Close of the file
-  EXPECT_CALL(mock_libc_->Mock(), FOpen(StrEq(filename), StrEq("r")))
-      .WillRepeatedly(Return(&file_));
-  EXPECT_CALL(mock_libc_->Mock(), FClose(&file_))
-      .WillRepeatedly(Return(0));
+  return ExpectFileLinesMulti(filename, {lines});
+}
 
-  // Expect file to have the specified lines.
-  char tmp[0];
-  auto &mock_fgets =
-      EXPECT_CALL(mock_libc_->Mock(), FGetS(NotNull(), _, &file_));
-
-  // Expect each line and then EOF.
-  for (const string &line : lines) {
-    file_lines_test_util_internal::expected_lines.push_back(line);
-    mock_fgets.WillOnce(
-        DoAll(Invoke(file_lines_test_util_internal::CopyString), Return(tmp)));
+void FileLinesTestUtil::ExpectFileLinesMulti(
+    const string &filename, const vector<vector<string>> &lines) {
+  // Expect the open calls.
+  auto &mock_fopen =
+      EXPECT_CALL(mock_libc_->Mock(), FOpen(StrEq(filename), StrEq("r")));
+  vector<FILE *> cfiles;
+  for (int i = 0; i < lines.size(); ++i) {
+    FILE *cfile = new FILE();
+    mock_fopen.WillOnce(Return(cfile));
+    cfiles.emplace_back(cfile);
+    files_.emplace_back(cfile);
   }
-  mock_fgets.WillRepeatedly(Return(nullptr));
+
+  int i = 0;
+  for (auto cfile : cfiles) {
+    // Expect Close of the file
+    EXPECT_CALL(mock_libc_->Mock(), FClose(cfile)).WillRepeatedly(Return(0));
+    EXPECT_CALL(mock_libc_->Mock(), FError(cfile)).WillRepeatedly(Return(0));
+
+    // Expect file to have the specified lines.
+    char tmp[0];
+    auto &mock_fgets =
+        EXPECT_CALL(mock_libc_->Mock(), FGetS(NotNull(), _, cfile));
+
+    // Expect each line and then EOF.
+    for (const string &line : lines[i++]) {
+      mock_fgets.WillOnce(DoAll(Invoke([line](char *s, int size, FILE *stream) {
+                                  strncpy(s, line.c_str(), size);
+                                }),
+                                Return(tmp)));
+    }
+    mock_fgets.WillRepeatedly(Return(nullptr));
+  }
 }
 
 }  // namespace util

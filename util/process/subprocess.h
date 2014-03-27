@@ -18,8 +18,12 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "base/integral_types.h"
 
 enum Channel {
   CHAN_STDIN = STDIN_FILENO,
@@ -30,7 +34,8 @@ enum Channel {
 // How the channel is handled.
 enum ChannelAction {
   ACTION_CLOSE,
-  ACTION_DUPPARENT
+  ACTION_DUPPARENT,
+  ACTION_PIPE
 };
 
 // Utility for running other processes.
@@ -47,6 +52,13 @@ class SubProcess {
   // Sets the child as a group leader.
   virtual void SetUseSession();
 
+  // Returns a error message that describes the exit status of the child
+  // process.
+  virtual ::std::string error_text() const;
+
+  // Returns the exit code returned by the child process.
+  virtual int exit_code() const;
+
   // Whether to inherit the parent's "higher" (not stdin, stdout, stderr) file
   // descriptors.
   void SetInheritHigherFDs(bool value);
@@ -61,11 +73,42 @@ class SubProcess {
   // Starts process.
   virtual bool Start();
 
+  // This is similar to Python's subprocess.Popen.communicate(). This
+  // asynchronously reads from stdout and stderr until all output pipes have
+  // closed, then waits for the process to exit. 'stdout_output' and
+  // 'stderr_output' may be nullptr.
+  //
+  // Returns:
+  //   int: the command's exit status.
+  virtual int Communicate(::std::string* stdout_output,
+                          ::std::string* stderr_output);
+
+ protected:
+  // Actually exec the child process.
+  virtual void ExecChild();
+
  private:
+  struct CommBuf;
+
   void BlockSignals();
   void UnblockSignals();
   void CloseNonChannelFds();
   void ChildFork();
+  bool SetupChildToParentFds();
+  int SendMessageToParent();
+  bool ReceiveMessageFromChild();
+  void SendFatalError(int error_no, const ::std::string &error_msg);
+  void ShareFdsWithParent();
+  void CloseAllPipeFds();
+  void CloseChildPipeFds();
+  static int NumOfChannels();
+  bool SetupPipesForChannels();
+  bool Wait();
+  void MaybeAddFD(Channel channel, ::std::string* output,
+                  ::std::string** io_strings, Channel* channels,
+                  struct pollfd* fds, int* descriptors_to_poll,
+                  int* descriptors_left, int16 events);
+  void Close(Channel chan);
 
   bool running_;
   bool use_session_;
@@ -75,6 +118,19 @@ class SubProcess {
   ::std::vector<::std::string> argv_;
   sigset_t old_signals_;
   ::std::vector<ChannelAction> actions_;
+
+  ::std::string error_text_;
+  int exit_status_;
+
+  // fd to use for receiving errors, debug info and file handles from child.
+  int parent_to_child_fd_;
+  // fd to use for reporting errors, debug info and file handles to parent.
+  int child_to_parent_fd_;
+
+  ::std::unique_ptr<int[]> child_pipe_fds_;
+  ::std::unique_ptr<int[]> parent_pipe_fds_;
+
+  ::std::unique_ptr<CommBuf> comm_buf_;
 };
 
 #endif  // UTIL_PROCESS_SUBPROCESS_H__

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -161,8 +161,7 @@ Status CgroupController::SetChildrenLimit(int64 value) {
 
 StatusOr<bool> CgroupController::GetParamBool(
     const string &cgroup_file) const {
-  int64 value;
-  RETURN_IF_ERROR(GetParamInt(cgroup_file), &value);
+  int64 value = RETURN_IF_ERROR(GetParamInt(cgroup_file));
 
   switch (value) {
     case 0:
@@ -200,8 +199,7 @@ StatusOr<string> CgroupController::GetParamString(
 // TODO(vmarmol): Implement this iteratively.
 StatusOr<vector<pid_t>> CgroupController::GetPids(
     const string &cgroup_file) const {
-  string all_pids;
-  RETURN_IF_ERROR(GetParamString(cgroup_file), &all_pids);
+  string all_pids = RETURN_IF_ERROR(GetParamString(cgroup_file));
   const vector<string> pid_strings = Split(all_pids, "\n", SkipEmpty());
 
   // Parse all the PIDs.

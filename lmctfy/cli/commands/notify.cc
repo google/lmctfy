@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,17 +58,16 @@ static Status RegisterNotification(const EventSpec &spec,
                                    const ContainerApi *lmctfy,
                                    vector<OutputMap> *output) {
   // Ensure the container exists.
-  unique_ptr<Container> container;
-  RETURN_IF_ERROR(lmctfy->Get(container_name), &container);
+  unique_ptr<Container> container(
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   // Ask for the notification and wait for it to occur.
   Status status;
   Notification notification;
-  Container::NotificationId id;
-  RETURN_IF_ERROR(container->RegisterNotification(
-                      spec, NewPermanentCallback(&NotificationHandler,
-                                                 &notification, &status)),
-                  &id);
+  RETURN_IF_ERROR(
+      container->RegisterNotification(spec,
+                                      NewPermanentCallback(&NotificationHandler,
+                                      &notification, &status)));
   notification.WaitForNotification();
 
   output->push_back(

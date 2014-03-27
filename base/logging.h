@@ -200,4 +200,8 @@ class LogSilencer {
   ~LogSilencer();
 };
 
+// A thread-safe replacement for strerror(). Returns a string describing the
+// given POSIX error code.
+::std::string StrError(int err);
+
 #endif  // BASE_LOGGING_H__

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@ class MockFreezerControllerFactory : public FreezerControllerFactory {
   explicit MockFreezerControllerFactory(const CgroupFactory *cgroup_factory)
       : FreezerControllerFactory(
             cgroup_factory, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-            reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
+            reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF), true) {}
 
   MOCK_CONST_METHOD1(
       Get, ::util::StatusOr<FreezerController *>(const string &hierarchy_path));
@@ -52,7 +52,8 @@ class MockFreezerController : public FreezerController {
 
   MOCK_METHOD0(Destroy, ::util::Status());
   MOCK_METHOD1(Enter, ::util::Status(pid_t tid));
-
+  MOCK_METHOD2(Delegate, ::util::Status(::util::UnixUid uid,
+                                        ::util::UnixGid gid));
   MOCK_CONST_METHOD0(GetThreads, ::util::StatusOr< ::std::vector<pid_t>>());
   MOCK_CONST_METHOD0(GetProcesses, ::util::StatusOr< ::std::vector<pid_t>>());
   MOCK_CONST_METHOD0(GetSubcontainers,
@@ -60,6 +61,7 @@ class MockFreezerController : public FreezerController {
 
   MOCK_METHOD0(Freeze, ::util::Status());
   MOCK_METHOD0(Unfreeze, ::util::Status());
+  MOCK_CONST_METHOD0(State, ::util::StatusOr<FreezerState>());
 };
 
 typedef ::testing::StrictMock<MockFreezerController>

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -63,22 +63,20 @@ string FilesystemResourceHandlerFactory::GetEffectiveContainerName(
 StatusOr<ResourceHandler *>
 FilesystemResourceHandlerFactory::GetResourceHandler(
     const string &container_name) const {
-  RLimitController *controller;
   const string effective_container_name =
       GetEffectiveContainerName(container_name);
-  RETURN_IF_ERROR(rlimit_controller_factory_->Get(effective_container_name),
-                  &controller);
+  RLimitController *controller = RETURN_IF_ERROR(
+      rlimit_controller_factory_->Get(effective_container_name));
   return new FilesystemResourceHandler(container_name, kernel_, controller);
 }
 
 StatusOr<ResourceHandler *>
 FilesystemResourceHandlerFactory::CreateResourceHandler(
     const string &container_name, const ContainerSpec &spec) const {
-  RLimitController *controller;
   const string effective_container_name =
       GetEffectiveContainerName(container_name);
-  RETURN_IF_ERROR(rlimit_controller_factory_->Create(effective_container_name),
-                  &controller);
+  RLimitController *controller = RETURN_IF_ERROR(
+      rlimit_controller_factory_->Create(effective_container_name));
 
   return new FilesystemResourceHandler(container_name, kernel_, controller);
 }
@@ -107,7 +105,7 @@ Status FilesystemResourceHandler::Spec(ContainerSpec *spec) const {
   FilesystemSpec *filesystem = spec->mutable_filesystem();
   if (!filesystem->has_fd_limit()) {
     filesystem->set_fd_limit(
-        XRETURN_IF_ERROR(rlimit_controller_->GetFdLimit()));
+        RETURN_IF_ERROR(rlimit_controller_->GetFdLimit()));
   }
   return Status::OK;
 }

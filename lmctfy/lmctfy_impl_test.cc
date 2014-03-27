@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,6 +27,9 @@
 #include "lmctfy/active_notifications.h"
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
+#include "lmctfy/controllers/freezer_controller_mock.h"
+#include "lmctfy/general_resource_handler_mock.h"
+#include "lmctfy/namespace_handler_mock.h"
 #include "lmctfy/resource_handler_mock.h"
 #include "lmctfy/tasks_handler_mock.h"
 #include "include/lmctfy.pb.h"
@@ -35,10 +38,10 @@
 #include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "util/file_lines_test_util.h"
+#include "system_api/libc_fs_api_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "util/gtl/stl_util.h"
-#include "util/process/mock_subprocess.h"
 #include "util/task/codes.pb.h"
 
 namespace containers {
@@ -53,6 +56,7 @@ DECLARE_int32(lmctfy_ms_delay_between_kills);
 using ::system_api::MockKernelApiOverride;
 using ::file::JoinPath;
 using ::util::FileLinesTestUtil;
+using ::system_api::MockLibcFsApiOverride;
 using ::util::UnixGid;
 using ::util::UnixGidValue;
 using ::util::UnixUid;
@@ -64,9 +68,11 @@ using ::std::unique_ptr;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::testing::AtLeast;
+using ::testing::AtMost;
 using ::testing::Cardinality;
 using ::testing::ContainerEq;
 using ::testing::Contains;
+using ::testing::ContainsRegex;
 using ::testing::DoAll;
 #include "util/testing/equals_initialized_proto.h"
 using ::testing::EqualsInitializedProto;
@@ -82,7 +88,9 @@ using ::testing::StrictMock;
 using ::testing::_;
 using ::util::Status;
 using ::util::StatusOr;
+using ::util::error::FAILED_PRECONDITION;
 using ::util::error::NOT_FOUND;
+using ::util::error::UNIMPLEMENTED;
 
 namespace containers {
 namespace lmctfy {
@@ -96,10 +104,12 @@ class MockContainerApiImpl : public ContainerApiImpl {
                    const vector<ResourceHandlerFactory *> &resource_factories,
                    const MockKernelApi *mock_kernel,
                    ActiveNotifications *active_notifications,
+                   NamespaceHandlerFactory *namespace_handler_factory,
                    EventFdNotifications *eventfd_notifications)
       : ContainerApiImpl(mock_tasks_handler_factory, cgroup_factory,
                      resource_factories, mock_kernel, active_notifications,
-                     eventfd_notifications) {}
+                     namespace_handler_factory, eventfd_notifications,
+                     unique_ptr<FreezerControllerFactory>(nullptr)) {}
 
   MOCK_CONST_METHOD1(Get, StatusOr<Container *>(StringPiece container_name));
   MOCK_CONST_METHOD2(Create, StatusOr<Container *>(StringPiece container_name,
@@ -112,24 +122,46 @@ class MockContainerApiImpl : public ContainerApiImpl {
 
 class ContainerApiImplTest : public ::testing::Test {
  public:
-  void SetUp() {
+  ContainerApiImplTest() : mock_file_lines_(&mock_libc_fs_api_) {}
+
+  void SetUp() override {
     mock_handler_factory1_ = new NiceMockResourceHandlerFactory(RESOURCE_CPU);
     mock_handler_factory2_ = new NiceMockResourceHandlerFactory(
         RESOURCE_MEMORY);
     mock_handler_factory3_ = new NiceMockResourceHandlerFactory(
         RESOURCE_FILESYSTEM);
+    mock_handler_factory4_ = new NiceMockResourceHandlerFactory(
+        RESOURCE_DEVICE);
+    mock_namespace_handler_factory_ = new NiceMockNamespaceHandlerFactory();
+    EXPECT_CALL(*mock_namespace_handler_factory_, InitMachine(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_namespace_handler_factory_, CreateNamespaceHandler(_, _))
+        .WillRepeatedly(Invoke([](const string &name,
+                                  const ContainerSpec &spec) {
+          return new StrictMockNamespaceHandler(name, RESOURCE_VIRTUALHOST);
+        }));
     vector<ResourceHandlerFactory *> resource_factories = {
-      mock_handler_factory1_, mock_handler_factory2_, mock_handler_factory3_
+      mock_handler_factory1_,
+      mock_handler_factory2_,
+      mock_handler_factory3_,
+      mock_handler_factory4_,
     };
 
     active_notifications_ = new ActiveNotifications();
     mock_eventfd_notifications_ = MockEventFdNotifications::NewStrict();
     mock_tasks_handler_factory_ = new StrictMockTasksHandlerFactory();
     mock_cgroup_factory_ = new StrictMockCgroupFactory();
+    mock_freezer_controller_factory_ =
+        new MockFreezerControllerFactory(mock_cgroup_factory_);
+
     lmctfy_.reset(
-        new ContainerApiImpl(mock_tasks_handler_factory_, mock_cgroup_factory_,
-                         resource_factories, &mock_kernel_.Mock(),
-                         active_notifications_, mock_eventfd_notifications_));
+        new ContainerApiImpl(
+            mock_tasks_handler_factory_, mock_cgroup_factory_,
+            resource_factories, &mock_kernel_.Mock(),
+            active_notifications_, mock_namespace_handler_factory_,
+            mock_eventfd_notifications_,
+            unique_ptr<FreezerControllerFactory>(
+                mock_freezer_controller_factory_)));
   }
 
   // Expect the machine to have a set of mounts. If cgroups_mounted is true, it
@@ -142,7 +174,9 @@ class ContainerApiImplTest : public ::testing::Test {
            "none /dev/cgroup/cpuset cgroup rw,relatime,cpuset 0 0",
            "rootfs / rootfs rw 0 0",
            "none /dev/cgroup/memory cgroup rw,relatime,memory 0 0",
+           "none /dev/cgroup/freezer cgroup rw,relatime,freezer 0 0",
            "none /dev/cgroup/perf_event cgroup rw,relatime,perf_event 0 0",
+           "none /dev/cgroup/devices cgroup rw,relatime,devices 0 0",
            "sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0",
            "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0",
            "none /dev/cgroup/job cgroup rw,relatime,job 0 0", });
@@ -166,9 +200,13 @@ class ContainerApiImplTest : public ::testing::Test {
   MockResourceHandlerFactory *mock_handler_factory1_;
   MockResourceHandlerFactory *mock_handler_factory2_;
   MockResourceHandlerFactory *mock_handler_factory3_;
+  MockResourceHandlerFactory *mock_handler_factory4_;
   ActiveNotifications *active_notifications_;
+  MockNamespaceHandlerFactory *mock_namespace_handler_factory_;
   MockEventFdNotifications *mock_eventfd_notifications_;
+  MockFreezerControllerFactory *mock_freezer_controller_factory_;
 
+  MockLibcFsApiOverride mock_libc_fs_api_;
   FileLinesTestUtil mock_file_lines_;
   MockKernelApiOverride mock_kernel_;
 };
@@ -181,6 +219,7 @@ TEST_F(ContainerApiImplTest, NewContainerApiImpl) {
   EXPECT_CALL(*mock_cgroup_factory, OwnsCgroup(_)).WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cgroup_factory, IsMounted(_)).WillRepeatedly(Return(true));
   EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_)).WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   StatusOr<ContainerApi *> statusor =
       ContainerApiImpl::NewContainerApiImpl(mock_cgroup_factory, &mock_kernel_.Mock());
@@ -197,6 +236,24 @@ TEST_F(ContainerApiImplTest, NewContainerApiImplNoJobHierarchy) {
   EXPECT_CALL(*mock_cgroup_factory, IsMounted(CGROUP_JOB))
       .WillRepeatedly(Return(false));
   EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_)).WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
+
+  StatusOr<ContainerApi *> statusor =
+      ContainerApiImpl::NewContainerApiImpl(mock_cgroup_factory, &mock_kernel_.Mock());
+  ASSERT_OK(statusor);
+  EXPECT_NE(nullptr, statusor.ValueOrDie());
+  delete statusor.ValueOrDie();
+}
+
+TEST_F(ContainerApiImplTest, NewContainerApiImpl_NoFreezer) {
+  MockCgroupFactory *mock_cgroup_factory = new StrictMockCgroupFactory();
+
+  EXPECT_CALL(*mock_cgroup_factory, OwnsCgroup(_)).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_cgroup_factory, IsMounted(_)).WillRepeatedly(Return(true));
+  EXPECT_CALL(*mock_cgroup_factory, IsMounted(CGROUP_FREEZER))
+      .WillRepeatedly(Return(false));
+  EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_)).WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   StatusOr<ContainerApi *> statusor =
       ContainerApiImpl::NewContainerApiImpl(mock_cgroup_factory, &mock_kernel_.Mock());
@@ -215,8 +272,8 @@ void ExpectMemoryMount(const string &source, const string &target,
   EXPECT_THAT("memory", StrEq(static_cast<const char *>(data)));
 }
 void ExpectCpuAndCpuacctMount(const string &source, const string &target,
-                       const string &filesystemtype, unsigned int mountflags,
-                       const void *data) {
+                              const string &filesystemtype,
+                              unsigned int mountflags, const void *data) {
   string actual = static_cast<const char *>(data);
   EXPECT_TRUE(actual == "cpu,cpuacct" || actual == "cpuacct,cpu");
 }
@@ -226,14 +283,26 @@ void ExpectCpusetMount(const string &source, const string &target,
   EXPECT_THAT("cpuset", StrEq(static_cast<const char *>(data)));
 }
 void ExpectJobMount(const string &source, const string &target,
-                       const string &filesystemtype, unsigned int mountflags,
-                       const void *data) {
+                    const string &filesystemtype, unsigned int mountflags,
+                    const void *data) {
   EXPECT_THAT("job", StrEq(static_cast<const char *>(data)));
 }
 void ExpectPerfEventMount(const string &source, const string &target,
+                          const string &filesystemtype, unsigned int mountflags,
+                          const void *data) {
+  EXPECT_THAT("perf_event", StrEq(static_cast<const char *>(data)));
+}
+
+void ExpectFreezerMount(const string &source, const string &target,
+                        const string &filesystemtype, unsigned int mountflags,
+                        const void *data) {
+  EXPECT_THAT("freezer", StrEq(static_cast<const char *>(data)));
+}
+
+void ExpectDeviceMount(const string &source, const string &target,
                        const string &filesystemtype, unsigned int mountflags,
                        const void *data) {
-  EXPECT_THAT("perf_event", StrEq(static_cast<const char *>(data)));
+  EXPECT_THAT("devices", StrEq(static_cast<const char *>(data)));
 }
 
 TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
@@ -244,6 +313,9 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
   CgroupMount mount3;
   CgroupMount mount4;
   CgroupMount mount5;
+  CgroupMount mount6;
+  CgroupMount mount7;
+
   mount1.set_mount_path("/dev/cgroup/memory");
   mount1.add_hierarchy(CGROUP_MEMORY);
   mount2.set_mount_path("/dev/cgroup/cpu");
@@ -255,6 +327,10 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
   mount4.set_mount_path("/dev/cgroup/cpuset");
   mount5.add_hierarchy(CGROUP_PERF_EVENT);
   mount5.set_mount_path("/dev/cgroup/perf_event");
+  mount6.add_hierarchy(CGROUP_FREEZER);
+  mount6.set_mount_path("/dev/cgroup/freezer");
+  mount7.add_hierarchy(CGROUP_DEVICE);
+  mount7.set_mount_path("/dev/cgroup/devices");
 
   InitSpec spec;
   spec.add_cgroup_mount()->CopyFrom(mount1);
@@ -262,6 +338,8 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
   spec.add_cgroup_mount()->CopyFrom(mount3);
   spec.add_cgroup_mount()->CopyFrom(mount4);
   spec.add_cgroup_mount()->CopyFrom(mount5);
+  spec.add_cgroup_mount()->CopyFrom(mount6);
+  spec.add_cgroup_mount()->CopyFrom(mount7);
 
   EXPECT_CALL(mock_kernel_.Mock(), Access(_, _))
       .WillRepeatedly(Return(0));
@@ -279,6 +357,11 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
       .WillRepeatedly(Return(0));
   EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/perf_event"))
       .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/freezer"))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/devices"))
+      .WillRepeatedly(Return(0));
+
   EXPECT_CALL(mock_kernel_.Mock(),
               Mount("cgroup", "/dev/cgroup/memory", "cgroup", 0, _))
       .WillOnce(DoAll(Invoke(&ExpectMemoryMount), Return(0)));
@@ -294,6 +377,13 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
   EXPECT_CALL(mock_kernel_.Mock(),
               Mount("cgroup", "/dev/cgroup/perf_event", "cgroup", 0, _))
       .WillOnce(DoAll(Invoke(&ExpectPerfEventMount), Return(0)));
+  EXPECT_CALL(mock_kernel_.Mock(),
+              Mount("cgroup", "/dev/cgroup/freezer", "cgroup", 0, _))
+      .WillOnce(DoAll(Invoke(&ExpectFreezerMount), Return(0)));
+  EXPECT_CALL(mock_kernel_.Mock(),
+              Mount("cgroup", "/dev/cgroup/devices", "cgroup", 0, _))
+      .WillOnce(DoAll(Invoke(&ExpectDeviceMount), Return(0)));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   EXPECT_OK(ContainerApiImpl::InitMachineImpl(&mock_kernel_.Mock(), spec));
 }
@@ -306,6 +396,8 @@ TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
   CgroupMount mount3;
   CgroupMount mount4;
   CgroupMount mount5;
+  CgroupMount mount6;
+  CgroupMount mount7;
   mount1.set_mount_path("/dev/cgroup/memory");
   mount1.add_hierarchy(CGROUP_MEMORY);
   mount2.set_mount_path("/dev/cgroup/cpu");
@@ -317,6 +409,10 @@ TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
   mount4.set_mount_path("/dev/cgroup/cpuset");
   mount5.add_hierarchy(CGROUP_PERF_EVENT);
   mount5.set_mount_path("/dev/cgroup/perf_event");
+  mount6.add_hierarchy(CGROUP_FREEZER);
+  mount6.set_mount_path("/dev/cgroup/freezer");
+  mount7.add_hierarchy(CGROUP_DEVICE);
+  mount7.set_mount_path("/dev/cgroup/devices");
 
   InitSpec spec;
   spec.add_cgroup_mount()->CopyFrom(mount1);
@@ -324,6 +420,8 @@ TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
   spec.add_cgroup_mount()->CopyFrom(mount3);
   spec.add_cgroup_mount()->CopyFrom(mount4);
   spec.add_cgroup_mount()->CopyFrom(mount5);
+  spec.add_cgroup_mount()->CopyFrom(mount6);
+  spec.add_cgroup_mount()->CopyFrom(mount7);
 
   EXPECT_CALL(mock_kernel_.Mock(), Access(_, _))
       .WillRepeatedly(Return(0));
@@ -331,6 +429,7 @@ TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
       .WillRepeatedly(Return(0));
   EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_))
       .WillRepeatedly(Return(0));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   // All cgroups are accessible.
   vector<string> kPaths = {
@@ -339,6 +438,8 @@ TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
     "/dev/cgroup/job",
     "/dev/cgroup/memory",
     "/dev/cgroup/perf_event",
+    "/dev/cgroup/freezer"
+    "/dev/cgroup/devices"
   };
   for (const string &hierarchy : kPaths) {
     EXPECT_CALL(mock_kernel_.Mock(), Access(hierarchy, R_OK))
@@ -363,6 +464,7 @@ TEST_F(ContainerApiImplTest, InitMachineImplMountFails) {
   EXPECT_CALL(mock_kernel_.Mock(),
               Mount("cgroup", "/dev/cgroup/memory", "cgroup", 0, _))
       .WillOnce(Return(1));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   EXPECT_NOT_OK(ContainerApiImpl::InitMachineImpl(&mock_kernel_.Mock(), spec));
 }
@@ -375,7 +477,11 @@ TEST_F(ContainerApiImplTest, GetSuccess) {
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(true));
 
-  // Get the tasks handler
+  // Get the Freezer handler
+  EXPECT_CALL(*mock_freezer_controller_factory_, Get(kName))
+      .WillOnce(Return(new StrictMockFreezerController()));
+
+  // Get the Tasks handler
   EXPECT_CALL(*mock_tasks_handler_factory_, Get(kName))
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(
           new StrictMockTasksHandler(kName))));
@@ -402,6 +508,9 @@ TEST_F(ContainerApiImplTest, GetErrorGettingTasksHandler) {
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(true));
 
+  EXPECT_CALL(*mock_freezer_controller_factory_, Get(kName))
+      .WillOnce(Return(new StrictMockFreezerController()));
+
   EXPECT_CALL(*mock_tasks_handler_factory_, Get(kName))
       .WillRepeatedly(Return(StatusOr<TasksHandler *>(Status::CANCELLED)));
 
@@ -414,6 +523,37 @@ TEST_F(ContainerApiImplTest, GetBadContainerName) {
   EXPECT_EQ(::util::error::INVALID_ARGUMENT, status.status().error_code());
 }
 
+TEST_F(ContainerApiImplTest, GetErrorGettingFreezerController) {
+  const string kName = "/test";
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Get(kName))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(true));
+
+  EXPECT_ERROR_CODE(::util::error::CANCELLED,  lmctfy_->Get(kName));
+}
+
+TEST_F(ContainerApiImplTest, GetFailure_MissingFreezerEntry) {
+  const string kName = "/test";
+
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(true));
+
+  // Get the Freezer handler
+  EXPECT_CALL(*mock_freezer_controller_factory_, Get(kName))
+      .WillOnce(Return(Status(::util::error::NOT_FOUND,
+                              "freezer entry missing")));
+
+  // Get the Tasks handler
+  EXPECT_CALL(*mock_tasks_handler_factory_, Get(kName))
+      .WillRepeatedly(Return(StatusOr<TasksHandler *>(
+          new StrictMockTasksHandler(kName))));
+
+  EXPECT_ERROR_CODE(::util::error::NOT_FOUND, lmctfy_->Get(kName));
+}
+
 // Tests for Create()
 
 TEST_F(ContainerApiImplTest, CreateSuccess) {
@@ -423,6 +563,9 @@ TEST_F(ContainerApiImplTest, CreateSuccess) {
   spec.mutable_cpu();
   spec.mutable_memory();
   spec.mutable_filesystem();
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+      .WillRepeatedly(Return(new StrictMockFreezerController()));
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -470,19 +613,30 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
       new StrictMockResourceHandlerFactory(RESOURCE_MONITORING);
   MockResourceHandlerFactory *filesystem_handler =
       new StrictMockResourceHandlerFactory(RESOURCE_FILESYSTEM);
+  MockNamespaceHandlerFactory *namespace_handler =
+      new StrictMockNamespaceHandlerFactory();
 
   const vector<ResourceHandlerFactory *> resource_factories = {
     cpu_handler, memory_handler, diskio_handler, network_handler,
-    monitoring_handler, filesystem_handler
+    monitoring_handler, filesystem_handler,
   };
 
   MockTasksHandlerFactory *mock_tasks_handler_factory =
       new StrictMockTasksHandlerFactory();
   MockCgroupFactory *mock_cgroup_factory = new StrictMockCgroupFactory();
+
+  MockFreezerControllerFactory *freezer_controller_factory =
+      new MockFreezerControllerFactory(mock_cgroup_factory);
+
+  EXPECT_CALL(*freezer_controller_factory, Create(kName))
+      .WillRepeatedly(Return(new StrictMockFreezerController()));
+
   lmctfy_.reset(new ContainerApiImpl(
       mock_tasks_handler_factory, mock_cgroup_factory, resource_factories,
       new StrictMock<MockKernelApi>(), new ActiveNotifications(),
-      MockEventFdNotifications::NewStrict()));
+      namespace_handler,
+      MockEventFdNotifications::NewStrict(),
+      unique_ptr<FreezerControllerFactory>(freezer_controller_factory)));
 
   EXPECT_CALL(*mock_tasks_handler_factory, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -505,6 +659,9 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   EXPECT_CALL(*filesystem_handler, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*namespace_handler, CreateNamespaceHandler(kName, _))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kName, RESOURCE_VIRTUALHOST))));
   EXPECT_CALL(*mock_tasks_handler_factory,
               Create(kName, EqualsInitializedProto(spec)))
       .WillRepeatedly(
@@ -522,6 +679,9 @@ TEST_F(ContainerApiImplTest, CreateOnlySpecCpuSuccess) {
 
   ContainerSpec spec;
   spec.mutable_cpu();
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+      .WillRepeatedly(Return(new StrictMockFreezerController()));
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -551,6 +711,9 @@ TEST_F(ContainerApiImplTest, CreateNoResourcesSpecified) {
   const string kName = "/test";
 
   ContainerSpec spec;
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+      .WillRepeatedly(Return(new StrictMockFreezerController()));
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -583,6 +746,15 @@ TEST_F(ContainerApiImplTest, CreateTasksHandlerCreationFails) {
   spec.mutable_memory();
   spec.mutable_network();
 
+  unique_ptr<MockFreezerController> mock_freezer_controller(
+      new StrictMockFreezerController());
+
+  EXPECT_CALL(*mock_freezer_controller, Destroy())
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+      .WillRepeatedly(Return(mock_freezer_controller.get()));
+
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
 
@@ -605,6 +777,24 @@ TEST_F(ContainerApiImplTest, CreateTasksHandlerCreationFails) {
   EXPECT_EQ(Status::CANCELLED, status.status());
 }
 
+TEST_F(ContainerApiImplTest, CreateFreezerControllerCreationFails) {
+  const string kName = "/test";
+
+  ContainerSpec spec;
+
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(false));
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(Return(StatusOr<TasksHandler *>(Status::CANCELLED)));
+
+  EXPECT_ERROR_CODE(::util::error::CANCELLED, lmctfy_->Create(kName, spec));
+}
+
 TEST_F(ContainerApiImplTest, CreateResourceCreationFails) {
   const string kParentName = "/";
   const string kName = "/test";
@@ -612,6 +802,12 @@ TEST_F(ContainerApiImplTest, CreateResourceCreationFails) {
   ContainerSpec spec;
   spec.mutable_cpu();
   spec.mutable_filesystem();
+
+  unique_ptr<MockFreezerController> mock_freezer_controller(
+      new StrictMockFreezerController());
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+      .WillOnce(Return(mock_freezer_controller.get()));
 
   EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
       .WillRepeatedly(Return(false));
@@ -627,14 +823,19 @@ TEST_F(ContainerApiImplTest, CreateResourceCreationFails) {
           new StrictMockResourceHandler(kParentName, RESOURCE_MEMORY))));
   EXPECT_CALL(*mock_handler_factory3_, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(Status::CANCELLED)));
+  unique_ptr<MockTasksHandler> mock_tasks_handler(
+      new StrictMockTasksHandler(kName));
   EXPECT_CALL(*mock_tasks_handler_factory_,
               Create(kName, EqualsInitializedProto(spec)))
-      .WillRepeatedly(
-           Return(StatusOr<TasksHandler *>(new StrictMockTasksHandler(kName))));
+      .WillOnce(Return(mock_tasks_handler.get()));
 
   // The partially created resources will be destroyed
   EXPECT_CALL(*cpu_handler, Destroy())
-      .WillRepeatedly(Return(Status::OK));
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_tasks_handler, Destroy())
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_freezer_controller, Destroy())
+      .WillOnce(Return(Status::OK));
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_FALSE(status.ok());
@@ -670,7 +871,31 @@ TEST_F(ContainerApiImplTest, CreateContainerAlreadyExists) {
   EXPECT_EQ(::util::error::ALREADY_EXISTS, status.status().error_code());
 }
 
-TEST_F(ContainerApiImplTest, CreateWithDelegatedUser) {
+class ContainerApiImplDelegateTest : public ContainerApiImplTest {
+ protected:
+  void ExpectCreate(const string &kName, const ContainerSpec &spec) {
+    mock_cpu_handler_ = new StrictMockResourceHandler(kName, RESOURCE_CPU);
+    mock_tasks_handler_ = new StrictMockTasksHandler(kName);
+    mock_freezer_controller_ = new StrictMockFreezerController();
+
+    EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+        .WillRepeatedly(Return(false));
+
+    EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
+        .WillOnce(Return(mock_cpu_handler_));
+    EXPECT_CALL(*mock_tasks_handler_factory_,
+                Create(kName, EqualsInitializedProto(spec)))
+        .WillOnce(Return(mock_tasks_handler_));
+    EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+        .WillOnce(Return(mock_freezer_controller_));
+  }
+
+  MockResourceHandler *mock_cpu_handler_;
+  MockTasksHandler *mock_tasks_handler_;
+  MockFreezerController *mock_freezer_controller_;
+};
+
+TEST_F(ContainerApiImplDelegateTest, CreateWithDelegatedUser) {
   const string kName = "/test";
   const UnixUid kUid(42);
   const UnixGid kGid(UnixGidValue::Invalid());
@@ -679,22 +904,12 @@ TEST_F(ContainerApiImplTest, CreateWithDelegatedUser) {
   spec.set_owner(kUid.value());
   spec.mutable_cpu();
 
-  MockResourceHandler *mock_cpu_handler =
-      new StrictMockResourceHandler(kName, RESOURCE_CPU);
-  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
-      .WillRepeatedly(Return(false));
-
-  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
-      .WillOnce(Return(mock_cpu_handler));
-  EXPECT_CALL(*mock_tasks_handler_factory_,
-              Create(kName, EqualsInitializedProto(spec)))
-      .WillOnce(Return(mock_tasks_handler));
-
-  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+  ExpectCreate(kName, spec);
+  EXPECT_CALL(*mock_cpu_handler_, Delegate(kUid, kGid))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
+  EXPECT_CALL(*mock_tasks_handler_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_freezer_controller_, Delegate(kUid, kGid))
       .WillOnce(Return(Status::OK));
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
@@ -702,7 +917,7 @@ TEST_F(ContainerApiImplTest, CreateWithDelegatedUser) {
   delete status.ValueOrDie();
 }
 
-TEST_F(ContainerApiImplTest, CreateWithDelegatedGid) {
+TEST_F(ContainerApiImplDelegateTest, CreateWithDelegatedGid) {
   const string kName = "/test";
   const UnixUid kUid(UnixUidValue::Invalid());
   const UnixGid kGid(42);
@@ -711,22 +926,12 @@ TEST_F(ContainerApiImplTest, CreateWithDelegatedGid) {
   spec.set_owner_group(kGid.value());
   spec.mutable_cpu();
 
-  MockResourceHandler *mock_cpu_handler =
-      new StrictMockResourceHandler(kName, RESOURCE_CPU);
-  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
-      .WillRepeatedly(Return(false));
-
-  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
-      .WillOnce(Return(mock_cpu_handler));
-  EXPECT_CALL(*mock_tasks_handler_factory_,
-              Create(kName, EqualsInitializedProto(spec)))
-      .WillOnce(Return(mock_tasks_handler));
-
-  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+  ExpectCreate(kName, spec);
+  EXPECT_CALL(*mock_cpu_handler_, Delegate(kUid, kGid))
       .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
+  EXPECT_CALL(*mock_tasks_handler_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_freezer_controller_, Delegate(kUid, kGid))
       .WillOnce(Return(Status::OK));
 
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
@@ -734,7 +939,8 @@ TEST_F(ContainerApiImplTest, CreateWithDelegatedGid) {
   delete status.ValueOrDie();
 }
 
-TEST_F(ContainerApiImplTest, CreateWithDelegatedUserDelegateTasksHandlerFails) {
+TEST_F(ContainerApiImplDelegateTest,
+       CreateWithDelegatedUserDelegateTasksHandlerFails) {
   const string kName = "/test";
   const UnixUid kUid(42);
   const UnixGid kGid(UnixGidValue::Invalid());
@@ -743,28 +949,32 @@ TEST_F(ContainerApiImplTest, CreateWithDelegatedUserDelegateTasksHandlerFails) {
   spec.set_owner(kUid.value());
   spec.mutable_cpu();
 
-  MockResourceHandler *mock_cpu_handler =
-      new StrictMockResourceHandler(kName, RESOURCE_CPU);
-  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
+  ExpectCreate(kName, spec);
 
-  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
-      .WillRepeatedly(Return(false));
+  EXPECT_CALL(*mock_freezer_controller_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
 
-  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
-      .WillOnce(Return(mock_cpu_handler));
-  EXPECT_CALL(*mock_tasks_handler_factory_,
-              Create(kName, EqualsInitializedProto(spec)))
-      .WillOnce(Return(mock_tasks_handler));
-
-  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+  EXPECT_CALL(*mock_tasks_handler_, Delegate(kUid, kGid))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
-      .WillRepeatedly(Return(Status::OK));
+
+  EXPECT_CALL(*mock_cpu_handler_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_cpu_handler_; }),
+                Return(Status::OK)));
+  EXPECT_CALL(*mock_tasks_handler_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_tasks_handler_; }),
+                Return(Status::OK)));
+  EXPECT_CALL(*mock_freezer_controller_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_freezer_controller_; }),
+                Return(Status::OK)));
 
   EXPECT_ERROR_CODE(::util::error::CANCELLED, lmctfy_->Create(kName, spec));
 }
 
-TEST_F(ContainerApiImplTest, CreateWithDelegatedUserDelegateResourceHandlerFails) {
+TEST_F(ContainerApiImplDelegateTest,
+       CreateWithDelegatedUserDelegateResourceHandlerFails) {
   const string kName = "/test";
   const UnixUid kUid(42);
   const UnixGid kGid(UnixGidValue::Invalid());
@@ -773,23 +983,56 @@ TEST_F(ContainerApiImplTest, CreateWithDelegatedUserDelegateResourceHandlerFails
   spec.set_owner(kUid.value());
   spec.mutable_cpu();
 
-  MockResourceHandler *mock_cpu_handler =
-      new StrictMockResourceHandler(kName, RESOURCE_CPU);
-  MockTasksHandler *mock_tasks_handler = new StrictMockTasksHandler(kName);
-
-  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
-      .WillRepeatedly(Return(false));
-
-  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
-      .WillOnce(Return(mock_cpu_handler));
-  EXPECT_CALL(*mock_tasks_handler_factory_,
-              Create(kName, EqualsInitializedProto(spec)))
-      .WillOnce(Return(mock_tasks_handler));
-
-  EXPECT_CALL(*mock_cpu_handler, Delegate(kUid, kGid))
+  ExpectCreate(kName, spec);
+  EXPECT_CALL(*mock_freezer_controller_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_tasks_handler_, Delegate(kUid, kGid))
       .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_tasks_handler, Delegate(kUid, kGid))
+  EXPECT_CALL(*mock_cpu_handler_, Delegate(kUid, kGid))
       .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_CALL(*mock_cpu_handler_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_cpu_handler_; }),
+                Return(Status::OK)));
+  EXPECT_CALL(*mock_tasks_handler_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_tasks_handler_; }),
+                Return(Status::OK)));
+  EXPECT_CALL(*mock_freezer_controller_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_freezer_controller_; }),
+                Return(Status::OK)));
+  EXPECT_ERROR_CODE(::util::error::CANCELLED, lmctfy_->Create(kName, spec));
+}
+
+TEST_F(ContainerApiImplDelegateTest,
+       CreateWithDelegatedUserFreezerControllerFails) {
+  const string kName = "/test";
+  const UnixUid kUid(42);
+  const UnixGid kGid(UnixGidValue::Invalid());
+
+  ContainerSpec spec;
+  spec.set_owner(kUid.value());
+  spec.mutable_cpu();
+
+  ExpectCreate(kName, spec);
+  EXPECT_CALL(*mock_freezer_controller_, Delegate(kUid, kGid))
+      .WillOnce(Return(Status::CANCELLED));
+
+  EXPECT_CALL(*mock_cpu_handler_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_cpu_handler_; }),
+                Return(Status::OK)));
+  EXPECT_CALL(*mock_tasks_handler_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_tasks_handler_; }),
+                Return(Status::OK)));
+
+  EXPECT_CALL(*mock_freezer_controller_, Destroy())
+      .WillOnce(
+          DoAll(Invoke([this]() { delete mock_freezer_controller_; }),
+                Return(Status::OK)));
 
   EXPECT_ERROR_CODE(::util::error::CANCELLED, lmctfy_->Create(kName, spec));
 }
@@ -841,11 +1084,11 @@ TEST_F(ContainerApiImplTest, DestroyContainerDestroyFails) {
 class ContainerApiImplDestroyTest : public ::testing::Test {
  public:
   void SetUp() {
-    vector<ResourceHandlerFactory *> resource_factories;
-
     // Add dummy Global Resource Handler
-    resource_factories.push_back(
-        new StrictMockResourceHandlerFactory(RESOURCE_CPU));
+    mock_namespace_handler_factory_ = new StrictMockNamespaceHandlerFactory();
+    vector<ResourceHandlerFactory *> resource_factories {
+        new StrictMockResourceHandlerFactory(RESOURCE_CPU),
+    };
 
     mock_tasks_handler_factory_ = new StrictMockTasksHandlerFactory();
     mock_cgroup_factory_ = new StrictMockCgroupFactory();
@@ -854,6 +1097,7 @@ class ContainerApiImplDestroyTest : public ::testing::Test {
     mock_lmctfy_.reset(new StrictMock<MockContainerApiImpl>(
         mock_tasks_handler_factory_, mock_cgroup_factory_, resource_factories,
         &mock_kernel_.Mock(), active_notifications_,
+        mock_namespace_handler_factory_,
         mock_eventfd_notifications_));
     mock_container_ = new StrictMock<MockContainer>("/test");
   }
@@ -865,6 +1109,7 @@ class ContainerApiImplDestroyTest : public ::testing::Test {
   MockContainer *mock_container_;
   ActiveNotifications *active_notifications_;
   MockEventFdNotifications *mock_eventfd_notifications_;
+  MockNamespaceHandlerFactory *mock_namespace_handler_factory_;
   MockKernelApiOverride mock_kernel_;
 };
 
@@ -1124,6 +1369,9 @@ TEST_F(ContainerApiImplTest, InitMachineSuccess) {
   EXPECT_CALL(*mock_handler_factory3_,
               InitMachine(EqualsInitializedProto(spec)))
       .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_handler_factory4_,
+              InitMachine(EqualsInitializedProto(spec)))
+      .WillOnce(Return(Status::OK));
 
   EXPECT_OK(lmctfy_->InitMachine(spec));
 }
@@ -1143,11 +1391,6 @@ TEST_F(ContainerApiImplTest, InitMachineResourceHandlerInitFails) {
       .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED, lmctfy_->InitMachine(spec));
-}
-
-// Simply returns the specified subprocess.
-SubProcess *IdentitySubProcessFactory(MockSubProcess *subprocess) {
-  return subprocess;
 }
 
 static bool CompareByName(Container *c1, Container *c2) {
@@ -1178,21 +1421,22 @@ class ContainerImplTest : public ::testing::Test {
         new StrictMockResourceHandlerFactory(RESOURCE_MEMORY));
     mock_resource_factory3_.reset(
         new StrictMockResourceHandlerFactory(RESOURCE_FILESYSTEM));
+    mock_namespace_handler_factory_.reset(
+        new StrictMockNamespaceHandlerFactory());
 
     mock_lmctfy_.reset(new StrictMock<MockContainerApiImpl>(
         new StrictMockTasksHandlerFactory(), new StrictMockCgroupFactory(),
         vector<ResourceHandlerFactory *>(), &mock_kernel_.Mock(),
-        new ActiveNotifications(), MockEventFdNotifications::NewStrict()));
-    mock_subprocess_ = new StrictMock<MockSubProcess>();
-    mock_subprocess_factory_.reset(
-        NewPermanentCallback(&IdentitySubProcessFactory, mock_subprocess_));
+        new ActiveNotifications(), new StrictMockNamespaceHandlerFactory(),
+        MockEventFdNotifications::NewStrict()));
 
-    ResourceFactoryMap factory_map;
-    factory_map.insert(make_pair(RESOURCE_CPU, mock_resource_factory1_.get()));
-    factory_map.insert(make_pair(RESOURCE_MEMORY,
-                                 mock_resource_factory2_.get()));
-    factory_map.insert(make_pair(RESOURCE_FILESYSTEM,
-                                 mock_resource_factory3_.get()));
+    ResourceFactoryMap factory_map = {
+      {RESOURCE_CPU, mock_resource_factory1_.get()},
+      {RESOURCE_MEMORY, mock_resource_factory2_.get()},
+      {RESOURCE_FILESYSTEM, mock_resource_factory3_.get()},
+    };
+
+    mock_freezer_controller_ = new StrictMockFreezerController();
 
     container_.reset(new ContainerImpl(
         container_name,
@@ -1200,18 +1444,24 @@ class ContainerImplTest : public ::testing::Test {
         factory_map,
         mock_lmctfy_.get(),
         &mock_kernel_.Mock(),
-        mock_subprocess_factory_.get(),
-        &active_notifications_));
+        mock_namespace_handler_factory_.get(),
+        &active_notifications_,
+        unique_ptr<FreezerController>(mock_freezer_controller_)));
 
     ExpectExists(true);
   }
 
-  // Expect the specified container to have the subcontainers with the specified
+  // Translate from Container::ListType to TasksHandler::ListPolicy.
+  TasksHandler::ListType ToTasksHandlerListType(Container::ListPolicy policy) {
+    return policy == Container::LIST_SELF ? TasksHandler::ListType::SELF
+                                          : TasksHandler::ListType::RECURSIVE;
+  }
+
+  // Expect the created container to have the subcontainers with the specified
   // names. This creates mocks for those subcontainers and adds them to
-  // container_map_. By default we expect the subcontainers to have no
-  // containers.
-  void ExpectSubcontainers(const string &container_name,
-                           const vector<string> &subcontainer_names) {
+  // container_map_.
+  void ExpectSubcontainers(const vector<string> &subcontainer_names,
+                           Container::ListPolicy policy) {
     vector<Container *> subcontainers;
 
     // Create the subcontainers and expect their Get()s.
@@ -1219,27 +1469,15 @@ class ContainerImplTest : public ::testing::Test {
       MockContainer *sub = new StrictMockContainer(name);
 
       EXPECT_CALL(*mock_lmctfy_, Get(name))
-          .WillRepeatedly(Return(StatusOr<Container *>(sub)));
-      EXPECT_CALL(*sub, ListSubcontainers(Container::LIST_SELF))
-          .WillRepeatedly(
-              Return(StatusOr<vector<Container *>>(vector<Container *>())));
+          .WillRepeatedly(Return(sub));
 
       subcontainers.push_back(sub);
       container_map_[name] = sub;
     }
 
-    // The top level container should use the TasksHandler, else use this
-    // container's mock.
-    if (container_name == kContainerName) {
-      EXPECT_CALL(*mock_tasks_handler_, ListSubcontainers())
-          .WillRepeatedly(Return(StatusOr<vector<string>>(subcontainer_names)));
-    } else {
-      CHECK(container_map_.find(container_name) != container_map_.end())
-          << "MockContainer has not been created yet";
-      EXPECT_CALL(*(container_map_[container_name]),
-                  ListSubcontainers(Container::LIST_SELF))
-          .WillRepeatedly(Return(StatusOr<vector<Container *>>(subcontainers)));
-    }
+    EXPECT_CALL(*mock_tasks_handler_,
+                ListSubcontainers(ToTasksHandlerListType(policy)))
+        .WillRepeatedly(Return(subcontainer_names));
   }
 
   // Expect the specified container vector to contain all the containers in the
@@ -1268,8 +1506,7 @@ class ContainerImplTest : public ::testing::Test {
     // Expect 2 subcontainers each with PIDs.
     const string kSub1 = JoinPath(container_->name(), "sub1");
     const string kSub2 = JoinPath(container_->name(), "sub2");
-    ExpectSubcontainers(container_->name(),
-                        {kSub1, kSub2});
+    ExpectSubcontainers({kSub1, kSub2}, Container::LIST_SELF);
 
     if (list_processes) {
       EXPECT_CALL(*container_map_[kSub1], ListProcesses(Container::LIST_SELF))
@@ -1327,6 +1564,15 @@ class ContainerImplTest : public ::testing::Test {
     return output;
   }
 
+  MockNamespaceHandler *ExpectGetNamespaceHandler() {
+    MockNamespaceHandler *result =
+        new StrictMockNamespaceHandler(kContainerName, RESOURCE_VIRTUALHOST);
+    EXPECT_CALL(*mock_namespace_handler_factory_,
+                GetNamespaceHandler(kContainerName))
+        .WillOnce(Return(result));
+    return result;
+  }
+
   // Expect Kill() to be called on the specified PIDs and returning ret_val.
   // Expect this to happen num_tries times.
   void ExpectKill(const vector<pid_t> &pids, int ret_val,
@@ -1343,14 +1589,18 @@ class ContainerImplTest : public ::testing::Test {
   void ExpectSimpleKillAll(Status status) {
     // No processes or threads.
     if (status.ok()) {
-      EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+      EXPECT_CALL(*mock_tasks_handler_,
+                  ListProcesses(TasksHandler::ListType::SELF))
           .WillRepeatedly(Return(vector<pid_t>()));
-      EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+      EXPECT_CALL(*mock_tasks_handler_,
+                  ListThreads(TasksHandler::ListType::SELF))
           .WillRepeatedly(Return(vector<pid_t>()));
     } else {
-      EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+      EXPECT_CALL(*mock_tasks_handler_,
+                  ListProcesses(TasksHandler::ListType::SELF))
           .WillRepeatedly(Return(status));
-      EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+      EXPECT_CALL(*mock_tasks_handler_,
+                  ListThreads(TasksHandler::ListType::SELF))
           .WillRepeatedly(Return(status));
     }
 
@@ -1359,13 +1609,14 @@ class ContainerImplTest : public ::testing::Test {
         .WillRepeatedly(Return(0));
   }
 
-  // Expect Enter() to be called on the specified TID and return with the
-  // specified status.
-  void ExpectEnter(pid_t pid, Status status) {
+  void ExpectEnterInto(pid_t pid, Status status) {
     vector<pid_t> tids = {pid};
 
     EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
         .WillRepeatedly(Return(Status::OK));
+
+    EXPECT_CALL(*mock_freezer_controller_, Enter(pid))
+        .WillOnce(Return(Status::OK));
 
     // Enter() takes ownership of the return of GetResourceHandlers().
     vector<MockResourceHandler *> handlers = ExpectGetResourceHandlers(
@@ -1374,6 +1625,17 @@ class ContainerImplTest : public ::testing::Test {
       EXPECT_CALL(*handler, Enter(tids))
           .WillRepeatedly(Return(status));
     }
+  }
+
+  // Expect Enter() to be called on the specified TID and return with the
+  // specified status.
+  void ExpectEnter(pid_t pid, Status status) {
+    // Enter() takes ownership of the return of GetResourceHandlers().
+    MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+    EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(vector<pid_t>{pid}))
+        .WillRepeatedly(Return(false));
+
+    ExpectEnterInto(pid, status);
   }
 
   // Expect a call to Exists() that returns true iff exists is specified.
@@ -1407,14 +1669,15 @@ class ContainerImplTest : public ::testing::Test {
   ActiveNotifications active_notifications_;
   unique_ptr<ContainerImpl> container_;
   unique_ptr<MockContainerApiImpl> mock_lmctfy_;
-  MockSubProcess *mock_subprocess_;
-  unique_ptr<SubProcessFactory> mock_subprocess_factory_;
+  MockFreezerController *mock_freezer_controller_;
+  unique_ptr<MockNamespaceHandlerFactory> mock_namespace_handler_factory_;
   MockKernelApiOverride mock_kernel_;
 };
 
 // Tests for ListSubcontainers().
+typedef ContainerImplTest ListSubcontainersTest;
 
-TEST_F(ContainerImplTest, ListSubcontainersNoContainer) {
+TEST_F(ListSubcontainersTest, NoContainer) {
   // Call for self and recursive
   for (const auto &policy : list_policies_) {
     ExpectExists(false);
@@ -1423,27 +1686,28 @@ TEST_F(ContainerImplTest, ListSubcontainersNoContainer) {
   }
 }
 
-TEST_F(ContainerImplTest, ListSubcontainersNoSubcontainers) {
+TEST_F(ListSubcontainersTest, NoSubcontainers) {
   // Call for self and recursive
   for (const auto &policy : list_policies_) {
-    ExpectSubcontainers(container_->name(), vector<string>());
+    ExpectSubcontainers({}, policy);
 
     StatusOr<vector<Container *>> statusor = container_->ListSubcontainers(
         policy);
-    ASSERT_TRUE(statusor.ok());
+    ASSERT_OK(statusor);
     EXPECT_EQ(0, statusor.ValueOrDie().size());
   }
 }
 
-TEST_F(ContainerImplTest, ListSubcontainersOneLevel) {
+TEST_F(ListSubcontainersTest, OneLevel) {
   // Call for self and recursive
   for (const auto &policy : list_policies_) {
-    ExpectSubcontainers(container_->name(), {JoinPath(kContainerName, "sub2"),
-                                             JoinPath(kContainerName, "sub1")});
+    ExpectSubcontainers(
+        {JoinPath(kContainerName, "sub2"), JoinPath(kContainerName, "sub1")},
+        policy);
 
     StatusOr<vector<Container *>> statusor = container_->ListSubcontainers(
         policy);
-    ASSERT_TRUE(statusor.ok());
+    ASSERT_OK(statusor);
     vector<Container *> subcontainers = statusor.ValueOrDie();
     EXPECT_EQ(2, subcontainers.size());
     ExpectContainers(subcontainers);
@@ -1451,71 +1715,43 @@ TEST_F(ContainerImplTest, ListSubcontainersOneLevel) {
   }
 }
 
-TEST_F(ContainerImplTest, ListSubcontainersSelfListFails) {
-  EXPECT_CALL(*mock_tasks_handler_, ListSubcontainers())
-      .WillRepeatedly(Return(StatusOr<vector<string>>(Status::CANCELLED)));
+TEST_F(ListSubcontainersTest, ListFails) {
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    EXPECT_CALL(*mock_tasks_handler_,
+                ListSubcontainers(policy == Container::LIST_SELF
+                                      ? TasksHandler::ListType::SELF
+                                      : TasksHandler::ListType::RECURSIVE))
+        .WillRepeatedly(Return(StatusOr<vector<string>>(Status::CANCELLED)));
 
-  EXPECT_EQ(Status::CANCELLED, container_->ListSubcontainers(
-      Container::LIST_SELF).status());
+    EXPECT_EQ(Status::CANCELLED,
+              container_->ListSubcontainers(policy).status());
+  }
 }
 
-TEST_F(ContainerImplTest, ListSubcontainersSelfContainerApiGetFails) {
+TEST_F(ListSubcontainersTest, ContainerApiGetFails) {
   const string kSub = JoinPath(kContainerName, "sub1");
 
-  ExpectSubcontainers(container_->name(), {kSub});
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectSubcontainers({kSub}, policy);
 
-  // Getting one of the containers fails.
-  EXPECT_CALL(*mock_lmctfy_, Get(kSub))
-      .WillRepeatedly(Return(StatusOr<Container *>(Status::CANCELLED)));
+    // Getting one of the containers fails.
+    EXPECT_CALL(*mock_lmctfy_, Get(kSub))
+        .WillRepeatedly(Return(StatusOr<Container *>(Status::CANCELLED)));
 
-  EXPECT_EQ(Status::CANCELLED, container_->ListSubcontainers(
-      Container::LIST_SELF).status());
+    EXPECT_EQ(Status::CANCELLED,
+              container_->ListSubcontainers(policy).status());
 
-  // Since we failed the Get() it is safe to delete the mock container.
-  STLDeleteValues(&container_map_);
-}
-
-TEST_F(ContainerImplTest, ListSubcontainersRecursiveWithManyLayers) {
-  const string kSub1 = "sub2";
-  const string kSub2 = "sub1";
-  const string kSub3 = JoinPath(kSub2, "ssub2");
-  const string kSub4 = JoinPath(kSub2, "ssub1");
-  const string kSub5 = JoinPath(kSub2, "ssub1/sssub1");
-
-  ExpectSubcontainers(container_->name(), {kSub1, kSub2});
-  ExpectSubcontainers(kSub2, {kSub3, kSub4});
-  ExpectSubcontainers(kSub4, {kSub5});
-
-  StatusOr<vector<Container *>> statusor = container_->ListSubcontainers(
-      Container::LIST_RECURSIVE);
-  ASSERT_TRUE(statusor.ok());
-  vector<Container *> subcontainers = statusor.ValueOrDie();
-  EXPECT_EQ(5, subcontainers.size());
-  ExpectContainers(subcontainers);
-  STLDeleteElements(&subcontainers);
-}
-
-TEST_F(ContainerImplTest, ListSubcontainersRecursiveListSubcontainersFails) {
-  const string kSub1 = "/test/sub1";
-  const string kSub2 = "/test/sub2";
-  const string kSub3 = JoinPath(kSub1, "ssub1");
-  const string kSub4 = JoinPath(kSub2, "ssub1");
-
-  ExpectSubcontainers(container_->name(), {kSub1, kSub2});
-  ExpectSubcontainers(kSub1, {kSub3});
-  ExpectSubcontainers(kSub2, {kSub4});
-
-  // Set Get() of one subcontainer to fail
-  EXPECT_CALL(*(container_map_[kSub4]), ListSubcontainers(Container::LIST_SELF))
-      .WillRepeatedly(Return(StatusOr<vector<Container *>>(Status::CANCELLED)));
-
-  EXPECT_EQ(Status::CANCELLED, container_->ListSubcontainers(
-      Container::LIST_RECURSIVE).status());
+    // Since we failed the Get() it is safe to delete the mock container.
+    STLDeleteValues(&container_map_);
+  }
 }
 
 // Tests for ListThreads().
+typedef ContainerImplTest ListThreadsTest;
 
-TEST_F(ContainerImplTest, ListThreadsNoContainer) {
+TEST_F(ListThreadsTest, NoContainer) {
   // Call for self and recursive
   for (const auto &policy : list_policies_) {
     ExpectExists(false);
@@ -1524,132 +1760,40 @@ TEST_F(ContainerImplTest, ListThreadsNoContainer) {
   }
 }
 
-TEST_F(ContainerImplTest, ListThreadsSelfSuccess) {
+TEST_F(ListThreadsTest, Success) {
   const vector<pid_t> kPids = {1, 2, 3, 4};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(kPids));
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectExists(true);
 
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_SELF);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ(kPids, statusor.ValueOrDie());
+    EXPECT_CALL(*mock_tasks_handler_,
+                ListThreads(ToTasksHandlerListType(policy)))
+        .WillRepeatedly(Return(kPids));
+
+    StatusOr<vector<pid_t>> statusor = container_->ListThreads(policy);
+    ASSERT_OK(statusor);
+    EXPECT_EQ(kPids, statusor.ValueOrDie());
+  }
 }
 
-TEST_F(ContainerImplTest, ListThreadsSelfEmpty) {
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(vector<pid_t>()));
+TEST_F(ListThreadsTest, ListThreadsFails) {
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectExists(true);
 
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_SELF);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_TRUE(statusor.ValueOrDie().empty());
-}
+    EXPECT_CALL(*mock_tasks_handler_,
+                ListThreads(ToTasksHandlerListType(policy)))
+        .WillRepeatedly(Return(Status::CANCELLED));
 
-TEST_F(ContainerImplTest, ListThreadsSelfError) {
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(Status::CANCELLED));
-
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_SELF);
-  ASSERT_FALSE(statusor.ok());
-  EXPECT_EQ(Status::CANCELLED, statusor.status());
-}
-
-TEST_F(ContainerImplTest, ListThreadsRecursiveSuccess) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect 2 subcontainers each with PIDs.
-  vector<MockContainer *> subcontainers =
-      ExpectSubcontainersListPids(false, {3, 4},
-                                  {5, 6});
-  ElementDeleter d(&subcontainers);
-
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_RECURSIVE);
-  ASSERT_TRUE(statusor.ok());
-  const vector<pid_t> kExpected = {1, 2, 3, 4, 5, 6};
-  EXPECT_EQ(kExpected, statusor.ValueOrDie());
-}
-
-TEST_F(ContainerImplTest, ListThreadsRecursiveWithDuplicates) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect 2 subcontainers each with PIDs.
-  vector<MockContainer *> subcontainers =
-      ExpectSubcontainersListPids(false, {1, 2, 3, 4},
-                                  {3, 4, 5, 6});
-  ElementDeleter d(&subcontainers);
-
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_RECURSIVE);
-  ASSERT_TRUE(statusor.ok());
-  const vector<pid_t> kExpected = {1, 2, 3, 4, 5, 6};
-  EXPECT_EQ(kExpected, statusor.ValueOrDie());
-}
-
-TEST_F(ContainerImplTest, ListThreadsRecursiveNoSubcontainers) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect no subcontainers.
-  ExpectSubcontainers(container_->name(), vector<string>());
-
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_RECURSIVE);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ(kPids, statusor.ValueOrDie());
-}
-
-TEST_F(ContainerImplTest, ListThreadsRecursiveListSubcontainersFails) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(kPids));
-
-  // Subcontainers should fail.
-  EXPECT_CALL(*mock_tasks_handler_, ListSubcontainers())
-      .WillRepeatedly(Return(Status::CANCELLED));
-
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_RECURSIVE);
-  ASSERT_FALSE(statusor.ok());
-  EXPECT_EQ(Status::CANCELLED, statusor.status());
-}
-
-TEST_F(ContainerImplTest, ListThreadsRecursiveListThreadsFails) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect 2 subcontainers each with PIDs.
-  vector<MockContainer *> subcontainers =
-      ExpectSubcontainersListPids(false, {3, 4},
-                                  {5, 6});
-  ElementDeleter d(&subcontainers);
-
-  // Set the last subcontainer to fails a ListThreads.
-  EXPECT_CALL(*subcontainers.back(), ListThreads(Container::LIST_SELF))
-      .WillRepeatedly(Return(Status::CANCELLED));
-
-  StatusOr<vector<pid_t>> statusor = container_->ListThreads(
-      Container::LIST_RECURSIVE);
-  ASSERT_FALSE(statusor.ok());
-  EXPECT_EQ(Status::CANCELLED, statusor.status());
+    EXPECT_EQ(Status::CANCELLED, container_->ListThreads(policy).status());
+  }
 }
 
 // Tests for ListProcesses().
+typedef ContainerImplTest ListProcessesTest;
 
-TEST_F(ContainerImplTest, ListProcessesNoContainer) {
+TEST_F(ListProcessesTest, NoContainer) {
   // Call for self and recursive
   for (const auto &policy : list_policies_) {
     ExpectExists(false);
@@ -1658,127 +1802,34 @@ TEST_F(ContainerImplTest, ListProcessesNoContainer) {
   }
 }
 
-TEST_F(ContainerImplTest, ListProcessesSelfSuccess) {
+TEST_F(ListProcessesTest, Success) {
   const vector<pid_t> kPids = {1, 2, 3, 4};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(kPids));
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectExists(true);
 
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_SELF);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ(kPids, statusor.ValueOrDie());
+    EXPECT_CALL(*mock_tasks_handler_,
+                ListProcesses(ToTasksHandlerListType(policy)))
+        .WillRepeatedly(Return(kPids));
+
+    StatusOr<vector<pid_t>> statusor = container_->ListProcesses(policy);
+    ASSERT_OK(statusor);
+    EXPECT_EQ(kPids, statusor.ValueOrDie());
+  }
 }
 
-TEST_F(ContainerImplTest, ListProcessesSelfEmpty) {
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(vector<pid_t>()));
+TEST_F(ListProcessesTest, ListProcessesFails) {
+  // Call for self and recursive
+  for (const auto &policy : list_policies_) {
+    ExpectExists(true);
 
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_SELF);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_TRUE(statusor.ValueOrDie().empty());
-}
+    EXPECT_CALL(*mock_tasks_handler_,
+                ListProcesses(ToTasksHandlerListType(policy)))
+        .WillRepeatedly(Return(Status::CANCELLED));
 
-TEST_F(ContainerImplTest, ListProcessesSelfError) {
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(Status::CANCELLED));
-
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_SELF);
-  ASSERT_FALSE(statusor.ok());
-  EXPECT_EQ(Status::CANCELLED, statusor.status());
-}
-
-TEST_F(ContainerImplTest, ListProcessesRecursiveSuccess) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect 2 subcontainers each with PIDs.
-  vector<MockContainer *> subcontainers =
-      ExpectSubcontainersListPids(true, {3, 4},
-                                  {5, 6});
-  ElementDeleter d(&subcontainers);
-
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_RECURSIVE);
-  ASSERT_TRUE(statusor.ok());
-  const vector<pid_t> kExpected = {1, 2, 3, 4, 5, 6};
-  EXPECT_EQ(kExpected, statusor.ValueOrDie());
-}
-
-TEST_F(ContainerImplTest, ListProcessesRecursiveWithDuplicates) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect 2 subcontainers each with PIDs.
-  vector<MockContainer *> subcontainers =
-      ExpectSubcontainersListPids(true, {1, 2, 3, 4},
-                                  {3, 4, 5, 6});
-  ElementDeleter d(&subcontainers);
-
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_RECURSIVE);
-  ASSERT_TRUE(statusor.ok());
-  const vector<pid_t> kExpected = {1, 2, 3, 4, 5, 6};
-  EXPECT_EQ(kExpected, statusor.ValueOrDie());
-}
-
-TEST_F(ContainerImplTest, ListProcessesRecursiveNoSubcontainers) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect no subcontainers.
-  ExpectSubcontainers(container_->name(), vector<string>());
-
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_RECURSIVE);
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ(kPids, statusor.ValueOrDie());
-}
-
-TEST_F(ContainerImplTest, ListProcessesRecursiveListSubcontainersFails) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(kPids));
-
-  // Subcontainers should fail.
-  EXPECT_CALL(*mock_tasks_handler_, ListSubcontainers())
-      .WillRepeatedly(Return(Status::CANCELLED));
-
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_RECURSIVE);
-  ASSERT_FALSE(statusor.ok());
-  EXPECT_EQ(Status::CANCELLED, statusor.status());
-}
-
-TEST_F(ContainerImplTest, ListProcessesRecursiveListProcessesFails) {
-  // Expect the PIDs for self.
-  const vector<pid_t> kPids = {1, 2};
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
-      .WillRepeatedly(Return(kPids));
-
-  // Expect 2 subcontainers each with PIDs.
-  vector<MockContainer *> subcontainers =
-      ExpectSubcontainersListPids(true, {3, 4},
-                                  {5, 6});
-  ElementDeleter d(&subcontainers);
-
-  // Set the last subcontainer to fails a ListThreads.
-  EXPECT_CALL(*subcontainers.back(), ListProcesses(Container::LIST_SELF))
-      .WillRepeatedly(Return(Status::CANCELLED));
-
-  StatusOr<vector<pid_t>> statusor = container_->ListProcesses(
-      Container::LIST_RECURSIVE);
-  ASSERT_FALSE(statusor.ok());
-  EXPECT_EQ(Status::CANCELLED, statusor.status());
+    EXPECT_EQ(Status::CANCELLED, container_->ListProcesses(policy).status());
+  }
 }
 
 // Tests for GetResourceHandlers().
@@ -1793,6 +1844,11 @@ TEST_F(ContainerImplTest, GetResourceHandlersSuccess) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kContainerName,
+                                         RESOURCE_VIRTUALHOST))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
   ASSERT_TRUE(statusor.ok());
@@ -1816,6 +1872,11 @@ TEST_F(ContainerImplTest, GetResourceHandlersAttachToParent) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kContainerName,
+                                         RESOURCE_VIRTUALHOST))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
   ASSERT_TRUE(statusor.ok());
@@ -1842,9 +1903,14 @@ TEST_F(ContainerImplTest, GetResourceHandlersAttachToRoot) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kContainerName,
+                                         RESOURCE_VIRTUALHOST))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
-  ASSERT_TRUE(statusor.ok());
+  ASSERT_TRUE(statusor.ok()) << statusor.status();
 
   vector<ResourceHandler *> result = statusor.ValueOrDie();
   EXPECT_EQ(3, result.size());
@@ -1860,6 +1926,11 @@ TEST_F(ContainerImplTest, GetResourceHandlersErrorAttaching) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kContainerName,
+                                         RESOURCE_VIRTUALHOST))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1876,6 +1947,11 @@ TEST_F(ContainerImplTest, GetResourceHandlersErrorAttachingToParent) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kContainerName,
+                                         RESOURCE_VIRTUALHOST))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1895,6 +1971,11 @@ TEST_F(ContainerImplTest, GetResourceHandlersErrorAttachingToRoot) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kContainerName,
+                                         RESOURCE_VIRTUALHOST))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1915,6 +1996,11 @@ TEST_F(ContainerImplTest, GetResourceHandlersRootNotFound) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kContainerName))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kContainerName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kContainerName,
+                                         RESOURCE_VIRTUALHOST))));
 
   ASSERT_FALSE(CallGetResourceHandlers().ok());
 }
@@ -1931,6 +2017,11 @@ TEST_F(ContainerImplTest, GetResourceHandlersOnRootContainerSuccess) {
   EXPECT_CALL(*mock_resource_factory3_, Get(kRootContainer))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kRootContainer, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kRootContainer))
+      .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kRootContainer,
+                                         RESOURCE_VIRTUALHOST))));
 
   StatusOr<vector<ResourceHandler *>> statusor = CallGetResourceHandlers();
   ASSERT_TRUE(statusor.ok());
@@ -1993,6 +2084,7 @@ TEST_F(ContainerImplTest, StatsSuccess) {
   for (Container::StatsType type : stats_types_) {
     vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
         Status::OK);
+    MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
     // Each resource handler has 2 stat pairs (except Global which is not
     // attached to this container).
@@ -2005,6 +2097,8 @@ TEST_F(ContainerImplTest, StatsSuccess) {
             DoAll(Invoke(&AppendMemoryStats), Return(Status::OK)));
       }
     }
+    EXPECT_CALL(*mock_namespace_handler, Stats(type, NotNull()))
+        .WillRepeatedly(Return(Status::OK));
 
     StatusOr<ContainerStats> statusor = container_->Stats(type);
     ASSERT_TRUE(statusor.ok());
@@ -2022,11 +2116,14 @@ TEST_F(ContainerImplTest, StatsEmpty) {
   for (Container::StatsType type : stats_types_) {
     vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
         Status::OK);
+    MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
     for (MockResourceHandler *mock_handler : mock_handlers) {
       EXPECT_CALL(*mock_handler, Stats(type, NotNull()))
           .WillRepeatedly(Return(Status::OK));
     }
+    EXPECT_CALL(*mock_namespace_handler, Stats(type, NotNull()))
+        .WillRepeatedly(Return(Status::OK));
 
     StatusOr<ContainerStats> statusor = container_->Stats(type);
     ASSERT_TRUE(statusor.ok());
@@ -2044,6 +2141,7 @@ TEST_F(ContainerImplTest, StatsGetResourceHandlersFails) {
   for (Container::StatsType type : stats_types_) {
     vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
         Status::CANCELLED);
+    ExpectGetNamespaceHandler();
 
     EXPECT_EQ(Status::CANCELLED, container_->Stats(type).status());
   }
@@ -2053,6 +2151,7 @@ TEST_F(ContainerImplTest, StatsResourceStatsFails) {
   for (Container::StatsType type : stats_types_) {
     vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
         Status::OK);
+    ExpectGetNamespaceHandler();
 
     for (MockResourceHandler *mock_handler : mock_handlers) {
       EXPECT_CALL(*mock_handler, Stats(type, NotNull()))
@@ -2073,9 +2172,9 @@ TEST_F(ContainerImplTest, KillAllNoContainer) {
 
 TEST_F(ContainerImplTest, KillAllAlreadyEmpty) {
   // No processes or threads.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>()));
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>()));
 
   EXPECT_CALL(mock_kernel_.Mock(), Usleep(
@@ -2089,13 +2188,13 @@ TEST_F(ContainerImplTest, KillAllDieOnFirstKill) {
   const vector<pid_t> kPids = {1, 2, 3};
 
   // Processes are killed on the first SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(1));
 
   // No threads.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>()));
 
   EXPECT_CALL(mock_kernel_.Mock(), Usleep(
@@ -2109,13 +2208,13 @@ TEST_F(ContainerImplTest, KillAllSigkillFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
   // Processes are killed on the first SIGTERM.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, -1, Exactly(1));
 
   // No threads.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>()));
 
   EXPECT_CALL(mock_kernel_.Mock(), Usleep(
@@ -2130,14 +2229,14 @@ TEST_F(ContainerImplTest, KillAllDoNotDieOnFirstKill) {
   const vector<pid_t> kPids = {1, 2, 3};
 
   // Processes are killed after the second SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(2));
 
   // No threads.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>()));
 
   EXPECT_CALL(mock_kernel_.Mock(), Usleep(
@@ -2151,14 +2250,14 @@ TEST_F(ContainerImplTest, KillAllUsleepFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
   // Processes are killed after the second SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(2));
 
   // No threads.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>()));
 
   EXPECT_CALL(mock_kernel_.Mock(), Usleep(
@@ -2173,12 +2272,12 @@ TEST_F(ContainerImplTest, KillAllUnkillableProcesses) {
   const vector<pid_t> kPids = {1, 2, 3};
 
   // Processes are never killed.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(kPids));
   ExpectKill(kPids, 0, AtLeast(1));
 
   // No threads.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>()));
 
   EXPECT_CALL(mock_kernel_.Mock(), Usleep(
@@ -2195,13 +2294,13 @@ TEST_F(ContainerImplTest, KillAllWithTouristThreads) {
   const vector<pid_t> kTids = {4, 5, 6};
 
   // Processes are killed after the first SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(1));
 
   // Threads are killed on the first SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillOnce(Return(kTids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kTids, 0, Exactly(1));
@@ -2218,13 +2317,13 @@ TEST_F(ContainerImplTest, KillAllWithTouristThreadsSigkillFails) {
   const vector<pid_t> kTids = {4, 5, 6};
 
   // Processes are killed after the first SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(1));
 
   // Threads are killed on the first SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillOnce(Return(kTids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kTids, -1, Exactly(1));
@@ -2242,13 +2341,13 @@ TEST_F(ContainerImplTest, KillAllUnkillableTouristThreads) {
   const vector<pid_t> kTids = {4, 5, 6};
 
   // Processes are killed after the first SIGKILL.
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(1));
 
   // Threads are never killed.
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(kTids));
   ExpectKill(kTids, 0, AtLeast(1));
 
@@ -2266,7 +2365,7 @@ TEST_F(ContainerImplTest, KillAllUnkillableTouristThreads) {
 TEST_F(ContainerImplTest, KillTasksThreadsSuccess) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(1));
@@ -2281,7 +2380,7 @@ TEST_F(ContainerImplTest, KillTasksThreadsSuccess) {
 TEST_F(ContainerImplTest, KillTasksThreadsOneFailure) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
@@ -2297,7 +2396,7 @@ TEST_F(ContainerImplTest, KillTasksThreadsOneFailure) {
 TEST_F(ContainerImplTest, KillTasksThreadsTriesRunOut) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(kPids));
   ExpectKill(kPids, 0, AtLeast(1));
 
@@ -2313,7 +2412,7 @@ TEST_F(ContainerImplTest, KillTasksThreadsTriesRunOut) {
 TEST_F(ContainerImplTest, KillTasksThreadsTriesRunOutListFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
@@ -2330,7 +2429,7 @@ TEST_F(ContainerImplTest, KillTasksThreadsTriesRunOutListFails) {
 TEST_F(ContainerImplTest, KillTasksThreadsListFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, CallKillTasks(ContainerImpl::LIST_THREADS));
@@ -2339,7 +2438,7 @@ TEST_F(ContainerImplTest, KillTasksThreadsListFails) {
 TEST_F(ContainerImplTest, KillTasksThreadsKillFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListThreads())
+  EXPECT_CALL(*mock_tasks_handler_, ListThreads(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, -1, Exactly(1));
@@ -2355,7 +2454,7 @@ TEST_F(ContainerImplTest, KillTasksThreadsKillFails) {
 TEST_F(ContainerImplTest, KillTasksProcessesSuccess) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, 0, Exactly(1));
@@ -2370,7 +2469,7 @@ TEST_F(ContainerImplTest, KillTasksProcessesSuccess) {
 TEST_F(ContainerImplTest, KillTasksProcessesOneFailure) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
@@ -2386,7 +2485,7 @@ TEST_F(ContainerImplTest, KillTasksProcessesOneFailure) {
 TEST_F(ContainerImplTest, KillTasksProcessesTriesRunOut) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(kPids));
   ExpectKill(kPids, 0, AtLeast(1));
 
@@ -2402,7 +2501,7 @@ TEST_F(ContainerImplTest, KillTasksProcessesTriesRunOut) {
 TEST_F(ContainerImplTest, KillTasksProcessesTriesRunOutListFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
       .WillOnce(Return(kPids))
@@ -2419,7 +2518,7 @@ TEST_F(ContainerImplTest, KillTasksProcessesTriesRunOutListFails) {
 TEST_F(ContainerImplTest, KillTasksProcessesListFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, CallKillTasks(ContainerImpl::LIST_PROCESSES));
@@ -2428,7 +2527,7 @@ TEST_F(ContainerImplTest, KillTasksProcessesListFails) {
 TEST_F(ContainerImplTest, KillTasksProcessesKillFails) {
   const vector<pid_t> kPids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, ListProcesses())
+  EXPECT_CALL(*mock_tasks_handler_, ListProcesses(TasksHandler::ListType::SELF))
       .WillOnce(Return(kPids))
       .WillRepeatedly(Return(vector<pid_t>()));
   ExpectKill(kPids, -1, Exactly(1));
@@ -2452,12 +2551,21 @@ TEST_F(ContainerImplTest, EnterNoContainer) {
 TEST_F(ContainerImplTest, EnterSuccess) {
   vector<pid_t> tids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
-      .WillRepeatedly(Return(Status::OK));
+  MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(tids))
+      .WillRepeatedly(Return(false));
 
   // Enter() takes ownership of the return of GetResourceHandlers().
   vector<MockResourceHandler *> handlers = ExpectGetResourceHandlers(
       Status::OK);
+
+  EXPECT_CALL(*mock_freezer_controller_, Enter(_))
+      .Times(3)
+      .WillRepeatedly(Return(Status::OK));
+
+  EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
+      .WillRepeatedly(Return(Status::OK));
+
   for (MockResourceHandler *handler : handlers) {
     EXPECT_CALL(*handler, Enter(tids))
         .WillRepeatedly(Return(Status::OK));
@@ -2469,12 +2577,17 @@ TEST_F(ContainerImplTest, EnterSuccess) {
 TEST_F(ContainerImplTest, EnterNoTids) {
   vector<pid_t> tids;
 
+  MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(tids))
+      .WillRepeatedly(Return(false));
+
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::OK));
 
   // Enter() takes ownership of the return of GetResourceHandlers().
   vector<MockResourceHandler *> handlers = ExpectGetResourceHandlers(
       Status::OK);
+
   for (MockResourceHandler *handler : handlers) {
     EXPECT_CALL(*handler, Enter(tids))
         .WillRepeatedly(Return(Status::OK));
@@ -2486,6 +2599,18 @@ TEST_F(ContainerImplTest, EnterNoTids) {
 TEST_F(ContainerImplTest, EnterTrackTasksFails) {
   vector<pid_t> tids = {1, 2, 3};
 
+  MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(tids))
+      .WillRepeatedly(Return(false));
+
+  // Enter() takes ownership of the return of GetResourceHandlers().
+  vector<MockResourceHandler *> handlers = ExpectGetResourceHandlers(
+      Status::OK);
+
+  EXPECT_CALL(*mock_freezer_controller_, Enter(_))
+      .Times(3)
+      .WillRepeatedly(Return(Status::OK));
+
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -2495,8 +2620,9 @@ TEST_F(ContainerImplTest, EnterTrackTasksFails) {
 TEST_F(ContainerImplTest, EnterGetResourceHandlersFails) {
   vector<pid_t> tids = {1, 2, 3};
 
-  EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
-      .WillRepeatedly(Return(Status::OK));
+  MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(tids))
+      .WillRepeatedly(Return(false));
 
   // Enter() takes ownership of the return of GetResourceHandlers().
   ExpectGetResourceHandlers(Status::CANCELLED);
@@ -2504,8 +2630,35 @@ TEST_F(ContainerImplTest, EnterGetResourceHandlersFails) {
   EXPECT_EQ(Status::CANCELLED, container_->Enter(tids));
 }
 
+TEST_F(ContainerImplTest, Enter_FreezerEnter_Fails) {
+  vector<pid_t> tids = {1, 2, 3};
+
+  MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(tids))
+      .WillRepeatedly(Return(false));
+
+  // Enter() takes ownership of the return of GetResourceHandlers().
+  vector<MockResourceHandler *> handlers = ExpectGetResourceHandlers(
+      Status::OK);
+
+  EXPECT_CALL(*mock_freezer_controller_, Enter(_))
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(Status::OK))
+      .WillOnce(Return(Status::CANCELLED));
+
+  EXPECT_ERROR_CODE(::util::error::CANCELLED, container_->Enter(tids));
+}
+
 TEST_F(ContainerImplTest, EnterResourceHandlerEnterFails) {
   vector<pid_t> tids = {1, 2, 3};
+
+  MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(tids))
+      .WillRepeatedly(Return(false));
+
+  EXPECT_CALL(*mock_freezer_controller_, Enter(_))
+      .Times(3)
+      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_CALL(*mock_tasks_handler_, TrackTasks(tids))
       .WillRepeatedly(Return(Status::OK));
@@ -2519,6 +2672,16 @@ TEST_F(ContainerImplTest, EnterResourceHandlerEnterFails) {
   }
 
   EXPECT_EQ(Status::CANCELLED, container_->Enter(tids));
+}
+
+TEST_F(ContainerImplTest, EnterDifferentVirtualHost) {
+  vector<pid_t> tids = {1, 2, 3};
+
+  MockNamespaceHandler *namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*namespace_handler, IsDifferentVirtualHost(tids))
+      .WillRepeatedly(Return(true));
+
+  EXPECT_ERROR_CODE(FAILED_PRECONDITION, container_->Enter(tids));
 }
 
 // Tests for Destroy().
@@ -2543,12 +2706,20 @@ TEST_F(ContainerImplTest, DestroySuccess) {
       to_delete.push_back(mock_handler);
     }
   }
+  unique_ptr<MockNamespaceHandler> mock_namespace_handler(
+      ExpectGetNamespaceHandler());
+  EXPECT_CALL(*mock_namespace_handler, Destroy())
+      .WillOnce(Return(Status::OK));
 
   EXPECT_CALL(*mock_tasks_handler_, Destroy())
       .WillOnce(Return(Status::OK));
 
+  EXPECT_CALL(*mock_freezer_controller_, Destroy())
+      .WillOnce(Return(Status::OK));
+
   // Destroy() should delete the handlers.
   unique_ptr<MockTasksHandler> d1(mock_tasks_handler_);
+  unique_ptr<MockFreezerController> d2(mock_freezer_controller_);
   ElementDeleter d(&to_delete);
 
   EXPECT_TRUE(container_->Destroy().ok());
@@ -2580,13 +2751,22 @@ TEST_F(ContainerImplTest, DestroyOnlyDestroyResourcesAttachedToContainer) {
   EXPECT_CALL(*mock_handler3, Destroy())
       .WillOnce(Return(Status::OK));
 
+  unique_ptr<MockNamespaceHandler> mock_namespace_handler(
+      ExpectGetNamespaceHandler());
+  EXPECT_CALL(*mock_namespace_handler, Destroy())
+      .WillOnce(Return(Status::OK));
+
   EXPECT_CALL(*mock_tasks_handler_, Destroy())
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_CALL(*mock_freezer_controller_, Destroy())
       .WillOnce(Return(Status::OK));
 
   // Destroy() should delete the handlers.
   unique_ptr<MockTasksHandler> d1(mock_tasks_handler_);
-  unique_ptr<MockResourceHandler> d3(mock_handler1);
-  unique_ptr<MockResourceHandler> d4(mock_handler3);
+  unique_ptr<MockResourceHandler> d2(mock_handler1);
+  unique_ptr<MockResourceHandler> d3(mock_handler3);
+  unique_ptr<MockFreezerController> d4(mock_freezer_controller_);
 
   EXPECT_TRUE(container_->Destroy().ok());
 }
@@ -2602,6 +2782,7 @@ TEST_F(ContainerImplTest, DestroyGetResourceHandlersFails) {
 
   vector<MockResourceHandler *> mock_handlers =
       ExpectGetResourceHandlers(Status::CANCELLED);
+  ExpectGetNamespaceHandler();
 
   EXPECT_EQ(Status::CANCELLED, container_->Destroy());
 }
@@ -2615,6 +2796,9 @@ TEST_F(ContainerImplTest, DestroyResourceHandlerDestroyFails) {
     EXPECT_CALL(*mock_handler, Destroy())
         .WillRepeatedly(Return(Status::CANCELLED));
   }
+  MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
+  EXPECT_CALL(*mock_namespace_handler, Destroy())
+      .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED, container_->Destroy());
 }
@@ -2632,6 +2816,10 @@ TEST_F(ContainerImplTest, DestroyTasksHandlerDestroyFails) {
       to_delete.push_back(mock_handler);
     }
   }
+  unique_ptr<MockNamespaceHandler> mock_namespace_handler(
+      ExpectGetNamespaceHandler());
+  EXPECT_CALL(*mock_namespace_handler, Destroy())
+      .WillRepeatedly(Return(Status::OK));
   // Handlers are deleted by Destroy().
   ElementDeleter d(&to_delete);
 
@@ -2641,9 +2829,41 @@ TEST_F(ContainerImplTest, DestroyTasksHandlerDestroyFails) {
   EXPECT_EQ(Status::CANCELLED, container_->Destroy());
 }
 
+
+TEST_F(ContainerImplTest, Destroy_FreezerController_Destroy_Fails) {
+  ExpectSimpleKillAll(Status::OK);
+
+  // All attached resources are destroyed (all but Global)
+  vector<MockResourceHandler *> mock_handlers =
+      ExpectGetResourceHandlers(Status::OK);
+  vector<MockResourceHandler *> to_delete;
+  for (MockResourceHandler *mock_handler : mock_handlers) {
+    if (mock_handler->type() != RESOURCE_FILESYSTEM) {
+      EXPECT_CALL(*mock_handler, Destroy())
+          .WillOnce(Return(Status::OK));
+      to_delete.push_back(mock_handler);
+    }
+  }
+  unique_ptr<MockNamespaceHandler> mock_namespace_handler(
+      ExpectGetNamespaceHandler());
+  EXPECT_CALL(*mock_namespace_handler, Destroy())
+      .WillRepeatedly(Return(Status::OK));
+
+  EXPECT_CALL(*mock_tasks_handler_, Destroy())
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_CALL(*mock_freezer_controller_, Destroy())
+      .WillOnce(Return(Status::CANCELLED));
+
+  // Destroy() should delete the handlers.
+  unique_ptr<MockTasksHandler> d1(mock_tasks_handler_);
+  ElementDeleter d(&to_delete);
+
+  EXPECT_ERROR_CODE(::util::error::CANCELLED, container_->Destroy());
+}
+
 // Tests for Run().
 
-static const pid_t kTid = 42;
 static const pid_t kPid = 22;
 
 TEST_F(ContainerImplTest, RunNoCommand) {
@@ -2686,23 +2906,18 @@ TEST_F(ContainerImplTest, RunNoContainer) {
 
 TEST_F(ContainerImplTest, RunSuccessBackground) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
-
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, SetUseSession())
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, Start())
-      .WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, pid())
-      .WillRepeatedly(Return(kPid));
-
-  EXPECT_CALL(mock_kernel_.Mock(), GetTID())
-      .WillRepeatedly(Return(kTid));
-
-  ExpectEnter(kTid, Status::OK);
-
   RunSpec spec;
   spec.set_fd_policy(RunSpec::DETACHED);
+
+  MockNamespaceHandler *mock_namespace_handler =
+      new StrictMockNamespaceHandler(kContainerName, RESOURCE_VIRTUALHOST);
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillOnce(Return(mock_namespace_handler));
+  EXPECT_CALL(*mock_namespace_handler, Run(kCmd, EqualsInitializedProto(spec)))
+      .WillOnce(Return(kPid));
+  ExpectEnterInto(0, Status::OK);
+
   StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
   ASSERT_TRUE(statusor.ok());
   EXPECT_EQ(kPid, statusor.ValueOrDie());
@@ -2710,30 +2925,18 @@ TEST_F(ContainerImplTest, RunSuccessBackground) {
 
 TEST_F(ContainerImplTest, RunSuccessForeground) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
-
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_,
-              SetChannelAction(CHAN_STDIN, ACTION_DUPPARENT))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_,
-              SetChannelAction(CHAN_STDOUT, ACTION_DUPPARENT))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_,
-              SetChannelAction(CHAN_STDERR, ACTION_DUPPARENT))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, Start())
-      .WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, pid())
-      .WillRepeatedly(Return(kPid));
-
-  EXPECT_CALL(mock_kernel_.Mock(), GetTID())
-      .WillRepeatedly(Return(kTid));
-
-  ExpectEnter(kTid, Status::OK);
-
   RunSpec spec;
   spec.set_fd_policy(RunSpec::INHERIT);
+
+  MockNamespaceHandler *mock_namespace_handler =
+      new StrictMockNamespaceHandler(kContainerName, RESOURCE_VIRTUALHOST);
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillOnce(Return(mock_namespace_handler));
+  EXPECT_CALL(*mock_namespace_handler, Run(kCmd, EqualsInitializedProto(spec)))
+      .WillOnce(Return(kPid));
+  ExpectEnterInto(0, Status::OK);
+
   StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
   ASSERT_TRUE(statusor.ok());
   EXPECT_EQ(kPid, statusor.ValueOrDie());
@@ -2741,30 +2944,18 @@ TEST_F(ContainerImplTest, RunSuccessForeground) {
 
 TEST_F(ContainerImplTest, RunSuccessDefaultPolicy) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
-
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_,
-              SetChannelAction(CHAN_STDIN, ACTION_DUPPARENT))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_,
-              SetChannelAction(CHAN_STDOUT, ACTION_DUPPARENT))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_,
-              SetChannelAction(CHAN_STDERR, ACTION_DUPPARENT))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, Start())
-      .WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, pid())
-      .WillRepeatedly(Return(kPid));
-
-  EXPECT_CALL(mock_kernel_.Mock(), GetTID())
-      .WillRepeatedly(Return(kTid));
-
-  ExpectEnter(kTid, Status::OK);
-
   // Inherit is the default policy.
   RunSpec spec;
+
+  MockNamespaceHandler *mock_namespace_handler =
+      new StrictMockNamespaceHandler(kContainerName, RESOURCE_VIRTUALHOST);
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillOnce(Return(mock_namespace_handler));
+  EXPECT_CALL(*mock_namespace_handler, Run(kCmd, EqualsInitializedProto(spec)))
+      .WillOnce(Return(kPid));
+  ExpectEnterInto(0, Status::OK);
+
   StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
   ASSERT_TRUE(statusor.ok());
   EXPECT_EQ(kPid, statusor.ValueOrDie());
@@ -2773,38 +2964,28 @@ TEST_F(ContainerImplTest, RunSuccessDefaultPolicy) {
 TEST_F(ContainerImplTest, RunEnterFails) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
 
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, SetUseSession())
-      .Times(1);
-
-  EXPECT_CALL(mock_kernel_.Mock(), GetTID())
-      .WillRepeatedly(Return(kTid));
-
-  ExpectEnter(kTid, Status::CANCELLED);
+  ExpectEnterInto(0, Status::CANCELLED);
 
   RunSpec spec;
   spec.set_fd_policy(RunSpec::DETACHED);
   EXPECT_EQ(Status::CANCELLED, container_->Run(kCmd, spec).status());
 }
 
-TEST_F(ContainerImplTest, RunStartProcessFails) {
+TEST_F(ContainerImplTest, NamespaceRunFails) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
-
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kCmd))
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, SetUseSession())
-      .Times(1);
-  EXPECT_CALL(*mock_subprocess_, Start())
-      .WillOnce(Return(false));
-
-  EXPECT_CALL(mock_kernel_.Mock(), GetTID())
-      .WillRepeatedly(Return(kTid));
-
-  ExpectEnter(kTid, Status::OK);
-
   RunSpec spec;
   spec.set_fd_policy(RunSpec::DETACHED);
+
+  MockNamespaceHandler *mock_namespace_handler =
+      new StrictMockNamespaceHandler(kContainerName, RESOURCE_VIRTUALHOST);
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillOnce(Return(mock_namespace_handler));
+  EXPECT_CALL(*mock_namespace_handler, Run(kCmd, EqualsInitializedProto(spec)))
+      .WillOnce(Return(Status(::util::error::FAILED_PRECONDITION, "")));
+
+  ExpectEnterInto(0, Status::OK);
+
   StatusOr<pid_t> statusor = container_->Run(kCmd, spec);
   EXPECT_FALSE(statusor.ok());
   EXPECT_EQ(::util::error::FAILED_PRECONDITION, statusor.status().error_code());
@@ -2832,6 +3013,7 @@ TEST_F(ContainerImplTest, UpdateDiffSuccess) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   // Expect all resources of this container to be updated (filesystem is not in
   // this container).
@@ -2853,6 +3035,7 @@ TEST_F(ContainerImplTest, UpdateDiffOnlyMemoryUpdated) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   // Expect only memory to be updated.
   for (MockResourceHandler *mock_handler : mock_handlers) {
@@ -2872,6 +3055,7 @@ TEST_F(ContainerImplTest, UpdateDiffEmptySpec) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   // None should be updated.
 
@@ -2886,6 +3070,7 @@ TEST_F(ContainerImplTest, UpdateDiffNonExistingResource) {
 
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   ExpectGetResourceHandlers(Status::OK);
+  ExpectGetNamespaceHandler();
 
   Status status = container_->Update(spec, Container::UPDATE_DIFF);
   EXPECT_FALSE(status.ok());
@@ -2896,6 +3081,7 @@ TEST_F(ContainerImplTest, UpdateDiffGetResourceHandlersFails) {
   ContainerSpec spec;
 
   ExpectGetResourceHandlers(Status::CANCELLED);
+  ExpectGetNamespaceHandler();
 
   EXPECT_EQ(Status::CANCELLED,
             container_->Update(spec, Container::UPDATE_DIFF));
@@ -2909,6 +3095,7 @@ TEST_F(ContainerImplTest, UpdateDiffUpdateFails) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   // Expect all to be updated.
   for (MockResourceHandler *mock_handler : mock_handlers) {
@@ -2925,10 +3112,12 @@ TEST_F(ContainerImplTest, UpdateReplaceSuccess) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
+  spec.mutable_virtual_host();
 
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
   // Expect all resources of this container to be updated (filesystem is not in
   // this container).
@@ -2939,6 +3128,9 @@ TEST_F(ContainerImplTest, UpdateReplaceSuccess) {
           .WillOnce(Return(Status::OK));
     }
   }
+  EXPECT_CALL(*mock_namespace_handler, Update(EqualsInitializedProto(spec),
+                                              Container::UPDATE_REPLACE))
+      .WillOnce(Return(Status::OK));
 
   EXPECT_TRUE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
@@ -2950,6 +3142,7 @@ TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesMissing) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   EXPECT_FALSE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
@@ -2963,6 +3156,7 @@ TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesExtra) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   EXPECT_FALSE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
@@ -2975,6 +3169,7 @@ TEST_F(ContainerImplTest, UpdateReplaceSomeResourcesExtraAndSomeMissing) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   EXPECT_FALSE(container_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
@@ -2983,6 +3178,7 @@ TEST_F(ContainerImplTest, UpdateReplaceGetResourceHandlersFails) {
   ContainerSpec spec;
 
   ExpectGetResourceHandlers(Status::CANCELLED);
+  ExpectGetNamespaceHandler();
 
   EXPECT_EQ(Status::CANCELLED,
             container_->Update(spec, Container::UPDATE_REPLACE));
@@ -2992,10 +3188,12 @@ TEST_F(ContainerImplTest, UpdateReplaceUpdateFails) {
   ContainerSpec spec;
   spec.mutable_cpu()->set_limit(2000);
   spec.mutable_memory()->set_limit(100);
+  spec.mutable_virtual_host();
 
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
   // Expect all resources of this container to be updated (filesystem is not in
   // this container).
@@ -3006,6 +3204,9 @@ TEST_F(ContainerImplTest, UpdateReplaceUpdateFails) {
           .WillRepeatedly(Return(Status::CANCELLED));
     }
   }
+  EXPECT_CALL(*mock_namespace_handler, Update(EqualsInitializedProto(spec),
+                                              Container::UPDATE_REPLACE))
+      .WillRepeatedly(Return(Status::CANCELLED));
 
   EXPECT_EQ(Status::CANCELLED,
             container_->Update(spec, Container::UPDATE_REPLACE));
@@ -3041,6 +3242,7 @@ TEST_F(ContainerImplTest, RegisterNotificationSuccess) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  ExpectGetNamespaceHandler();
 
   // Memory should register a notification, all else should not know about this
   // event.
@@ -3082,6 +3284,7 @@ TEST_F(ContainerImplTest, RegisterNotificationGetResourceHandlersFails) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::CANCELLED);
+  ExpectGetNamespaceHandler();
 
   EXPECT_ERROR_CODE(::util::error::CANCELLED,
                     container_->RegisterNotification(
@@ -3095,6 +3298,7 @@ TEST_F(ContainerImplTest, RegisterNotificationFailureWhileRegistering) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
   // Memory has an error while registering the notification.
   for (MockResourceHandler *mock_handler : mock_handlers) {
@@ -3110,6 +3314,10 @@ TEST_F(ContainerImplTest, RegisterNotificationFailureWhileRegistering) {
                                 Return(Status(::util::error::NOT_FOUND, ""))));
     }
   }
+  EXPECT_CALL(*mock_namespace_handler,
+              RegisterNotification(EqualsInitializedProto(spec), NotNull()))
+      .WillRepeatedly(DoAll(Invoke(&DeleteCallback),
+                            Return(Status(::util::error::NOT_FOUND, ""))));
 
   EXPECT_ERROR_CODE(::util::error::CANCELLED,
                     container_->RegisterNotification(
@@ -3123,6 +3331,7 @@ TEST_F(ContainerImplTest, RegisterNotificationNoHandlerForEvent) {
   // Returns CPU, MEMORY, and FILESYSTEM ResourceHandlers.
   vector<MockResourceHandler *> mock_handlers = ExpectGetResourceHandlers(
       Status::OK);
+  MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
   // No handler can register a notification for the event.
   for (MockResourceHandler *mock_handler : mock_handlers) {
@@ -3131,6 +3340,10 @@ TEST_F(ContainerImplTest, RegisterNotificationNoHandlerForEvent) {
         .WillRepeatedly(DoAll(Invoke(&DeleteCallback),
                               Return(Status(::util::error::NOT_FOUND, ""))));
   }
+  EXPECT_CALL(*mock_namespace_handler,
+              RegisterNotification(EqualsInitializedProto(spec), NotNull()))
+      .WillRepeatedly(DoAll(Invoke(&DeleteCallback),
+                            Return(Status(::util::error::NOT_FOUND, ""))));
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     container_->RegisterNotification(
@@ -3185,6 +3398,7 @@ void AppendMemorySpec(ContainerSpec *output) {
 TEST_F(ContainerImplTest, SpecSuccess) {
   vector<MockResourceHandler *> mock_handlers =
       ExpectGetResourceHandlers(Status::OK);
+  MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
   // Add Spec() to CPU and memory, others are not attached to this container..
   for (MockResourceHandler *mock_handler : mock_handlers) {
@@ -3196,6 +3410,8 @@ TEST_F(ContainerImplTest, SpecSuccess) {
           .WillOnce(DoAll(Invoke(&AppendMemorySpec), Return(Status::OK)));
     }
   }
+  EXPECT_CALL(*mock_namespace_handler, Spec(NotNull()))
+      .WillOnce(Return(Status::OK));
 
   StatusOr<ContainerSpec> statusor = container_->Spec();
   ASSERT_OK(statusor);
@@ -3211,6 +3427,7 @@ TEST_F(ContainerImplTest, SpecSuccess) {
 TEST_F(ContainerImplTest, SpecEmpty) {
   vector<MockResourceHandler *> mock_handlers =
       ExpectGetResourceHandlers(Status::OK);
+  MockNamespaceHandler *mock_namespace_handler = ExpectGetNamespaceHandler();
 
   for (MockResourceHandler *mock_handler : mock_handlers) {
     if ((mock_handler->type() == RESOURCE_CPU) ||
@@ -3219,6 +3436,8 @@ TEST_F(ContainerImplTest, SpecEmpty) {
           .WillOnce(Return(Status::OK));
     }
   }
+  EXPECT_CALL(*mock_namespace_handler, Spec(NotNull()))
+      .WillOnce(Return(Status::OK));
 
   StatusOr<ContainerSpec> statusor = container_->Spec();
   ASSERT_OK(statusor);
@@ -3234,6 +3453,7 @@ TEST_F(ContainerImplTest, SpecEmpty) {
 TEST_F(ContainerImplTest, SpecGetResourceHandlersFails) {
   vector<MockResourceHandler *> mock_handlers =
       ExpectGetResourceHandlers(Status::CANCELLED);
+  ExpectGetNamespaceHandler();
 
   EXPECT_EQ(Status::CANCELLED, container_->Spec().status());
 }
@@ -3241,6 +3461,7 @@ TEST_F(ContainerImplTest, SpecGetResourceHandlersFails) {
 TEST_F(ContainerImplTest, SpecResourceSpecFails) {
   vector<MockResourceHandler *> mock_handlers =
       ExpectGetResourceHandlers(Status::OK);
+  ExpectGetNamespaceHandler();
 
   for (MockResourceHandler *mock_handler : mock_handlers) {
     EXPECT_CALL(*mock_handler, Spec(NotNull()))
@@ -3256,15 +3477,14 @@ TEST_F(ContainerImplTest, ExecSuccess) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
 
   ExpectExists(true);
-  ExpectEnter(0, Status::OK);
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
-      .WillOnce(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
-      .WillOnce(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
-      .WillOnce(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), Execvp(kCmd[0], kCmd))
-      .WillOnce(Return(0));
+  MockNamespaceHandler *mock_namespace_handler =
+      new StrictMockNamespaceHandler(kContainerName, RESOURCE_VIRTUALHOST);
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillOnce(Return(mock_namespace_handler));
+  EXPECT_CALL(*mock_namespace_handler, Exec(kCmd))
+      .WillOnce(Return(Status::OK));
+  ExpectEnterInto(0, Status::OK);
 
   // We expect INTERNAL since Exec does not typically return on success.
   EXPECT_ERROR_CODE(::util::error::INTERNAL, container_->Exec(kCmd));
@@ -3282,53 +3502,62 @@ TEST_F(ContainerImplTest, ExecEnterFails) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
 
   ExpectExists(true);
-  ExpectEnter(0, Status::CANCELLED);
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
-      .WillRepeatedly(Return(0));
+  ExpectEnterInto(0, Status::CANCELLED);
 
   EXPECT_EQ(Status::CANCELLED, container_->Exec(kCmd));
-}
-
-TEST_F(ContainerImplTest, ExecSetITimerFails) {
-  const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
-
-  ExpectExists(true);
-  ExpectEnter(0, Status::OK);
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
-      .WillOnce(Return(-1));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
-      .WillOnce(Return(-1));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
-      .WillOnce(Return(-1));
-  EXPECT_CALL(mock_kernel_.Mock(), Execvp(kCmd[0], kCmd))
-      .WillOnce(Return(0));
-
-  // We expect INTERNAL since Exec does not typically return on success and we
-  // ignore the failure of SetITimer.
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, container_->Exec(kCmd));
 }
 
 TEST_F(ContainerImplTest, ExecExecvpFails) {
   const vector<string> kCmd = {"/bin/echo", "test", "cmd"};
 
   ExpectExists(true);
-  ExpectEnter(0, Status::OK);
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_REAL, nullptr, nullptr))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_VIRTUAL, nullptr, nullptr))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SetITimer(ITIMER_PROF, nullptr, nullptr))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), Execvp(kCmd[0], kCmd))
-      .WillOnce(Return(1));
+  MockNamespaceHandler *mock_namespace_handler =
+      new StrictMockNamespaceHandler(kContainerName, RESOURCE_VIRTUALHOST);
+  EXPECT_CALL(*mock_namespace_handler_factory_,
+              GetNamespaceHandler(kContainerName))
+      .WillOnce(Return(mock_namespace_handler));
+  EXPECT_CALL(*mock_namespace_handler, Exec(kCmd))
+      .WillOnce(Return(Status::CANCELLED));
+  ExpectEnterInto(0, Status::OK);
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, container_->Exec(kCmd));
+  EXPECT_ERROR_CODE(::util::error::CANCELLED, container_->Exec(kCmd));
 }
 
+TEST_F(ContainerImplTest, Pause_Success) {
+  EXPECT_CALL(*mock_freezer_controller_, Freeze())
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(container_->Pause());
+}
+
+TEST_F(ContainerImplTest, Pause_Unknown_Failure) {
+  EXPECT_CALL(*mock_freezer_controller_, Freeze())
+      .WillOnce(Return(Status(UNIMPLEMENTED, "Freeze?")));
+  EXPECT_ERROR_CODE(UNIMPLEMENTED, container_->Pause());
+}
+
+TEST_F(ContainerImplTest, Pause_Freezer_Unsupported_Failure) {
+  EXPECT_CALL(*mock_freezer_controller_, Freeze())
+      .WillOnce(Return(Status(NOT_FOUND, "Freezer cgroup file not found")));
+  EXPECT_ERROR_CODE(FAILED_PRECONDITION, container_->Pause());
+}
+
+TEST_F(ContainerImplTest, Resume_Success) {
+  EXPECT_CALL(*mock_freezer_controller_, Unfreeze())
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(container_->Resume());
+}
+
+TEST_F(ContainerImplTest, Resume_Unknown_Failure) {
+  EXPECT_CALL(*mock_freezer_controller_, Unfreeze())
+      .WillOnce(Return(Status(UNIMPLEMENTED, "Unfreeze?")));
+  EXPECT_ERROR_CODE(UNIMPLEMENTED, container_->Resume());
+}
+
+TEST_F(ContainerImplTest, Resume_Freezer_Unsupported_Failure) {
+  EXPECT_CALL(*mock_freezer_controller_, Unfreeze())
+      .WillOnce(Return(Status(NOT_FOUND, "Freezer cgroup file not found")));
+  EXPECT_ERROR_CODE(FAILED_PRECONDITION, container_->Resume());
+}
 
 TEST_F(ContainerImplTest, Name) {
   EXPECT_EQ(kContainerName, container_->name());

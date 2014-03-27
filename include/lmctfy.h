@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -36,9 +36,6 @@ class Container;
 //
 // Facilitates the creation, management, monitoring, and interaction with
 // containers.
-//
-// NOTE: This interface is under heavy development! Contact OWNERS before
-// using.
 //
 // The container specifications can be found in:
 //   //include/lmctfy.proto
@@ -97,7 +94,7 @@ class Container;
 // Class is thread-safe.
 class ContainerApi {
  public:
-  // TODO(vmarmol): Move this to the "PowerUser API"
+    // TODO(vishnuk): Empty Spec should trigger default initialization.
   // Initializes the machine to start being able to create containers. All
   // creations of ContainerApi objects will fail before this initialization is
   // complete. This should be called once during machine boot.
@@ -383,7 +380,7 @@ class Container {
   // Arguments:
   //   spec: The specification for the event for which to register
   //       notifications.
-  //   callback: The callback to run when the event is triggered. The caller
+  //   callback: The callback to run when the event is triggered. The callee
   //       takes ownership of the callback which MUST be a repeatable callback.
   // Return:
   //   StatusOr: Status of the operation. OK iff successful and a unique ID for
@@ -398,7 +395,7 @@ class Container {
   //   notification_id: The unique notification ID for the container
   //       notification.
   // Return:
-  //   StatusOr: Status of the operation. OK iff successful.
+  //   Status: Status of the operation. OK iff successful.
   virtual ::util::Status UnregisterNotification(NotificationId event_id) = 0;
 
   // Kills all processes running in the container. This operation is atomic and
@@ -414,6 +411,17 @@ class Container {
   // Return:
   //   Status: Status of the operation. OK iff successful.
   virtual ::util::Status KillAll() = 0;
+
+  // Gets the PID of the init process for this container.
+  //
+  // In containers with VirtualHost enabled, this will be the init in that
+  // virtual host. For all other containers, it will be the system's init
+  // (typically 1).
+  //
+  // Return
+  //   StatusOr<pid_t>: Status of the operation. OK iff successful and the PID
+  //       of init is populated..
+  virtual ::util::StatusOr<pid_t> GetInitPid() const = 0;
 
   // Gets the name of the container.
   //

@@ -33,6 +33,11 @@ const Status &GetCancelled() {
   return status;
 }
 
+const Status &GetUnknown() {
+  static const Status status(::util::error::UNKNOWN, "");
+  return status;
+}
+
 }  // namespace
 
 Status::Status() : code_(::util::error::OK), message_("") {}
@@ -55,6 +60,7 @@ Status& Status::operator=(const Status& other) {
 
 const Status &Status::OK = GetOk();
 const Status &Status::CANCELLED = GetCancelled();
+const Status &Status::UNKNOWN = GetUnknown();
 
 string Status::ToString() const {
   if (code_ == ::util::error::OK) {

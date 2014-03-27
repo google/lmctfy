@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -65,9 +65,8 @@ MonitoringResourceHandlerFactory::GetResourceHandler(
     const string &container_name) const {
   const string flat_container_name = GetFlatContainerName(container_name);
 
-  PerfController *controller;
-  RETURN_IF_ERROR(perf_controller_factory_->Get(flat_container_name),
-                  &controller);
+  PerfController *controller =
+      RETURN_IF_ERROR(perf_controller_factory_->Get(flat_container_name));
   return new MonitoringResourceHandler(container_name, kernel_, controller);
 }
 
@@ -76,9 +75,8 @@ MonitoringResourceHandlerFactory::CreateResourceHandler(
     const string &container_name, const ContainerSpec &spec) const {
   const string flat_container_name = GetFlatContainerName(container_name);
 
-  PerfController *controller;
-  RETURN_IF_ERROR(perf_controller_factory_->Create(flat_container_name),
-                  &controller);
+  PerfController *controller =
+      RETURN_IF_ERROR(perf_controller_factory_->Create(flat_container_name));
   return new MonitoringResourceHandler(container_name, kernel_, controller);
 }
 

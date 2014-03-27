@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -58,12 +58,12 @@ static Status StatsContainer(const vector<string> &argv,
     container_name = argv[1];
   } else {
     // Detect parent's container.
-    RETURN_IF_ERROR(lmctfy->Detect(getppid()), &container_name);
+    container_name = RETURN_IF_ERROR(lmctfy->Detect(getppid()));
   }
 
   // Ensure the container exists.
-  unique_ptr<Container> container;
-  RETURN_IF_ERROR(lmctfy->Get(container_name), &container);
+  unique_ptr<Container> container(
+      RETURN_IF_ERROR(lmctfy->Get(container_name)));
 
   // Get the container stats;
   StatusOr<ContainerStats> statusor_stats = container->Stats(stats_type);

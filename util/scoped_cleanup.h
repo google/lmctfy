@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,74 +15,64 @@
 #ifndef UTIL_SCOPED_CLEANUP_H_
 #define UTIL_SCOPED_CLEANUP_H_
 
+#include <functional>
+#include <type_traits>
+
+#include "base/macros.h"
+
 namespace util {
 
-// A scoped cleanup action that is performed on destruction. The action can be
-// cancelled by calling release(). The ScopedCleanup makes a copy of the
-// specified ValueType and holds it internally.
+// A scoped cleanup action that is performed on destruction.  The action can be
+// cancelled by calling Cancel().
 //
-// Sample cleanup action class (by convention prefer imperative names like:
-// Close, Delete, Unlink):
+// This can take any sort of callable argument including functors, function
+// pointers, member-function pointers (const or not), and lambdas.
 //
-// class Close {
-//  public:
-//   typedef int ValueType;
+// If you are trying to do RAII-style resource management, consider UniqueValue
+// instead, which builds on top of ScopedCleanup.
 //
-//   static void Cleanup(const int &value) {
-//     close(value);
-//   }
-// };
+// Examples:
 //
-// This is used in the following pattern:
+//  // Functor arg.
+//  ScopedCleanup bing{CloseFileFunctor(fd)};
 //
-// int GetFD() {
-//   ScopedCleanup<Close> c(open(file));
+//  // Function arg.
+//  ScopedCleanup bang{::abort};
+//  ScopedCleanup bong{::close, fd};
 //
-//   // Initialize file.
-//   if (!Init(c.get())) {
-//     return -1;
-//   }
+//  // Member function arg.
+//  ScopedCleanup boom{&Database::Reset, &db};
+//  ScopedCleanup boing{&Database::Close, &db, fd};
 //
-//   // More work with failures.
+//  // Lambda arg.
+//  ScopedCleanup bump{[fd]() { ::close(fd); }};
 //
-//   return c.release();
-// }
-//
-// Class is thread-compatible.
-template <typename T>
+// This class is thread-compatible.
 class ScopedCleanup {
  public:
-  typedef typename T::ValueType ValueType;
+  // Makes a ScopedCleanup from a callback function.  The args parameters are
+  // copied and bound to the function; the result must be a nullary function.
+  template<typename T, typename... Args>
+  explicit ScopedCleanup(T callable, const Args&... args)
+      : active_(true), cleanup_(::std::bind(callable, args...)) {}
 
-  // Creates a scoped cleanup of the specified value.
-  explicit ScopedCleanup(const ValueType &value)
-      : released_(false), value_(value) {}
-
-  ~ScopedCleanup() {
-    // Run the action if it has not been released
-    if (!released_) {
-      T::Cleanup(value_);
+  virtual ~ScopedCleanup() {
+    if (active_) {
+      cleanup_();
     }
   }
 
-  // Releases the underlying value. The value will not be cleaned up on
-  // destruction.
-  ValueType release() {
-    released_ = true;
-    return value_;
-  }
-
-  // Gets the underlying value.
-  const ValueType &get() const {
-    return value_;
+  // Cancels a ScopedCleanup.  Once called, this cleanup action will not run.
+  void Cancel() {
+    active_ = false;
   }
 
  private:
-  // Whether the value has been released from cleanup.
-  bool released_;
+  // The actual cleanup object.  Cleanup is triggered by destruction.
+  bool active_;
+  ::std::function<void()> cleanup_;
 
-  // The value to be cleaned up.
-  ValueType value_;
+  DISALLOW_COPY_AND_ASSIGN(ScopedCleanup);
 };
 
 }  // namespace util

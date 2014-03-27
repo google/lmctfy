@@ -16,6 +16,9 @@
 
 #include <string>
 
+#include "file/base/cleanpath.h"
+#include "strings/join.h"
+
 using ::std::make_pair;
 using ::std::string;
 
@@ -49,11 +52,13 @@ void AppendPath(string *path, StringPiece to_append) {
 
 }  // namespace
 
-string JoinPath(StringPiece p1, StringPiece p2, StringPiece p3) {
+string JoinPath(StringPiece p1, StringPiece p2, StringPiece p3,
+                StringPiece p4) {
   string result = p1.ToString();
 
   AppendPath(&result, p2);
   AppendPath(&result, p3);
+  AppendPath(&result, p4);
 
   return result;
 }
@@ -88,6 +93,23 @@ StringPiece Dirname(StringPiece path) {
 
 StringPiece Basename(StringPiece path) {
   return internal::SplitPath(path).second;
+}
+
+bool IsAbsolutePath(StringPiece path) {
+  return !path.empty() && path[0] == '/';
+}
+
+string AddSlash(StringPiece path) {
+  int length = path.length();
+  if (length && path[length - 1] != '/') {
+    return StrCat(path, "/");
+  } else {
+    return path.ToString();
+  }
+}
+
+string CleanPath(StringPiece path) {
+  return Plan9_CleanPath(path.ToString());
 }
 
 }  // namespace file

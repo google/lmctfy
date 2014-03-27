@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,10 +26,10 @@ using ::std::string;
 #include "system_api/kernel_api.h"
 #include "lmctfy/controllers/cgroup_factory.h"
 #include "lmctfy/controllers/eventfd_notifications.h"
-#include "lmctfy/util/proc_cgroup.h"
 #include "include/lmctfy.pb.h"
 #include "util/safe_types/unix_gid.h"
 #include "util/safe_types/unix_uid.h"
+#include "util/errors.h"
 #include "util/file_lines.h"
 #include "strings/substitute.h"
 #include "util/task/statusor.h"
@@ -121,11 +121,22 @@ class CgroupControllerFactory
   // eventfd_notifications.
   CgroupControllerFactory(const CgroupFactory *cgroup_factory,
                           const KernelApi *kernel,
-                          EventFdNotifications *eventfd_notifications)
+                          EventFdNotifications *eventfd_notifications,
+                          bool owns_cgroup)
       : cgroup_factory_(CHECK_NOTNULL(cgroup_factory)),
         kernel_(CHECK_NOTNULL(kernel)),
-        owns_cgroup_(cgroup_factory->OwnsCgroup(hierarchy_type)),
+        owns_cgroup_(owns_cgroup),
         eventfd_notifications_(CHECK_NOTNULL(eventfd_notifications)) {}
+
+  // Does not take ownership of cgroup_factory, kernel, or
+  // eventfd_notifications.
+  CgroupControllerFactory(const CgroupFactory *cgroup_factory,
+                          const KernelApi *kernel,
+                          EventFdNotifications *eventfd_notifications)
+      : CgroupControllerFactory(CHECK_NOTNULL(cgroup_factory), kernel,
+                                eventfd_notifications,
+                                cgroup_factory->OwnsCgroup(hierarchy_type)) {}
+
   ~CgroupControllerFactory() override {}
 
   ::util::StatusOr<ControllerType *> Get(const string &hierarchy_path)
@@ -144,13 +155,16 @@ class CgroupControllerFactory
   ::util::StatusOr<ControllerType *> Create(const string &hierarchy_path)
       const override {
     // Create the cgroup.
-    ::util::StatusOr<string> statusor =
-        cgroup_factory_->Create(hierarchy_type, hierarchy_path);
-    if (!statusor.ok()) {
-      return statusor.status();
+    string cgroup_path;
+    if (owns_cgroup_) {
+      cgroup_path = RETURN_IF_ERROR(
+          cgroup_factory_->Create(hierarchy_type, hierarchy_path));
+    } else {
+      cgroup_path = RETURN_IF_ERROR(
+          cgroup_factory_->Get(hierarchy_type, hierarchy_path));
     }
 
-    return new ControllerType(statusor.ValueOrDie(), owns_cgroup_, kernel_,
+    return new ControllerType(cgroup_path, owns_cgroup_, kernel_,
                               eventfd_notifications_);
   }
 
@@ -161,23 +175,7 @@ class CgroupControllerFactory
   }
 
   ::util::StatusOr<string> DetectCgroupPath(pid_t tid) const override {
-    // Get the name of the subsystem (cgroup hierarchy).
-    const string kSubsystemName = HierarchyName();
-
-    // Find path for the specified subsystem.
-    for (const ProcCgroupData &cgroup : ProcCgroup(tid)) {
-      // Check all co-mounted subsystems.
-      auto it = ::std::find(cgroup.subsystems.begin(), cgroup.subsystems.end(),
-                            kSubsystemName);
-      if (it != cgroup.subsystems.end()) {
-        return cgroup.hierarchy_path;
-      }
-    }
-
-    return ::util::Status(
-        ::util::error::NOT_FOUND,
-        ::strings::Substitute("Could not detect the container for TID \"$0\"",
-                              tid));
+    return cgroup_factory_->DetectCgroupPath(tid, hierarchy_type);
   }
 
   string HierarchyName() const override {

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@
 #include "lmctfy/controllers/cgroup_controller_mock.h"
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/job_controller_mock.h"
+#include "lmctfy/tasks_handler_mock.h"
 #include "util/safe_types/unix_gid.h"
 #include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
@@ -61,7 +62,7 @@ static const char kContainerCgroupPath[] = "/dev/cgroup/job/test";
 
 class CgroupTasksHandlerFactoryTest : public ::testing::Test {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     unique_ptr<MockCgroupFactory> mock_cgroup_factory(
         new NiceMockCgroupFactory());
@@ -154,24 +155,32 @@ TEST_F(CgroupTasksHandlerFactoryTest, DetectFails) {
 
 class CgroupTasksHandlerTest : public ::testing::Test {
  public:
-  CgroupTasksHandlerTest() {}
-
-  virtual void SetUp() {
+  void SetUp() override {
     mock_cgroup_controller_ =
         new StrictMockCgroupController(CGROUP_JOB, kContainerCgroupPath, false);
-    handler_.reset(new CgroupTasksHandler(kContainer, mock_cgroup_controller_));
+    mock_tasks_handler_factory_.reset(new StrictMockTasksHandlerFactory());
+    handler_.reset(new CgroupTasksHandler(kContainer, mock_cgroup_controller_,
+                                          mock_tasks_handler_factory_.get()));
   }
 
   void CheckPids(const vector<pid_t> &expected, const vector<pid_t> &result) {
-    EXPECT_THAT(expected.size(), result.size());
+    EXPECT_EQ(expected.size(), result.size());
     for (const auto &pid : expected) {
       EXPECT_THAT(result, Contains(pid));
     }
   }
 
+  // Expect to Get() a TasksHandler. This is not owned by the caller.
+  MockTasksHandler *ExpectGetTasksHandler(const string &container_name) {
+    MockTasksHandler *handler = new StrictMockTasksHandler(container_name);
+    EXPECT_CALL(*mock_tasks_handler_factory_, Get(container_name))
+        .WillOnce(Return(handler));
+    return handler;
+  }
+
  protected:
   MockCgroupController *mock_cgroup_controller_;
-
+  unique_ptr<MockTasksHandlerFactory> mock_tasks_handler_factory_;
   unique_ptr<CgroupTasksHandler> handler_;
 };
 
@@ -258,9 +267,130 @@ TEST_F(CgroupTasksHandlerTest, DelegateFails) {
   EXPECT_EQ(Status::CANCELLED, handler_->Delegate(kUid, kGid));
 }
 
+// Tests for ListSubcontainers().
+
+TEST_F(CgroupTasksHandlerTest, ListSubcontainersSelf_Success) {
+  const vector<string> kExpected = {"sub1", "sub2", "sub3"};
+
+  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
+      .WillRepeatedly(Return(kExpected));
+
+  StatusOr<vector<string>> statusor =
+      handler_->ListSubcontainers(TasksHandler::ListType::SELF);
+  ASSERT_OK(statusor);
+
+  const vector<string> subcontainers = statusor.ValueOrDie();
+  EXPECT_EQ(3, subcontainers.size());
+  EXPECT_THAT(subcontainers, Contains(JoinPath(kContainer, "sub1")));
+  EXPECT_THAT(subcontainers, Contains(JoinPath(kContainer, "sub2")));
+  EXPECT_THAT(subcontainers, Contains(JoinPath(kContainer, "sub3")));
+}
+
+TEST_F(CgroupTasksHandlerTest, ListSubcontainersSelf_NoSubcontainers) {
+  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
+      .WillRepeatedly(Return(vector<string>()));
+
+  StatusOr<vector<string>> statusor =
+      handler_->ListSubcontainers(TasksHandler::ListType::SELF);
+  ASSERT_OK(statusor);
+  EXPECT_EQ(0, statusor.ValueOrDie().size());
+}
+
+TEST_F(CgroupTasksHandlerTest, ListSubcontainersSelf_Fails) {
+  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED,
+            handler_->ListSubcontainers(TasksHandler::ListType::SELF).status());
+}
+
+TEST_F(CgroupTasksHandlerTest, ListSubcontainersRecursive_Success) {
+  const string kContainer1 = JoinPath(kContainer, "sub1");
+  const string kContainer2 = JoinPath(kContainer, "sub2");
+  const string kContainer3 = JoinPath(kContainer, "sub1", "ssub1");
+  MockTasksHandler *mock_handler1 = ExpectGetTasksHandler(kContainer1);
+  MockTasksHandler *mock_handler2 = ExpectGetTasksHandler(kContainer2);
+  MockTasksHandler *mock_handler3 = ExpectGetTasksHandler(kContainer3);
+
+  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
+      .WillRepeatedly(Return(vector<string>{"sub1", "sub2"}));
+
+  EXPECT_CALL(*mock_handler1, ListSubcontainers(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<string>{kContainer3}));
+  EXPECT_CALL(*mock_handler2, ListSubcontainers(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<string>()));
+  EXPECT_CALL(*mock_handler3, ListSubcontainers(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<string>()));
+
+  StatusOr<vector<string>> statusor =
+      handler_->ListSubcontainers(TasksHandler::ListType::RECURSIVE);
+  ASSERT_OK(statusor);
+
+  const vector<string> subcontainers = statusor.ValueOrDie();
+  EXPECT_EQ(3, subcontainers.size());
+  EXPECT_THAT(subcontainers, Contains(kContainer1));
+  EXPECT_THAT(subcontainers, Contains(kContainer2));
+  EXPECT_THAT(subcontainers, Contains(kContainer3));
+}
+
+TEST_F(CgroupTasksHandlerTest, ListSubcontainersRecursive_Fails) {
+  const string kContainer1 = JoinPath(kContainer, "sub1");
+  const string kContainer2 = JoinPath(kContainer, "sub2");
+  const string kContainer3 = JoinPath(kContainer, "sub1", "ssub1");
+  MockTasksHandler *mock_handler1 = ExpectGetTasksHandler(kContainer1);
+  MockTasksHandler *mock_handler2 = ExpectGetTasksHandler(kContainer2);
+  MockTasksHandler *mock_handler3 = ExpectGetTasksHandler(kContainer3);
+
+  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
+      .WillRepeatedly(Return(vector<string>{"sub1", "sub2"}));
+
+  EXPECT_CALL(*mock_handler1, ListSubcontainers(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<string>{kContainer3}));
+  EXPECT_CALL(*mock_handler2, ListSubcontainers(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<string>()));
+  EXPECT_CALL(*mock_handler3, ListSubcontainers(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(
+      Status::CANCELLED,
+      handler_->ListSubcontainers(TasksHandler::ListType::RECURSIVE).status());
+}
+
+// TODO(vmarmol): Consider using a DirectoryLister element rather than using a
+// partial mock.
+// A partial mock of CgroupTasksHandler that only mocks ListSubcontainers. Used
+// for testing ListProcesses() and ListThreads().
+class PartialMockCgroupTasksHandler : public CgroupTasksHandler {
+ public:
+  PartialMockCgroupTasksHandler(
+      const string &container_name, CgroupController *cgroup_controller,
+      const TasksHandlerFactory *tasks_handler_factory)
+      : CgroupTasksHandler(container_name, cgroup_controller,
+                           tasks_handler_factory) {}
+
+  MOCK_CONST_METHOD1(ListSubcontainers,
+                     StatusOr<vector<string>>(TasksHandler::ListType type));
+};
+
+class CgroupTasksHandlerPidsTidsTest : public CgroupTasksHandlerTest {
+ public:
+  void SetUp() override {
+    CgroupTasksHandlerTest::SetUp();
+
+    mock_cgroup_controller_ =
+        new StrictMockCgroupController(CGROUP_JOB, kContainerCgroupPath, false);
+    partial_handler_.reset(
+        new PartialMockCgroupTasksHandler(kContainer, mock_cgroup_controller_,
+                                          mock_tasks_handler_factory_.get()));
+  }
+
+ protected:
+  unique_ptr<PartialMockCgroupTasksHandler> partial_handler_;
+};
+
 // Tests for ListProcesses().
 
-TEST_F(CgroupTasksHandlerTest, ListProcessesSuccess) {
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListProcessesSelf_Success) {
   const vector<pid_t> kExpected = {11, 12, 13};
 
   EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
@@ -268,12 +398,13 @@ TEST_F(CgroupTasksHandlerTest, ListProcessesSuccess) {
   EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
       .WillRepeatedly(Return(kExpected));
 
-  StatusOr<vector<pid_t>> statusor = handler_->ListProcesses();
+  StatusOr<vector<pid_t>> statusor =
+      partial_handler_->ListProcesses(TasksHandler::ListType::SELF);
   ASSERT_OK(statusor);
   CheckPids(kExpected, statusor.ValueOrDie());
 }
 
-TEST_F(CgroupTasksHandlerTest, ListProcessesWithVisitorThreads) {
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListProcessesSelf_WithVisitorThreads) {
   const vector<pid_t> kPids = {11, 12, 13};
   const vector<pid_t> kTids = {11, 12, 14};
   const vector<pid_t> kExpected = {11, 12};
@@ -283,74 +414,147 @@ TEST_F(CgroupTasksHandlerTest, ListProcessesWithVisitorThreads) {
   EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
       .WillRepeatedly(Return(kPids));
 
-  StatusOr<vector<pid_t>> statusor = handler_->ListProcesses();
+  StatusOr<vector<pid_t>> statusor =
+      partial_handler_->ListProcesses(TasksHandler::ListType::SELF);
   ASSERT_OK(statusor);
   CheckPids(kExpected, statusor.ValueOrDie());
 }
 
-TEST_F(CgroupTasksHandlerTest, ListProcessesEmpty) {
+TEST_F(CgroupTasksHandlerPidsTidsTest,
+       ListProcessesRecursive_WithVisitorThreads) {
+  // The direct container has the same PIDs and TIDs.
+  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
+      .WillRepeatedly(Return(vector<pid_t>{1, 2}));
+  EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
+      .WillRepeatedly(Return(vector<pid_t>{1, 2}));
+
+  // Expect 2 containers. Get() is called for both TIDs and PIDs.
+  const string sub1 = JoinPath(kContainer, "s1");
+  const string sub2 = JoinPath(kContainer, "s2");
+  EXPECT_CALL(*partial_handler_,
+              ListSubcontainers(TasksHandler::ListType::RECURSIVE))
+      .WillRepeatedly(Return(vector<string>{sub1, sub2}));
+  MockTasksHandler *tid_handler1 = new StrictMockTasksHandler(sub1);
+  MockTasksHandler *pid_handler1 = new StrictMockTasksHandler(sub1);
+  MockTasksHandler *tid_handler2 = new StrictMockTasksHandler(sub2);
+  MockTasksHandler *pid_handler2 = new StrictMockTasksHandler(sub2);
+  EXPECT_CALL(*mock_tasks_handler_factory_, Get(sub1))
+      .WillOnce(Return(tid_handler1))
+      .WillOnce(Return(pid_handler1));
+  EXPECT_CALL(*mock_tasks_handler_factory_, Get(sub2))
+      .WillOnce(Return(tid_handler2))
+      .WillOnce(Return(pid_handler2));
+
+  // Threads have (3, 4, 5, 6) and processes have (3, 5).
+  EXPECT_CALL(*tid_handler1, ListThreads(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<pid_t>{3, 4}));
+  EXPECT_CALL(*tid_handler2, ListThreads(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<pid_t>{5, 6}));
+  EXPECT_CALL(*pid_handler1, ListProcesses(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<pid_t>{3}));
+  EXPECT_CALL(*pid_handler2, ListProcesses(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<pid_t>{5}));
+
+  StatusOr<vector<pid_t>> statusor =
+      partial_handler_->ListProcesses(TasksHandler::ListType::RECURSIVE);
+  ASSERT_OK(statusor);
+  CheckPids({1, 2, 3, 5}, statusor.ValueOrDie());
+}
+
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListProcessesSelf_Empty) {
   EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
       .WillRepeatedly(Return(vector<pid_t>()));
   EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
       .WillRepeatedly(Return(vector<pid_t>()));
 
-  StatusOr<vector<pid_t>> statusor = handler_->ListProcesses();
+  StatusOr<vector<pid_t>> statusor =
+      partial_handler_->ListProcesses(TasksHandler::ListType::SELF);
   ASSERT_OK(statusor);
   EXPECT_EQ(0, statusor.ValueOrDie().size());
 }
 
 // Tests for ListThreads().
 
-TEST_F(CgroupTasksHandlerTest, ListThreadsSuccess) {
-  const vector<pid_t> expected = {11, 12, 13};
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListThreadsSelf_Success) {
+  const vector<pid_t> kExpected = {11, 12, 13};
 
   EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
-      .WillRepeatedly(Return(expected));
+      .WillRepeatedly(Return(kExpected));
 
-  StatusOr<vector<pid_t>> statusor = handler_->ListThreads();
-  EXPECT_TRUE(statusor.ok());
-  CheckPids(expected, statusor.ValueOrDie());
+  StatusOr<vector<pid_t>> statusor =
+      partial_handler_->ListThreads(TasksHandler::ListType::SELF);
+  ASSERT_OK(statusor);
+  CheckPids(kExpected, statusor.ValueOrDie());
 }
 
-TEST_F(CgroupTasksHandlerTest, ListThreadsEmpty) {
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListThreadsRecursive_Success) {
+  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
+      .WillRepeatedly(Return(vector<pid_t>{1, 2}));
+
+  // Expect 2 containers with 2 threads each.
+  const string sub1 = JoinPath(kContainer, "s1");
+  const string sub2 = JoinPath(kContainer, "s2");
+  EXPECT_CALL(*partial_handler_,
+              ListSubcontainers(TasksHandler::ListType::RECURSIVE))
+      .WillRepeatedly(Return(vector<string>{sub1, sub2}));
+  MockTasksHandler *handler1 = ExpectGetTasksHandler(sub1);
+  MockTasksHandler *handler2 = ExpectGetTasksHandler(sub2);
+  EXPECT_CALL(*handler1, ListThreads(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<pid_t>{3, 4}));
+  EXPECT_CALL(*handler2, ListThreads(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<pid_t>{5, 6}));
+
+  StatusOr<vector<pid_t>> statusor =
+      partial_handler_->ListThreads(TasksHandler::ListType::RECURSIVE);
+  ASSERT_OK(statusor);
+  CheckPids({1, 2, 3, 4, 5, 6}, statusor.ValueOrDie());
+}
+
+TEST_F(CgroupTasksHandlerPidsTidsTest,
+       ListThreadsRecursive_ListSubcontainersFails) {
+  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
+      .WillRepeatedly(Return(vector<pid_t>{1, 2}));
+
+  const string sub1 = JoinPath(kContainer, "s1");
+  const string sub2 = JoinPath(kContainer, "s2");
+  EXPECT_CALL(*partial_handler_,
+              ListSubcontainers(TasksHandler::ListType::RECURSIVE))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED,
+            partial_handler_->ListThreads(TasksHandler::ListType::RECURSIVE)
+                .status());
+}
+
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListThreadsRecursive_ListThreadsFails) {
+  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
+      .WillRepeatedly(Return(vector<pid_t>{1, 2}));
+
+  const string sub1 = JoinPath(kContainer, "s1");
+  const string sub2 = JoinPath(kContainer, "s2");
+  EXPECT_CALL(*partial_handler_,
+              ListSubcontainers(TasksHandler::ListType::RECURSIVE))
+      .WillRepeatedly(Return(vector<string>{sub1, sub2}));
+  MockTasksHandler *handler1 = ExpectGetTasksHandler(sub1);
+  MockTasksHandler *handler2 = ExpectGetTasksHandler(sub2);
+  EXPECT_CALL(*handler1, ListThreads(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(vector<pid_t>{3, 4}));
+  EXPECT_CALL(*handler2, ListThreads(TasksHandler::ListType::SELF))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED,
+            partial_handler_->ListThreads(TasksHandler::ListType::RECURSIVE)
+                .status());
+}
+
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListThreadsSelf_Empty) {
   EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
       .WillRepeatedly(Return(vector<pid_t>()));
 
-  StatusOr<vector<pid_t>> statusor = handler_->ListThreads();
-  EXPECT_TRUE(statusor.ok());
+  StatusOr<vector<pid_t>> statusor =
+      partial_handler_->ListThreads(TasksHandler::ListType::SELF);
+  ASSERT_OK(statusor);
   EXPECT_EQ(0, statusor.ValueOrDie().size());
-}
-
-TEST_F(CgroupTasksHandlerTest, ListSubcontainersSuccess) {
-  const vector<string> expected = {"sub1", "sub2", "sub3"};
-
-  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
-      .WillRepeatedly(Return(expected));
-
-  StatusOr<vector<string>> statusor = handler_->ListSubcontainers();
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ(3, statusor.ValueOrDie().size());
-
-  vector<string> subcontainers = statusor.ValueOrDie();
-  EXPECT_THAT(subcontainers, Contains(JoinPath(kContainer, "sub1")));
-  EXPECT_THAT(subcontainers, Contains(JoinPath(kContainer, "sub2")));
-  EXPECT_THAT(subcontainers, Contains(JoinPath(kContainer, "sub3")));
-}
-
-TEST_F(CgroupTasksHandlerTest, ListSubcontainersNoSubcontainers) {
-  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
-      .WillRepeatedly(Return(vector<string>()));
-
-  StatusOr<vector<string>> statusor = handler_->ListSubcontainers();
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ(0, statusor.ValueOrDie().size());
-}
-
-TEST_F(CgroupTasksHandlerTest, ListSubcontainersFails) {
-  EXPECT_CALL(*mock_cgroup_controller_, GetSubcontainers())
-      .WillRepeatedly(Return(Status::CANCELLED));
-
-  EXPECT_EQ(Status::CANCELLED, handler_->ListSubcontainers().status());
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,21 +18,21 @@
 #include <vector>
 
 #include "base/integral_types.h"
-#include "util/bytes.h"
 #include "system_api/kernel_api_mock.h"
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
 #include "lmctfy/controllers/memory_controller_mock.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/bytes.h"
 #include "util/errors_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "util/task/codes.pb.h"
 #include "util/task/status.h"
 
-using ::util::Bytes;
 using ::system_api::KernelAPIMock;
+using ::util::Bytes;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::testing::NiceMock;
@@ -42,6 +42,7 @@ using ::testing::StrictMock;
 using ::testing::_;
 using ::util::Status;
 using ::util::StatusOr;
+using ::util::error::NOT_FOUND;
 
 namespace containers {
 namespace lmctfy {
@@ -182,9 +183,41 @@ class MemoryResourceHandlerTest : public ::testing::Test {
     handler_.reset(new MemoryResourceHandler(
         kContainerName, mock_kernel_.get(),
         mock_memory_controller_));
+
+    EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
+        .WillRepeatedly(Return(Bytes(1)));
+    EXPECT_CALL(*mock_memory_controller_, GetUsage())
+        .WillRepeatedly(Return(Bytes(2)));
+    EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
+        .WillRepeatedly(Return(Bytes(3)));
+    EXPECT_CALL(*mock_memory_controller_, GetLimit())
+        .WillRepeatedly(Return(Bytes(4)));
+    EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
+        .WillRepeatedly(Return(Bytes(5)));
+    EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
+        .WillRepeatedly(Return(Bytes(6)));
+    memory_stats_status_ = Status::OK;
+    memory_stats_.reset(new MemoryStats());
+    memory_stats_->mutable_container_data()->set_cache(7);
+    EXPECT_CALL(*mock_memory_controller_, GetMemoryStats(_)).WillRepeatedly(
+        testing::Invoke(this, &MemoryResourceHandlerTest::PopulateMemoryStats));
   }
 
+  Status memory_stats_status_;
+  unique_ptr<MemoryStats> memory_stats_;
+
  protected:
+  Status PopulateMemoryStats(MemoryStats *stats) const {
+    if (memory_stats_status_.ok()) {
+      stats->mutable_container_data()->CopyFrom(
+          memory_stats_->container_data());
+      stats->mutable_total_data()->CopyFrom(memory_stats_->total_data());
+      stats->set_hierarchical_memory_limit(
+          memory_stats_->hierarchical_memory_limit());
+    }
+    return memory_stats_status_;
+  }
+
   const vector<Container::StatsType> kStatTypes;
 
   MockMemoryController *mock_memory_controller_;
@@ -227,19 +260,6 @@ TEST_F(MemoryResourceHandlerTest, StatsSuccess) {
   for (Container::StatsType type : kStatTypes) {
     ContainerStats stats;
 
-    EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
-        .WillRepeatedly(Return(Bytes(1)));
-    EXPECT_CALL(*mock_memory_controller_, GetUsage())
-        .WillRepeatedly(Return(Bytes(2)));
-    EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
-        .WillRepeatedly(Return(Bytes(3)));
-    EXPECT_CALL(*mock_memory_controller_, GetLimit())
-        .WillRepeatedly(Return(Bytes(4)));
-    EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
-        .WillRepeatedly(Return(Bytes(5)));
-    EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
-        .WillRepeatedly(Return(Bytes(6)));
-
     EXPECT_TRUE(handler_->Stats(type, &stats).ok());
     ASSERT_TRUE(stats.has_memory());
     EXPECT_EQ(1, stats.memory().working_set());
@@ -248,6 +268,8 @@ TEST_F(MemoryResourceHandlerTest, StatsSuccess) {
     EXPECT_EQ(4, stats.memory().limit());
     EXPECT_EQ(5, stats.memory().effective_limit());
     EXPECT_EQ(6, stats.memory().reservation());
+    EXPECT_EQ(7, stats.memory().container_data().cache());
+    EXPECT_FALSE(stats.memory().total_data().has_cache());
   }
 }
 
@@ -257,16 +279,6 @@ TEST_F(MemoryResourceHandlerTest, StatsGetWorkingSetFails) {
 
     EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
         .WillRepeatedly(Return(Status::CANCELLED));
-    EXPECT_CALL(*mock_memory_controller_, GetUsage())
-        .WillRepeatedly(Return(Bytes(2)));
-    EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
-        .WillRepeatedly(Return(Bytes(3)));
-    EXPECT_CALL(*mock_memory_controller_, GetLimit())
-        .WillRepeatedly(Return(Bytes(4)));
-    EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
-        .WillRepeatedly(Return(Bytes(5)));
-    EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
-        .WillRepeatedly(Return(Bytes(6)));
 
     EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
   }
@@ -276,18 +288,8 @@ TEST_F(MemoryResourceHandlerTest, StatsGetUsage) {
   for (Container::StatsType type : kStatTypes) {
     ContainerStats stats;
 
-    EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
-        .WillRepeatedly(Return(Bytes(1)));
     EXPECT_CALL(*mock_memory_controller_, GetUsage())
         .WillRepeatedly(Return(Status::CANCELLED));
-    EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
-        .WillRepeatedly(Return(Bytes(3)));
-    EXPECT_CALL(*mock_memory_controller_, GetLimit())
-        .WillRepeatedly(Return(Bytes(4)));
-    EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
-        .WillRepeatedly(Return(Bytes(5)));
-    EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
-        .WillRepeatedly(Return(Bytes(6)));
 
     EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
   }
@@ -297,18 +299,8 @@ TEST_F(MemoryResourceHandlerTest, StatsGetMaxUsageFails) {
   for (Container::StatsType type : kStatTypes) {
     ContainerStats stats;
 
-    EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
-        .WillRepeatedly(Return(Bytes(1)));
-    EXPECT_CALL(*mock_memory_controller_, GetUsage())
-        .WillRepeatedly(Return(Bytes(2)));
     EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
         .WillRepeatedly(Return(Status::CANCELLED));
-    EXPECT_CALL(*mock_memory_controller_, GetLimit())
-        .WillRepeatedly(Return(Bytes(4)));
-    EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
-        .WillRepeatedly(Return(Bytes(5)));
-    EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
-        .WillRepeatedly(Return(Bytes(6)));
 
     EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
   }
@@ -318,18 +310,8 @@ TEST_F(MemoryResourceHandlerTest, StatsGetLimitFails) {
   for (Container::StatsType type : kStatTypes) {
     ContainerStats stats;
 
-    EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
-        .WillRepeatedly(Return(Bytes(1)));
-    EXPECT_CALL(*mock_memory_controller_, GetUsage())
-        .WillRepeatedly(Return(Bytes(2)));
-    EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
-        .WillRepeatedly(Return(Bytes(3)));
     EXPECT_CALL(*mock_memory_controller_, GetLimit())
         .WillRepeatedly(Return(Status::CANCELLED));
-    EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
-        .WillRepeatedly(Return(Bytes(5)));
-    EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
-        .WillRepeatedly(Return(Bytes(6)));
 
     EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
   }
@@ -339,18 +321,8 @@ TEST_F(MemoryResourceHandlerTest, StatsGetEffectiveLimitFails) {
   for (Container::StatsType type : kStatTypes) {
     ContainerStats stats;
 
-    EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
-        .WillRepeatedly(Return(Bytes(1)));
-    EXPECT_CALL(*mock_memory_controller_, GetUsage())
-        .WillRepeatedly(Return(Bytes(2)));
-    EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
-        .WillRepeatedly(Return(Bytes(3)));
-    EXPECT_CALL(*mock_memory_controller_, GetLimit())
-        .WillRepeatedly(Return(Bytes(4)));
     EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
         .WillRepeatedly(Return(Status::CANCELLED));
-    EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
-        .WillRepeatedly(Return(Bytes(6)));
 
     EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
   }
@@ -360,18 +332,17 @@ TEST_F(MemoryResourceHandlerTest, StatsGetSoftLimitFails) {
   for (Container::StatsType type : kStatTypes) {
     ContainerStats stats;
 
-    EXPECT_CALL(*mock_memory_controller_, GetWorkingSet())
-        .WillRepeatedly(Return(Bytes(1)));
-    EXPECT_CALL(*mock_memory_controller_, GetUsage())
-        .WillRepeatedly(Return(Bytes(2)));
-    EXPECT_CALL(*mock_memory_controller_, GetMaxUsage())
-        .WillRepeatedly(Return(Bytes(3)));
-    EXPECT_CALL(*mock_memory_controller_, GetLimit())
-        .WillRepeatedly(Return(Bytes(4)));
-    EXPECT_CALL(*mock_memory_controller_, GetEffectiveLimit())
-        .WillRepeatedly(Return(Bytes(5)));
     EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
         .WillRepeatedly(Return(Status::CANCELLED));
+
+    EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
+  }
+}
+
+TEST_F(MemoryResourceHandlerTest, StatsGetMemoryStatsFails) {
+  memory_stats_status_ = Status::CANCELLED;
+  for (Container::StatsType type : kStatTypes) {
+    ContainerStats stats;
 
     EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
   }
@@ -405,6 +376,26 @@ TEST_F(MemoryResourceHandlerTest, UpdateDiffWithLimitFails) {
   EXPECT_EQ(Status::CANCELLED, handler_->Update(spec, Container::UPDATE_DIFF));
 }
 
+TEST_F(MemoryResourceHandlerTest, UpdateDiffWithSwapLimitSuccess) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_swap_limit(42);
+
+  EXPECT_CALL(*mock_memory_controller_, SetSwapLimit(Bytes(42)))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffWithSwapLimitFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_swap_limit(42);
+
+  EXPECT_CALL(*mock_memory_controller_, SetSwapLimit(Bytes(42)))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED, handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
 TEST_F(MemoryResourceHandlerTest, UpdateDiffWithReservationSuccess) {
   ContainerSpec spec;
   spec.mutable_memory()->set_reservation(42);
@@ -425,79 +416,262 @@ TEST_F(MemoryResourceHandlerTest, UpdateDiffWithReservationFails) {
   EXPECT_EQ(Status::CANCELLED, handler_->Update(spec, Container::UPDATE_DIFF));
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceEmpty) {
+TEST_F(MemoryResourceHandlerTest,
+       UpdateDiffWithStalePageAgeSuccess) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_stale_page_age(42);
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(42))
+      .WillOnce(Return(Status::OK));
+  EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_DIFF).ok());
+}
+
+TEST_F(MemoryResourceHandlerTest,
+       UpdateDiffWithStalePageAgeFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_stale_page_age(42);
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(42))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_EQ(Status::CANCELLED, handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyRatiosSuccess) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(42))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(43))
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyRatioFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(42))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(43))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyRatioNotFound) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(42))
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(43))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_ERROR_CODE(NOT_FOUND, handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyBackgroundRatioFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(42))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(43))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyBackgroundRatioNotFound) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(42))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(43))
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  EXPECT_ERROR_CODE(NOT_FOUND, handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyLimitSuccess) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_limit(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyLimit(Bytes(42)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundLimit(Bytes(43)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyLimitFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_limit(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyLimit(Bytes(42)))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundLimit(Bytes(43)))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyLimitNotFound) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_limit(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyLimit(Bytes(42)))
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundLimit(Bytes(43)))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_ERROR_CODE(NOT_FOUND, handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyBackgroundLimitFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_limit(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyLimit(Bytes(42)))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundLimit(Bytes(43)))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffSetDirtyBackgroundLimitNotFound) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_limit(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyLimit(Bytes(42)))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundLimit(Bytes(43)))
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  EXPECT_ERROR_CODE(NOT_FOUND, handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, InvalidDirtyValues) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  spec.mutable_memory()->mutable_dirty()->set_limit(44);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(45);
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+class MemoryResourceUpdateReplaceTest : public MemoryResourceHandlerTest {
+ public:
+  virtual void SetUp() {
+    MemoryResourceHandlerTest::SetUp();
+    // Set the default values for the updates we're not looking at for the test
+    EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetSwapLimit(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetOomScore(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetCompressionSamplingRatio(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(_))
+        .WillRepeatedly(Return(Status::OK));
+  }
+};
+
+TEST_F(MemoryResourceUpdateReplaceTest, Empty) {
   ContainerSpec spec;
 
   EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(-1)))
       .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSwapLimit(Bytes(-1)))
+      .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetCompressionSamplingRatio(0))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(1))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(75))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(10))
       .WillOnce(Return(Status::OK));
 
   EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitSuccess) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithLimitSuccess) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
 
   EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(42)))
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
       .WillOnce(Return(Status::OK));
 
   EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitSetLimitFails) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithLimitSetLimitFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
 
   EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(42)))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
-      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED,
             handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitSetReservationFails) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithSetSwapLimitSuccess) {
   ContainerSpec spec;
-  spec.mutable_memory()->set_limit(42);
+  spec.mutable_memory()->set_swap_limit(42);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(42)))
-      .WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetSwapLimit(Bytes(42)))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithSetSwapLimitFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_swap_limit(42);
+
+  EXPECT_CALL(*mock_memory_controller_, SetSwapLimit(Bytes(42)))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  EXPECT_EQ(Status::CANCELLED,
+            handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithSetSwapLimitNotSupported) {
+  ContainerSpec spec;
+
+  EXPECT_CALL(*mock_memory_controller_, SetSwapLimit(Bytes(-1)))
+      .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
+
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithLimitSetReservationFails) {
+  ContainerSpec spec;
+
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
-      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED,
             handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest,
-       UpdateReplaceWithLimitSetOomScoreNotSupported) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithLimitSetOomScoreNotSupported) {
   ContainerSpec spec;
-  spec.mutable_memory()->set_limit(42);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(42)))
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
-      .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
       .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
 
   EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitAndReservationSuccess) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithLimitAndReservationSuccess) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
   spec.mutable_memory()->set_reservation(43);
@@ -506,14 +680,12 @@ TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithLimitAndReservationSuccess) {
       .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(43)))
       .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
-      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_REPLACE).ok());
 }
 
-TEST_F(MemoryResourceHandlerTest,
-       UpdateReplaceWithLimitAndReservationSetReservationFails) {
+TEST_F(MemoryResourceUpdateReplaceTest,
+       WithLimitAndReservationSetReservationFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_limit(42);
   spec.mutable_memory()->set_reservation(43);
@@ -522,36 +694,25 @@ TEST_F(MemoryResourceHandlerTest,
       .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(43)))
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_memory_controller_, SetOomScore(5000))
-      .WillRepeatedly(Return(Status::OK));
 
   EXPECT_EQ(Status::CANCELLED,
             handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest, UpdateReplaceWithEvictionPrioritySuccess) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithEvictionPrioritySuccess) {
   ContainerSpec spec;
   spec.mutable_memory()->set_eviction_priority(1000);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(Bytes(-1)))
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(Bytes(0)))
-      .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
       .WillOnce(Return(Status::OK));
 
   EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest,
-       UpdateReplaceWithEvictionPrioritySetOomScoreFails) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithEvictionPrioritySetOomScoreFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_eviction_priority(1000);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
-      .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
       .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -559,63 +720,148 @@ TEST_F(MemoryResourceHandlerTest,
             handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest,
-       UpdateReplaceWithNegativeEvictionPriorityFails) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithNegativeEvictionPriorityFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_eviction_priority(-100);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
-      .WillRepeatedly(Return(Status::OK));
-
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest,
-       UpdateReplaceWithOutOfRangeEvictionPriorityFails) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithOutOfRangeEvictionPriorityFails) {
   ContainerSpec spec;
   spec.mutable_memory()->set_eviction_priority(20000);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
-      .WillRepeatedly(Return(Status::OK));
-
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest,
-       UpdateReplaceWithEvictionPriorityNotFound) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithEvictionPriorityNotFound) {
   ContainerSpec spec;
   spec.mutable_memory()->set_eviction_priority(1000);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
-      .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
       .WillRepeatedly(Return(Status(::util::error::NOT_FOUND, "")));
 
   EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
-TEST_F(MemoryResourceHandlerTest,
-       UpdateReplaceWithEvictionPriorityOtherError) {
+TEST_F(MemoryResourceUpdateReplaceTest, WithEvictionPriorityOtherError) {
   ContainerSpec spec;
   spec.mutable_memory()->set_eviction_priority(1000);
 
-  EXPECT_CALL(*mock_memory_controller_, SetLimit(_))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_memory_controller_, SetSoftLimit(_))
-      .WillRepeatedly(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetOomScore(1000))
       .WillRepeatedly(Return(Status(::util::error::INVALID_ARGUMENT, "")));
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithCompressionSamplingRatioSucceeds) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_compression_sampling_ratio(42);
+  EXPECT_CALL(*mock_memory_controller_, SetCompressionSamplingRatio(42))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithCompressionSamplingRatioFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_compression_sampling_ratio(42);
+  EXPECT_CALL(*mock_memory_controller_, SetCompressionSamplingRatio(42))
+      .WillRepeatedly(Return(Status(::util::error::INVALID_ARGUMENT, "")));
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithStalePageAgeSucceeds) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_stale_page_age(42);
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(_))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithStalePageAgeFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_stale_page_age(42);
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(_))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_EQ(Status::CANCELLED,
+            handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithStalePageAgeNotSupported) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, SetStalePageAge(_))
+      .WillRepeatedly(Return(Status(::util::error::NOT_FOUND, "")));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithDirtyRatios) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(42))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(43))
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithDirtyLimits) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_limit(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(43);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(_)).Times(0);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyLimit(Bytes(42)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(_)).Times(0);
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundLimit(Bytes(43)))
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, InvalidDirtyRatios) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, InvalidDirtyLimits) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_limit(42);
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, InvalidDirtyValues) {
+  ContainerSpec spec;
+  spec.mutable_memory()->mutable_dirty()->set_ratio(42);
+  spec.mutable_memory()->mutable_dirty()->set_background_ratio(43);
+  spec.mutable_memory()->mutable_dirty()->set_limit(44);
+  spec.mutable_memory()->mutable_dirty()->set_background_limit(45);
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithDirtyNothing) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(75))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(10))
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithDirtyNothingNotFound) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(75))
+      .WillOnce(Return(Status(NOT_FOUND, "")));
+  EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(10))
+      .WillOnce(Return(Status(NOT_FOUND, "")));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
 // Tests for RegisterNotification().
@@ -726,6 +972,18 @@ class MemorySpecGettingTest : public MemoryResourceHandlerTest {
         .WillRepeatedly(Return(StatusOr<Bytes>(kEmpty)));
     EXPECT_CALL(*mock_memory_controller_, GetOomScore())
         .WillRepeatedly(Return(0));
+    EXPECT_CALL(*mock_memory_controller_, GetCompressionSamplingRatio())
+        .WillRepeatedly(Return(0));
+    EXPECT_CALL(*mock_memory_controller_, GetStalePageAge())
+        .WillRepeatedly(Return(0));
+    EXPECT_CALL(*mock_memory_controller_, GetDirtyRatio())
+        .WillRepeatedly(Return(0));
+    EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundRatio())
+        .WillRepeatedly(Return(0));
+    EXPECT_CALL(*mock_memory_controller_, GetDirtyLimit())
+        .WillRepeatedly(Return(StatusOr<Bytes>(Bytes(-1))));
+    EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundLimit())
+        .WillRepeatedly(Return(StatusOr<Bytes>(Bytes(-1))));
   }
 };
 
@@ -781,6 +1039,104 @@ TEST_F(MemorySpecGettingTest, GetReservation) {
 TEST_F(MemorySpecGettingTest, GetReservationFailed) {
   ContainerSpec spec;
   EXPECT_CALL(*mock_memory_controller_, GetSoftLimit())
+      .WillOnce(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetCompressionSamplingRatio) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetCompressionSamplingRatio())
+      .WillOnce(Return(StatusOr<int32>(42)));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_EQ(42, spec.memory().compression_sampling_ratio());
+}
+
+TEST_F(MemorySpecGettingTest, GetCompressionSamplingRatioNotFound) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetCompressionSamplingRatio())
+      .WillOnce(Return(Status(::util::error::NOT_FOUND, "")));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_FALSE(spec.memory().has_compression_sampling_ratio());
+}
+
+TEST_F(MemorySpecGettingTest, GetCompressionSamplingRatioFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetCompressionSamplingRatio())
+      .WillOnce(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetStalePageAge) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetStalePageAge())
+      .WillOnce(Return(StatusOr<int32>(42)));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_EQ(42, spec.memory().stale_page_age());
+}
+
+TEST_F(MemorySpecGettingTest, GetStalePageAgeFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetStalePageAge())
+      .WillOnce(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyRatio) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyRatio())
+      .WillOnce(Return(StatusOr<int32>(42)));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_EQ(42, spec.memory().dirty().ratio());
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyRatioFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyRatio())
+      .WillOnce(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyBackgroundRatio) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundRatio())
+      .WillOnce(Return(StatusOr<int32>(42)));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_EQ(42, spec.memory().dirty().background_ratio());
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyBackgroundRatioFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundRatio())
+      .WillOnce(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyLimit) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyLimit())
+      .WillOnce(Return(StatusOr<Bytes>(Bytes(42))));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_EQ(42, spec.memory().dirty().limit());
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyLimitFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyLimit())
+      .WillOnce(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyBackgroundLimit) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundLimit())
+      .WillOnce(Return(StatusOr<Bytes>(Bytes(42))));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_EQ(42, spec.memory().dirty().background_limit());
+}
+
+TEST_F(MemorySpecGettingTest, GetDirtyBackgroundLimitFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundLimit())
       .WillOnce(Return(::util::Status::CANCELLED));
   EXPECT_NOT_OK(handler_->Spec(&spec));
 }

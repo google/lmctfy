@@ -1,4 +1,4 @@
-// Copyright 2013 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -52,6 +52,72 @@ struct KernelFiles {
     static const char kThrottlingStats[];
   };
 
+  // Files related to blkio cgroup.
+  struct BlockIO {
+   public:
+    // Per cgroup weight. Default weight of the group for all devices unless
+    // overridden by per-device rule. Range 10 to 1000.
+    static const char kWeight[];
+    // Per device weight. Overrides the default weight above.
+    // Setting to zero removes the weight.
+    static const char kPerDeviceWeight[];
+    // Weights applied to leaf containers when running at the same level as
+    // processes.
+    static const char kLeafWeight[];
+    static const char kPerDeviceLeafWeight[];
+    // Disk time allocated to cgroup per device in milliseconds.
+    static const char kDiskTime[];
+    // Number of sectors transferred to/from the disk.
+    static const char kSectors[];
+    // Number of bytes serviced.
+    static const char kServiceBytes[];
+    // Number of IOs serviced.
+    static const char kServiced[];
+    // Time spent servicing I/Os.
+    static const char kServiceTime[];
+    // Time spent waiting for I/O access.
+    static const char kWaitTime[];
+    // Number of BIOS requests merged into requests for I/O ops.
+    static const char kMerged[];
+    // Number of requests queued.
+    static const char kQueued[];
+    // Historical average queue size.
+    static const char kAvgQueueSize[];
+    // Amount of time a container had to wait before servicing a request after
+    // an IO request was added to an empty queue. Measured in nanoseconds.
+    static const char kGroupWaitTime[];
+    // Time spent without any pending requests.
+    static const char kEmptyTime[];
+    // Time spent idling waiting for better requests.
+    static const char kIdleTime[];
+    // Number of times a group was dequeued from a service tree for a device.
+    static const char kDequeue[];
+    // Hierarchical versions of the corresponding container interfaces.
+    // Reports stats for the whole subtree.
+    static const char kDiskTimeRecursive[];
+    static const char kSectorsRecursive[];
+    static const char kServiceBytesRecursive[];
+    static const char kServicedRecursive[];
+    static const char kServiceTimeRecursive[];
+    static const char kMergedRecursive[];
+    static const char kQueuedRecursive[];
+    static const char kWaitTimeRecursive[];
+    // Resets all existing stats for the container.
+    static const char kResetStats[];
+    // Maximum allowed read bytes per second.
+    static const char kMaxReadBytesPerSecond[];
+    // Maximum allowed write bytes per second.
+    static const char kMaxWriteBytesPerSecond[];
+    // Maximum allowed read IO operations per second.
+    static const char kMaxReadIoPerSecond[];
+    // Maximum allowed write IO operations per second.
+    static const char kMaxWriteIoPerSecond[];
+    // Number of IOs serviced at the throttling layer.
+    static const char kThrottledIoServiced[];
+    // Number of IO bytes serviced at the throttling layer.
+    static const char kThrottledIoServiceBytes[];
+  };
+
   
   // Files related to CPU accounting
   struct CPUAcct {
@@ -64,10 +130,18 @@ struct KernelFiles {
   // Files related to Memory subsystem.
   struct Memory {
    public:
+    struct Memsw{
+     public:
+      static const char kLimitInBytes[];
+      static const char kMaxUsageInBytes[];
+      static const char kUsageInBytes[];
+    };
     static const char kCompressionEnabled[];
     static const char kCompressionSamplingRatio[];
     static const char kCompressionSamplingStats[];
     static const char kCompressionThrashingStats[];
+    static const char kDirtyRatio[];
+    static const char kDirtyBackgroundRatio[];
     static const char kDirtyBackgroundLimitInBytes[];
     static const char kDirtyLimitInBytes[];
     static const char kIdlePageStats[];
@@ -81,9 +155,12 @@ struct KernelFiles {
     static const char kStalePageAge[];
     static const char kStat[];
     static const char kSwapfile[];
+    static const char kSwapSizePercent[];
     static const char kUsageInBytes[];
     static const char kForceEmpty[];
     static const char kTryToFreePages[];
+    static const char kVmscanStat[];
+    static const char kKMemChargeUsage[];
 
     // Fields in kIdlePageStats file.
     struct IdlePageStats {
@@ -95,6 +172,8 @@ struct KernelFiles {
     struct Stat {
      public:
       static const char kHierarchicalMemoryLimit[];
+      static const char kTotalInactiveAnon[];
+      static const char kTotalInactiveFile[];
     };
   };
 
@@ -104,6 +183,20 @@ struct KernelFiles {
     static const char kFdLimit[];
     static const char kFdMaxUsage[];
     static const char kFdUsage[];
+  };
+
+  struct Freezer {
+    static const char kFreezerState[];
+    static const char kFreezerParentFreezing[];
+  };
+
+  struct Device {
+    // Devices to be allowed inside a container.
+    static const char kDevicesAllow[];
+    // Devices to be denied inside a container.
+    static const char kDevicesDeny[];
+    // List current device restrictions on a container.
+    static const char kDevicesList[];
   };
 
   struct CGroup {
