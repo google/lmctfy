@@ -9,7 +9,7 @@ lmctfy was designed and implemented with specific use-cases and configurations i
 lmctfy is released as both a C++ library and a CLI.
 
 ## Current Status
-lmctfy is beta software under heavy development and may change as it evolves. The latest release version is `0.3`. It currently only provides CPU and memory isolation. Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
+lmctfy is beta software under heavy development and may change as it evolves. The latest release version is `0.4.5`. It currently provides isolation for CPU, memory, and devices. It also allows for the creation of Virtual Hosts which are more heavily isolated containers giving the impression of running as an independent host.Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
 
 ## Getting Started
 This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#cli-commands) section provides some examples of CLI operations and [C++ Library](#c-library) describes the use of the underlying library.
@@ -54,22 +54,22 @@ In order to run lmctfy we must first initialize the machine. This only needs to 
 lmctfy init ""
 ```
 
-If the cgroup hierarchies are not mounted, those must be specified so that lmctfy can mount them. The current version of lmctfy needs the following cgroup hierarchies: `cpu`, `cpuset`, `cpuacct`, `memory`, and `freezer`. `cpu` and `cpuacct` are the only hierarchies that can be co-mounted, all other must be mounted individually. For details on configuration specifications take a look at `InitSpec` in [lmctfy.proto](/include/lmctfy.proto). An example configuration mounting all of the hierarchies in `/dev/cgroup`:
+If the cgroup hierarchies are not mounted, those must be specified so that lmctfy can mount them. The current version of lmctfy needs the following cgroup hierarchies: `cpu`, `cpuset`, `cpuacct`, `memory`, and `freezer`. `cpu` and `cpuacct` are the only hierarchies that can be co-mounted, all other must be mounted individually. For details on configuration specifications take a look at `InitSpec` in [lmctfy.proto](/include/lmctfy.proto). An example configuration mounting all of the hierarchies in `/sys/fs/cgroup`:
 
 ```bash
 lmctfy init "
   cgroup_mount:{
-    mount_path:'/dev/cgroup/cpu'
+    mount_path:'/sys/fs/cgroup/cpu'
     hierarchy:CGROUP_CPU hierarchy:CGROUP_CPUACCT
   }
   cgroup_mount:{
-    mount_path:'/dev/cgroup/cpuset' hierarchy:CGROUP_CPUSET
+    mount_path:'/sys/fs/cgroup/cpuset' hierarchy:CGROUP_CPUSET
   }
   cgroup_mount:{
-    mount_path:'/dev/cgroup/freezer' hierarchy:CGROUP_FREEZER
+    mount_path:'/sys/fs/cgroup/freezer' hierarchy:CGROUP_FREEZER
   }
   cgroup_mount:{
-    mount_path:'/dev/cgroup/memory' hierarchy:CGROUP_MEMORY
+    mount_path:'/sys/fs/cgroup/memory' hierarchy:CGROUP_MEMORY
   }"
 ```
 
@@ -168,10 +168,8 @@ The lmctfy project currently provides the CL1 component. The CL2 is not yet impl
 Currently only provides robust CPU and memory isolation.  In our roadmap we have support for the following:
 * *Disk IO Isolation:* The specification is mostly complete, we’re missing the controller and resource handler.
 * *Network Isolation:* The specification and cgroup implementation is up in the air.
-* *Support for Namespaces:* Bringing support for all namespaces and integrating them to the relevant resources.
 * *Support for Root File Systems:* Specifying and building root file systems.
 * *Disk Images:* Being able to import/export a container’s root file system image.
-* *Support for Pause/Resume:* Using the freezer hierarchy.
 * *Checkpoint Restore:* Being able to checkpoint and restore containers on different machines.
 
 ### CL2
