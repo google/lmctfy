@@ -104,6 +104,7 @@ CLI = lmctfy
 NSCON = lmctfy-nscon
 NSINIT = lmctfy-nsinit
 LIBRARY = liblmctfy.a
+CREAPER = lmctfy-creaper
 
 # Function for ensuring the output directory has been created.
 create_bin = mkdir -p $(dir $(OUT_DIR)/$@)
@@ -116,15 +117,17 @@ source_to_object = $(addsuffix .o,$(basename $(1)))
 
 default: all
 
-all: $(LIBRARY) $(NSINIT) $(NSCON) $(CLI)
+all: $(LIBRARY) $(NSINIT) $(NSCON) $(CLI) $(CREAPER)
 
-install:
+install: all
 	cp ./bin/lmctfy/cli/$(CLI) /usr/local/bin
 	chmod +x /usr/local/bin/$(CLI)
 	cp ./bin/nscon/cli/$(NSCON) /usr/local/bin
 	chmod +x /usr/local/bin/$(NSCON)
 	cp ./bin/nscon/$(NSINIT) /usr/local/bin
 	chmod +x /usr/local/bin/$(NSINIT)
+	cp ./bin/$(CREAPER) /usr/local/bin
+	chmod +x /usr/local/bin/$(CREAPER)
 
 TEST_TMPDIR = "/tmp/lmctfy_test.$$"
 check: $(TESTS)
@@ -191,6 +194,10 @@ nsinit_cli.a: $(call source_to_object,$(NSINIT_SOURCES) $(COMMON_SOURCES))
 $(NSINIT): nsinit_cli.a
 	$(create_bin)
 	$(CXX) -o $(OUT_DIR)/nscon/$@ $(addprefix $(OUT_DIR)/,$^) $(CXXFLAGS)
+
+$(CREAPER): lmctfy-creaper.go
+	$(create_bin)
+	go build -o $(OUT_DIR)/lmctfy-creaper lmctfy-creaper.go
 
 %_test: gtest_main.a $(SYSTEM_API_TEST_OBJS) nscon_cli.a lmctfy_cli.a lmctfy_no_system_api.a
 	$(create_bin)
