@@ -119,7 +119,7 @@ default: all
 
 all: $(LIBRARY) $(NSINIT) $(NSCON) $(CLI) $(CREAPER)
 
-install: all
+install:
 	cp ./bin/lmctfy/cli/$(CLI) /usr/local/bin
 	chmod +x /usr/local/bin/$(CLI)
 	cp ./bin/nscon/cli/$(NSCON) /usr/local/bin
