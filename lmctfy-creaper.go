@@ -26,7 +26,7 @@ type containerSpec struct {
 
 const (
 	// prctl syscall option to set the current process as the parent for all
-	// its grand children that gets abandoned.
+	// its grand children that gets abandoned
 	prSetChildSubreaper = 36
 )
 
