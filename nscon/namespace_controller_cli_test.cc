@@ -152,7 +152,7 @@ TEST_F(NamespaceControllerCliTest, Create) {
 
   const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
-  const vector<string> kArgv = { "/usr/local/bin/nsinit", kInitUid, kInitGid };
+  const vector<string> kArgv = { FLAGS_nsinit_path, kInitUid, kInitGid };
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
@@ -204,7 +204,7 @@ TEST_F(NamespaceControllerCliTest, Create_UnsupportedNamespace) {
 
   const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
-  const vector<string> kArgv = { "/usr/local/bin/nsinit", kInitUid, kInitGid };
+  const vector<string> kArgv = { FLAGS_nsinit_path, kInitUid, kInitGid };
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   // Assume CLONE_NEWNS is not supported.
   SetSupportedNamespaces({ CLONE_NEWIPC, CLONE_NEWPID });
@@ -222,7 +222,7 @@ TEST_F(NamespaceControllerCliTest, Create_LaunchFailure) {
 
   const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
-  const vector<string> kArgv = { "/usr/local/bin/nsinit", kInitUid, kInitGid };
+  const vector<string> kArgv = { FLAGS_nsinit_path, kInitUid, kInitGid };
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
@@ -245,7 +245,7 @@ TEST_F(NamespaceControllerCliTest, Create_NsHandleFailure) {
 
   const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
-  const vector<string> kArgv = { "/usr/local/bin/nsinit", kInitUid, kInitGid };
+  const vector<string> kArgv = { FLAGS_nsinit_path, kInitUid, kInitGid };
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;

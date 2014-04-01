@@ -29,8 +29,13 @@
 #include "strings/join.h"
 #include "strings/substitute.h"
 
-DEFINE_string(nscon_path, "/usr/local/bin/lmctfy-nscon", "Path to 'nscon' binary");
-DEFINE_string(nsinit_path, "/usr/local/bin/lmctfy-nsinit", "Path to 'nsinit' binary");
+DEFINE_string(nscon_path,
+              "/usr/local/bin/lmctfy-nscon",
+              "Path to 'nscon' binary");
+DEFINE_string(nsinit_path,
+              "/usr/local/bin/lmctfy-nsinit",
+              "Path to 'nsinit' binary");
+
 // By default use uid/gid of nobody for the nsinit process.
 // TODO(jnagal): Instead of using a flag, figure out the id for
 // nobody and nogroup from /etc/passwd.
