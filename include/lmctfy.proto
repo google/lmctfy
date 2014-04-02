@@ -29,10 +29,10 @@ message ContainerSpec {
   // assumed to be the same as the caller at creation time.
   optional int64 owner_group = 8;
 
-  // The limit on allowed children for this container
+  // The limit on allowed children for this container.
   optional int64 children_limit = 9;
 
-  // Commonly used resources
+  // Commonly used resources.
   optional CpuSpec cpu = 2;
   optional MemorySpec memory = 3;
   optional DiskIoSpec diskio = 4;
@@ -112,8 +112,7 @@ message VirtualHostSpec {
 
   // TODO(vmarmol): Add a MountSpec, we enable mount isolation, but don't have a
   // way to specify mounts just yet.
-
-  }
+}
 
 enum SchedulingLatency {
   // No latency guarantee.
