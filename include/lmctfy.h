@@ -84,10 +84,10 @@ class Container;
 // operations on all Container objects that reference it will fail with
 // NOT_FOUND.
 //
-// Tourist Threads:
+// Visitor Threads:
 // There may exist threads that are inside a container, but their thread-group
 // leader (the thread whose TID is the same as the PID) is not inside the
-// container. These threads shall be referred to as "tourist threads." This use
+// container. These threads shall be referred to as "visitor threads." This use
 // is in general discouraged as it can lead to hard to manage edge cases. Some
 // of these edge cases are described in the documentation below.
 //
@@ -401,7 +401,7 @@ class Container {
   // Kills all processes running in the container. This operation is atomic and
   // is synchronized with any mutable operations on this container.
   //
-  // The operation sends a SIGKILL to all processes in the containers. Tourist
+  // The operation sends a SIGKILL to all processes in the containers. Visitor
   // threads are killed via SIGKILL after all processes have exited.
   //
   // Note that this operation can potentially take a long time (O(seconds)) if
