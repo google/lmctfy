@@ -1,6 +1,6 @@
 # lmctfy - Let Me Contain That For You
 
-lmctfy (pronounced *lem-kut-fee*) is the open source version of [Google](http://google.com)’s container stack, which provides Linux application containers. These containers allow for the isolation of resources used by multiple applications running on a single machine. This gives the applications the impression of running exclusively on a machine. The applications may be container-aware and thus be able to create and manage their own subcontainers.
+lmctfy (pronounced *l-m-c-t-fi*) is the open source version of [Google](http://google.com)’s container stack, which provides Linux application containers. These containers allow for the isolation of resources used by multiple applications running on a single machine. This gives the applications the impression of running exclusively on a machine. The applications may be container-aware and thus be able to create and manage their own subcontainers.
 
 The project aims to provide the container abstraction through a high-level API built around user intent. The containers created are themselves container-aware within the hierarchy and can be delegated to be managed by other user agents.
 
