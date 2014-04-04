@@ -60,6 +60,7 @@ class MockMemoryController : public MemoryController {
   MOCK_METHOD1(SetDirtyLimit, ::util::Status(::util::Bytes limit));
   MOCK_METHOD1(SetDirtyBackgroundLimit,
                ::util::Status(::util::Bytes limit));
+  MOCK_METHOD1(SetKMemChargeUsage, ::util::Status(bool enable));
 
   MOCK_CONST_METHOD0(GetWorkingSet,
                      ::util::StatusOr<::util::Bytes>());
@@ -86,6 +87,7 @@ class MockMemoryController : public MemoryController {
                      ::util::StatusOr<::util::Bytes>());
   MOCK_CONST_METHOD0(GetDirtyBackgroundLimit,
                      ::util::StatusOr<::util::Bytes>());
+  MOCK_CONST_METHOD0(GetKMemChargeUsage, ::util::StatusOr<bool>());
   MOCK_METHOD2(RegisterUsageThresholdNotification,
                ::util::StatusOr<ActiveNotifications::Handle>(
                    ::util::Bytes usage_threshold,

@@ -60,7 +60,9 @@ DEFINE_int32(lmctfy_num_tries_for_unkillable, 3,
 DEFINE_int32(lmctfy_ms_delay_between_kills, 250,
              "The number of milliseconds to wait between kill attempts.");
 
-DEFINE_bool(lmctfy_use_namespaces, true,
+
+DEFINE_bool(lmctfy_use_namespaces,
+            true,
             "Whether lmctfy uses namespaces.");
 
 using ::util::EventfdListener;
@@ -88,10 +90,7 @@ namespace lmctfy {
 // Creates and returns factories for all supported ResourceHandlers. This is in
 // a separate file to allow for custom resource handlers to be utilized at link
 // time.
-// MOE: begin_strip
-// Internal ones are found in lmctfy_init.cc
-// MOE: end_strip
-// MOE: insert // Default ones are found in lmctfy_init.cc
+// Default ones are found in lmctfy_init.cc
 extern StatusOr<vector<ResourceHandlerFactory *>> CreateSupportedResources(
     CgroupFactory *cgroup_factory, const KernelApi *kernel,
     EventFdNotifications *eventfd_notifications);
@@ -252,11 +251,10 @@ static StatusOr<TasksHandlerFactory *> CreateTasksHandler(
   }
 }
 
-// Takes ownership of cgroup_factory and kernel.
+// Takes ownership of cgroup_factory.
 StatusOr<ContainerApiImpl *> ContainerApiImpl::NewContainerApiImpl(
     CgroupFactory *cgroup_factory, const KernelApi *kernel) {
   unique_ptr<CgroupFactory> cgroup_factory_deleter(cgroup_factory);
-  unique_ptr<const KernelApi> kernel_deleter(kernel);
 
   // Create the notifications subsystem.
   unique_ptr<ActiveNotifications> active_notifications(
@@ -305,7 +303,6 @@ StatusOr<ContainerApiImpl *> ContainerApiImpl::NewContainerApiImpl(
 
   // Release all deleters and create the ContainerApi instance.
   cgroup_factory_deleter.release();
-  kernel_deleter.release();
   vector<ResourceHandlerFactory *> resources_to_use;
   resources_to_use.swap(resource_factories);
   return new ContainerApiImpl(

@@ -15,6 +15,7 @@
 #include "lmctfy/controllers/cpuacct_controller.h"
 
 #include <limits.h>
+#include <unistd.h>
 #include <memory>
 #include <utility>
 
@@ -26,9 +27,11 @@
 #include "strings/strutil.h"
 #include "strings/substitute.h"
 #include "util/gtl/stl_util.h"
+#include "re2/re2.h"
 #include "util/task/codes.pb.h"
 #include "util/task/status.h"
 
+using ::util::Nanoseconds;
 using ::std::map;
 using ::std::unique_ptr;
 using ::std::vector;
@@ -106,6 +109,33 @@ Status CpuAcctController::SetupHistograms() {
 Status CpuAcctController::EnableSchedulerHistograms() const {
   const string kProcHistogramPath = "/proc/sys/kernel/sched_histogram";
   return WriteStringToFile(kProcHistogramPath, "1");
+}
+
+namespace {
+Nanoseconds TicksToNanoseconds(int64 ticks) {
+  static const int64 user_hz = sysconf(_SC_CLK_TCK);
+  static const int64 kNanosecondsInSecond = 1000000000;
+  return Nanoseconds(ticks * kNanosecondsInSecond / user_hz);
+}
+}  // namespace
+
+StatusOr<CpuTime> CpuAcctController::GetCpuTime() const {
+  string cpu_time_data =
+      RETURN_IF_ERROR(GetParamString(KernelFiles::CPUAcct::kStat));
+  int64 user_ticks;
+  int64 system_ticks;
+  if (!RE2::FullMatch(cpu_time_data,
+                      "user (\\d+)\n"
+                      "system (\\d+)\n",
+                      &user_ticks,
+                      &system_ticks)) {
+    return Status(::util::error::INTERNAL,
+                  Substitute("Contents of $0 are malformed: $1",
+                             KernelFiles::CPUAcct::kStat,
+                             cpu_time_data));
+  }
+  return CpuTime{TicksToNanoseconds(user_ticks),
+                 TicksToNanoseconds(system_ticks)};
 }
 
 // Reads in the KernelFiles::CPUAcct::kHistogram and parses out different

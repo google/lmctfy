@@ -421,10 +421,31 @@ Status CpuResourceHandler::Stats(Container::StatsType type,
   CpuStats *cpu_stats = output->mutable_cpu();
 
   // Cpu usage.
-  SET_IF_PRESENT(cpuacct_controller_->GetCpuUsageInNs(), cpu_stats->set_usage);
+  SET_IF_PRESENT(cpuacct_controller_->GetCpuUsageInNs(),
+                 cpu_stats->mutable_usage()->set_total);
 
   // Cpu load.
   SET_IF_PRESENT(cpu_controller_->GetNumRunnable(), cpu_stats->set_load);
+
+  {
+    auto set_cpu_time = [&cpu_stats](const CpuTime &cpu_time) {
+      cpu_stats->mutable_usage()->set_user(cpu_time.user.value());
+      cpu_stats->mutable_usage()->set_system(cpu_time.system.value());
+    };
+    SET_IF_PRESENT(cpuacct_controller_->GetCpuTime(), set_cpu_time);
+  }
+
+  {
+    auto set_per_cpu = [&cpu_stats](vector<int64> *per_cpu) {
+      ::std::copy(per_cpu->begin(),
+                  per_cpu->end(),
+                  RepeatedFieldBackInserter(
+                      cpu_stats->mutable_usage()->mutable_per_cpu()));
+      delete per_cpu;
+    };
+    SET_IF_PRESENT(cpuacct_controller_->GetPerCpuUsageInNs(),
+                   set_per_cpu);
+  }
 
   // Stats below this check are only returned for STATS_FULL.
   if (type == Container::STATS_SUMMARY) {

@@ -12,6 +12,7 @@ namespace util {
 DEFINE_SAFE_INT_TYPE(Seconds, int64, ::util_intops::LogFatalOnError);
 DEFINE_SAFE_INT_TYPE(Milliseconds, int64, ::util_intops::LogFatalOnError);
 DEFINE_SAFE_INT_TYPE(Microseconds, int64, ::util_intops::LogFatalOnError);
+DEFINE_SAFE_INT_TYPE(Nanoseconds, int64, ::util_intops::LogFatalOnError);
 
 inline Microseconds TimeNowMicroseconds() {
   return Microseconds(WallTime_Now() * 1000000);

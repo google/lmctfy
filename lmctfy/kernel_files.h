@@ -61,10 +61,6 @@ struct KernelFiles {
     // Per device weight. Overrides the default weight above.
     // Setting to zero removes the weight.
     static const char kPerDeviceWeight[];
-    // Weights applied to leaf containers when running at the same level as
-    // processes.
-    static const char kLeafWeight[];
-    static const char kPerDeviceLeafWeight[];
     // Disk time allocated to cgroup per device in milliseconds.
     static const char kDiskTime[];
     // Number of sectors transferred to/from the disk.
@@ -125,6 +121,7 @@ struct KernelFiles {
     static const char kUsage[];
     static const char kUsagePerCPU[];
     static const char kHistogram[];
+    static const char kStat[];
   };
 
   // Files related to Memory subsystem.

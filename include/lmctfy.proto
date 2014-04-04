@@ -29,10 +29,10 @@ message ContainerSpec {
   // assumed to be the same as the caller at creation time.
   optional int64 owner_group = 8;
 
-  // The limit on allowed children for this container.
+  // The limit on allowed children for this container
   optional int64 children_limit = 9;
 
-  // Commonly used resources.
+  // Commonly used resources
   optional CpuSpec cpu = 2;
   optional MemorySpec memory = 3;
   optional DiskIoSpec diskio = 4;
@@ -112,7 +112,8 @@ message VirtualHostSpec {
 
   // TODO(vmarmol): Add a MountSpec, we enable mount isolation, but don't have a
   // way to specify mounts just yet.
-}
+
+  }
 
 enum SchedulingLatency {
   // No latency guarantee.
@@ -200,6 +201,8 @@ message MemorySpec {
     optional int32 background_limit = 4;
   };
   optional Dirty dirty = 10;
+
+  optional bool kmem_charge_usage = 11;
 }
 
 message DiskIoSpec {
@@ -415,9 +418,24 @@ message ThrottlingData {
 }
 
 message CpuStats {
-  // CPU usage.
-  // Units: nanoseconds.
-  optional uint64 usage = 1;
+  message Usage {
+    // CPU usage.
+    // Units: nanoseconds.
+    optional uint64 total = 1;
+
+    // CPU usage per cpu.
+    // Units: nanoseconds
+    repeated int64 per_cpu = 2;
+
+    // Time spent by tasks of the cgroup in user mode.
+    // Units: microseconds
+    optional int64 user = 3;
+
+    // Time spent by tasks of the cgroup in kernel mode.
+    // Units: microseconds
+    optional int64 system = 4;
+  }
+  optional Usage usage = 1;
 
   // CPU load, average number of runnable threads.
   optional int32 load = 2;
@@ -510,7 +528,7 @@ message MemoryStats {
   // Stats about memory specific to this container
   optional MemoryData container_data = 7;
   // Stats about memory for this container and all of its subcontainers
-  optional MemoryData total_data = 8;
+  optional MemoryData hierarchical_data = 8;
 
   optional int64 hierarchical_memory_limit = 9;
 }

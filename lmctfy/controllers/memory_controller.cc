@@ -95,6 +95,10 @@ Status MemoryController::SetDirtyBackgroundLimit(Bytes limit) {
                        limit);
 }
 
+Status MemoryController::SetKMemChargeUsage(bool enable) {
+  return SetParamBool(KernelFiles::Memory::kKMemChargeUsage, enable);
+}
+
 StatusOr<Bytes> MemoryController::GetStaleBytes() const {
   map<string, int64> stats =
       RETURN_IF_ERROR(GetStats(KernelFiles::Memory::kIdlePageStats));
@@ -199,7 +203,8 @@ Status MemoryController::GetMemoryStats(MemoryStats *memory_stats) const {
   map<string, int64> stats =
       RETURN_IF_ERROR(GetStats(KernelFiles::Memory::kStat));
   ProcessMemoryStats(stats, "", memory_stats->mutable_container_data());
-  ProcessMemoryStats(stats, "total_", memory_stats->mutable_total_data());
+  ProcessMemoryStats(stats, "total_",
+                     memory_stats->mutable_hierarchical_data());
   POPULATE_STAT(stats, , memory_stats, hierarchical_memory_limit);
   return Status::OK;
 }
@@ -298,6 +303,10 @@ StatusOr<Bytes> MemoryController::GetDirtyLimit() const {
 
 StatusOr<Bytes> MemoryController::GetDirtyBackgroundLimit() const {
   return GetParamBytes(KernelFiles::Memory::kDirtyBackgroundLimitInBytes);
+}
+
+StatusOr<bool> MemoryController::GetKMemChargeUsage() const {
+  return GetParamBool(KernelFiles::Memory::kKMemChargeUsage);
 }
 
 StatusOr<map<string, int64>> MemoryController::GetStats(

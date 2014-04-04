@@ -22,6 +22,7 @@ using ::std::string;
 #include "base/macros.h"
 #include "lmctfy/controllers/cgroup_controller.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/time.h"
 #include "util/task/statusor.h"
 
 namespace containers {
@@ -57,6 +58,11 @@ struct CpuHistogramData {
   ::std::map<int, int64> buckets;
 };
 
+struct CpuTime {
+  ::util::Nanoseconds user;
+  ::util::Nanoseconds system;
+};
+
 // Controller for cpu accounting cgroup.
 //
 // Class is thread-safe.
@@ -79,6 +85,9 @@ class CpuAcctController : public CgroupController {
 
   // Get cpu usage in nanoseconds.
   virtual ::util::StatusOr<int64> GetCpuUsageInNs() const;
+
+  // Get cpu usage in nanoseconds divided on user and system time.
+  virtual ::util::StatusOr<CpuTime> GetCpuTime() const;
 
   // Get per-cpu usage in nanoseconds.
   // Caller owns the newly allocated vector.

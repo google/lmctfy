@@ -48,6 +48,7 @@ class MockCpuAcctController : public CpuAcctController {
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD0(GetCpuUsageInNs, ::util::StatusOr<int64>());
+  MOCK_CONST_METHOD0(GetCpuTime, ::util::StatusOr<CpuTime>());
   MOCK_CONST_METHOD0(GetPerCpuUsageInNs,
                      ::util::StatusOr< ::std::vector<int64> *>());
   MOCK_METHOD0(SetupHistograms, ::util::Status());

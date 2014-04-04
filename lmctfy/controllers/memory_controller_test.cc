@@ -311,6 +311,24 @@ TEST_F(MemoryControllerTest, SetDirtyBackgroundLimitFailure) {
   EXPECT_NOT_OK(controller_->SetDirtyBackgroundLimit(Bytes(42)));
 }
 
+TEST_F(MemoryControllerTest, SetKMemChargeUsageSuccess) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kKMemChargeUsage);
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("0", kResFile, NotNull(), NotNull()))
+      .WillOnce(Return(0));
+  EXPECT_OK(controller_->SetKMemChargeUsage(false));
+}
+
+TEST_F(MemoryControllerTest, SetKMemChargeUsageFailure) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kKMemChargeUsage);
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("0", kResFile, NotNull(), NotNull()))
+      .WillOnce(DoAll(SetArgPointee<3>(true), Return(0)));
+  EXPECT_NOT_OK(controller_->SetKMemChargeUsage(false));
+}
+
 TEST_F(MemoryControllerTest, GetLimit) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kLimitInBytes);
@@ -811,6 +829,54 @@ TEST_F(MemoryControllerTest, GetDirtyBackgroundLimitFails) {
   EXPECT_FALSE(controller_->GetDirtyBackgroundLimit().ok());
 }
 
+TEST_F(MemoryControllerTest, GetKMemChargeUsage) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kKMemChargeUsage);
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("1"), Return(true)));
+
+  StatusOr<bool> statusor = controller_->GetKMemChargeUsage();
+  ASSERT_OK(statusor);
+  EXPECT_TRUE(statusor.ValueOrDie());
+}
+
+TEST_F(MemoryControllerTest, GetKMemChargeUsageBadKernelValue) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kKMemChargeUsage);
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("2"), Return(true)));
+
+  EXPECT_ERROR_CODE(::util::error::OUT_OF_RANGE,
+                    controller_->GetKMemChargeUsage());
+}
+
+TEST_F(MemoryControllerTest, GetKMemChargeUsageNotFound) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kKMemChargeUsage);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+
+  EXPECT_ERROR_CODE(NOT_FOUND, controller_->GetKMemChargeUsage());
+}
+
+TEST_F(MemoryControllerTest, GetKMemChargeUsageFails) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kKMemChargeUsage);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(Return(false));
+
+  EXPECT_NOT_OK(controller_->GetKMemChargeUsage());
+}
+
+
 TEST_F(MemoryControllerTest, GetWorkingSet) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kUsageInBytes);
@@ -1160,7 +1226,7 @@ TEST_F(MemoryControllerTest, GetMemoryStatsSuccess) {
   EXPECT_TRUE(status.ok());
   EXPECT_EQ(1536, stats.container_data().thp().split());
   EXPECT_FALSE(stats.container_data().has_cache());
-  EXPECT_EQ(397692928, stats.total_data().cache());
+  EXPECT_EQ(397692928, stats.hierarchical_data().cache());
   EXPECT_EQ(1234, stats.hierarchical_memory_limit());
 }
 

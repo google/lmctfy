@@ -29,6 +29,7 @@
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
 #include "lmctfy/resource_handler.h"
 #include "include/lmctfy.pb.h"
+#include "util/safe_types/time.h"
 #include "util/cpu_mask.h"
 #include "util/cpu_mask_test_util.h"
 #include "util/errors_test_util.h"
@@ -38,9 +39,15 @@
 
 using ::system_api::KernelAPIMock;
 using ::util::CpuMask;
+using ::util::Nanoseconds;
 using ::std::unique_ptr;
 using ::std::vector;
+using ::testing::Eq;
+#include "util/testing/equals_initialized_proto.h"
+using ::testing::EqualsInitializedProto;
+using ::testing::Invoke;
 using ::testing::NiceMock;
+using ::testing::Pointwise;
 using ::testing::Return;
 using ::testing::StrictMock;
 using ::testing::_;
@@ -1327,85 +1334,112 @@ class CpuResourceHandlerTest : public ::testing::Test {
   unique_ptr<CpuResourceHandler> handler_;
 };
 
-TEST_F(CpuResourceHandlerTest, StatsSummarySuccess) {
+class CpuStatsTest : public CpuResourceHandlerTest {
+ protected:
+  void SetUp() override {
+    CpuResourceHandlerTest::SetUp();
+
+    expected_throttling_stats_.nr_periods = 100;
+    expected_throttling_stats_.nr_throttled = 20;
+    expected_throttling_stats_.throttled_time = 123456789;
+
+    // Prepare scheduler histograms.
+    for (auto type : kHistoTypes) {
+      CpuHistogramData data;
+      data.type = type;
+      for (int key = 1; key <= 3; ++key) {
+        data.buckets[key * 1000] = 100 * key;
+      }
+      expected_histograms_.push_back(data);
+    }
+  }
+
+  void ExpectSummaryGets() {
+    auto &expected_usage_ = *expected_stats_.mutable_usage();
+    EXPECT_CALL(*mock_cpuacct_controller_, GetCpuUsageInNs())
+        .WillRepeatedly(Return(expected_total_));
+    expected_usage_.set_total(expected_total_);
+
+    EXPECT_CALL(*mock_cpuacct_controller_, GetCpuTime())
+        .WillRepeatedly(Return(expected_cpu_time_));
+    expected_usage_.set_user(expected_cpu_time_.user.value());
+    expected_usage_.set_system(expected_cpu_time_.system.value());
+
+    EXPECT_CALL(*mock_cpuacct_controller_, GetPerCpuUsageInNs())
+        .WillRepeatedly(Invoke([this]() {
+          return new vector<int64>(expected_per_cpu_);
+        }));
+    ::std::copy(expected_per_cpu_.begin(),
+                expected_per_cpu_.end(),
+                RepeatedFieldBackInserter(
+                    expected_usage_.mutable_per_cpu()));
+
+    EXPECT_CALL(*mock_cpu_controller_, GetNumRunnable())
+        .WillRepeatedly(Return(expected_load_));
+    expected_stats_.set_load(expected_load_);
+  }
+
+  void ExpectFullGets() {
+    ExpectSummaryGets();
+
+    EXPECT_CALL(*mock_cpu_controller_, GetThrottlingStats())
+        .WillRepeatedly(Return(expected_throttling_stats_));
+    auto *expected_throttling_data = expected_stats_.mutable_throttling_data();
+    expected_throttling_data->set_periods(
+        expected_throttling_stats_.nr_periods);
+    expected_throttling_data->set_throttled_periods(
+        expected_throttling_stats_.nr_throttled);
+    expected_throttling_data->set_throttled_time(
+        expected_throttling_stats_.throttled_time);
+
+    EXPECT_CALL(*mock_cpuacct_controller_, GetSchedulerHistograms())
+        .WillRepeatedly(Invoke([this]() {
+          auto histograms_ = new ::std::vector<CpuHistogramData *>();
+          for (const auto &data : expected_histograms_) {
+            histograms_->push_back(new CpuHistogramData(data));
+          }
+          return histograms_;
+        }));
+    for (const auto &histogram_data : expected_histograms_) {
+      auto *histogram_map = expected_stats_.mutable_histograms()->Add();
+      histogram_map->set_type(histogram_data.type);
+      for (const auto &bucket : histogram_data.buckets) {
+        auto *stat = histogram_map->mutable_stat()->Add();
+        stat->set_bucket(bucket.first);
+        stat->set_value(bucket.second);
+      }
+    }
+  }
+
+  uint64 expected_total_ = 112233445566;
+  int32 expected_load_ = 42;
+  CpuTime expected_cpu_time_ = {Nanoseconds(100), Nanoseconds(200)};
+  vector<int64> expected_per_cpu_ = {10, 20, 30};
+  struct ThrottlingStats expected_throttling_stats_;
+  ::std::vector<CpuHistogramData> expected_histograms_;
+
+  CpuStats expected_stats_;
+};
+
+TEST_F(CpuStatsTest, StatsSummarySuccess) {
+  ExpectSummaryGets();
   Container::StatsType type = Container::STATS_SUMMARY;
-  ContainerStats stats;
 
-  const uint64 usage = 112233445566;
-  const int32 load = 42;
-  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuUsageInNs())
-      .WillRepeatedly(Return(usage));
-  EXPECT_CALL(*mock_cpu_controller_, GetNumRunnable())
-      .WillRepeatedly(Return(load));
+  ContainerStats stats;
   EXPECT_OK(handler_->Stats(type, &stats));
-  ASSERT_TRUE(stats.has_cpu());
-  EXPECT_EQ(usage, stats.cpu().usage());
-  EXPECT_EQ(load, stats.cpu().load());
-  EXPECT_FALSE(stats.cpu().has_throttling_data());
-  EXPECT_EQ(0, stats.cpu().histograms_size());
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
 }
 
-TEST_F(CpuResourceHandlerTest, StatsFullSuccess) {
+TEST_F(CpuStatsTest, StatsFullSuccess) {
+  ExpectFullGets();
   Container::StatsType type = Container::STATS_FULL;
+
   ContainerStats stats;
-
-  const uint64 usage = 112233445566;
-  const int32 load = 42;
-
-  // Prepare scheduler histograms.
-  ::std::vector<CpuHistogramData *> *histograms =
-      new vector<CpuHistogramData *>();
-  for (auto type : kHistoTypes) {
-    CpuHistogramData *data = new CpuHistogramData();
-    data->type = type;
-    for (int key = 1; key <= 3; ++key) {
-      data->buckets[key * 1000] = 100 * key;
-    }
-    histograms->push_back(data);
-  }
-
-  // Prepare throttling stats.
-  struct ThrottlingStats throttling_stats;
-  throttling_stats.nr_periods = 100;
-  throttling_stats.nr_throttled = 20;
-  throttling_stats.throttled_time = 123456789;
-
-  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuUsageInNs())
-      .WillRepeatedly(Return(usage));
-  EXPECT_CALL(*mock_cpu_controller_, GetNumRunnable())
-      .WillRepeatedly(Return(load));
-  EXPECT_CALL(*mock_cpuacct_controller_, GetSchedulerHistograms())
-      .WillRepeatedly(Return(histograms));
-  EXPECT_CALL(*mock_cpu_controller_, GetThrottlingStats())
-      .WillRepeatedly(Return(throttling_stats));
   EXPECT_OK(handler_->Stats(type, &stats));
-  ASSERT_TRUE(stats.has_cpu());
-  EXPECT_EQ(usage, stats.cpu().usage());
-  EXPECT_EQ(load, stats.cpu().load());
-
-  // Verify throttling stats.
-  EXPECT_TRUE(stats.cpu().has_throttling_data());
-  EXPECT_EQ(stats.cpu().throttling_data().periods(),
-            throttling_stats.nr_periods);
-  EXPECT_EQ(stats.cpu().throttling_data().throttled_periods(),
-            throttling_stats.nr_throttled);
-  EXPECT_EQ(stats.cpu().throttling_data().throttled_time(),
-            throttling_stats.throttled_time);
-
-  // Verify histogram data.
-  EXPECT_EQ(5, stats.cpu().histograms_size());
-  for (int i = 0; i < 5; i++) {
-    EXPECT_EQ(stats.cpu().histograms(i).type(), kHistoTypes[i]);
-    EXPECT_EQ(3, stats.cpu().histograms(i).stat_size());
-    for (int index = 0; index < 3; ++index) {
-      const HistogramMap_Bucket &stat = stats.cpu().histograms(i).stat(index);
-      EXPECT_EQ(1000 * (index + 1), stat.bucket());
-      EXPECT_EQ(100 * (index + 1), stat.value());
-    }
-  }
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
 }
 
-TEST_F(CpuResourceHandlerTest, StatsUsageFails) {
+TEST_F(CpuStatsTest, StatsUsageFails) {
   Container::StatsType type = Container::STATS_FULL;
   ContainerStats stats;
 
@@ -1414,59 +1448,128 @@ TEST_F(CpuResourceHandlerTest, StatsUsageFails) {
   EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
 }
 
-TEST_F(CpuResourceHandlerTest, StatsLoadFails) {
+TEST_F(CpuStatsTest, StatsLoadFails) {
   Container::StatsType type = Container::STATS_FULL;
-  ContainerStats stats;
-
-  const uint64 usage = 112233445566;
-
-  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuUsageInNs())
-      .WillRepeatedly(Return(usage));
+  ExpectFullGets();
   EXPECT_CALL(*mock_cpu_controller_, GetNumRunnable())
       .WillRepeatedly(Return(Status::CANCELLED));
+
+  ContainerStats stats;
   EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
 }
 
-
-TEST_F(CpuResourceHandlerTest, StatsHistogramFails) {
+TEST_F(CpuStatsTest, StatsCpuTimeFails) {
   Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuTime())
+      .WillRepeatedly(Return(Status::CANCELLED));
+
   ContainerStats stats;
+  EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
+}
 
-  const uint64 usage = 112233445566;
-  const int32 load = 42;
+TEST_F(CpuStatsTest, StatsPerCpuUsageInNsFails) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpuacct_controller_, GetPerCpuUsageInNs())
+      .WillRepeatedly(Return(Status::CANCELLED));
 
-  // Prepare throttling stats.
-  struct ThrottlingStats throttling_stats;
-  throttling_stats.nr_periods = 100;
-  throttling_stats.nr_throttled = 20;
-  throttling_stats.throttled_time = 123456789;
+  ContainerStats stats;
+  EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
+}
 
-  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuUsageInNs())
-      .WillRepeatedly(Return(usage));
-  EXPECT_CALL(*mock_cpu_controller_, GetNumRunnable())
-      .WillRepeatedly(Return(load));
+TEST_F(CpuStatsTest, StatsHistogramFails) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
   EXPECT_CALL(*mock_cpuacct_controller_, GetSchedulerHistograms())
       .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_cpu_controller_, GetThrottlingStats())
-      .WillRepeatedly(Return(throttling_stats));
+
+  ContainerStats stats;
   EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
 }
 
 
-TEST_F(CpuResourceHandlerTest, StatsThrottlingFails) {
+TEST_F(CpuStatsTest, StatsThrottlingFails) {
   Container::StatsType type = Container::STATS_FULL;
-  ContainerStats stats;
-
-  const uint64 usage = 112233445566;
-  const int32 load = 42;
-
-  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuUsageInNs())
-      .WillRepeatedly(Return(usage));
-  EXPECT_CALL(*mock_cpu_controller_, GetNumRunnable())
-      .WillRepeatedly(Return(load));
+  ExpectFullGets();
   EXPECT_CALL(*mock_cpu_controller_, GetThrottlingStats())
       .WillRepeatedly(Return(Status::CANCELLED));
+
+  ContainerStats stats;
   EXPECT_EQ(Status::CANCELLED, handler_->Stats(type, &stats));
+}
+
+TEST_F(CpuStatsTest, StatsUsageNotFound) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuUsageInNs())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.mutable_usage()->clear_total();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(type, &stats));
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
+}
+
+TEST_F(CpuStatsTest, StatsLoadNotFound) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpu_controller_, GetNumRunnable())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.clear_load();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(type, &stats));
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
+}
+
+TEST_F(CpuStatsTest, StatsCpuTimeNotFound) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpuacct_controller_, GetCpuTime())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.mutable_usage()->clear_user();
+  expected_stats_.mutable_usage()->clear_system();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(type, &stats));
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
+}
+
+TEST_F(CpuStatsTest, StatsPerCpuUsageInNsNotFound) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpuacct_controller_, GetPerCpuUsageInNs())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.mutable_usage()->clear_per_cpu();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(type, &stats));
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
+}
+
+TEST_F(CpuStatsTest, StatsHistogramNotFound) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpuacct_controller_, GetSchedulerHistograms())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.clear_histograms();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(type, &stats));
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
+}
+
+TEST_F(CpuStatsTest, StatsThrottlingNotFound) {
+  Container::StatsType type = Container::STATS_FULL;
+  ExpectFullGets();
+  EXPECT_CALL(*mock_cpu_controller_, GetThrottlingStats())
+      .WillRepeatedly(Return(Status(NOT_FOUND, "")));
+  expected_stats_.clear_throttling_data();
+
+  ContainerStats stats;
+  EXPECT_OK(handler_->Stats(type, &stats));
+  EXPECT_THAT(stats.cpu(), EqualsInitializedProto(expected_stats_));
 }
 
 TEST_F(CpuResourceHandlerTest, UpdateDiffEmpty) {

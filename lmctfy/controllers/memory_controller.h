@@ -88,6 +88,8 @@ class MemoryController : public CgroupController {
   virtual ::util::Status SetDirtyBackgroundLimit(
       ::util::Bytes limit);
 
+  virtual ::util::Status SetKMemChargeUsage(bool enable);
+
   // All statistics return NOT_FOUND if they were not found or available.
 
   // Gets the working set of this cgroup. This is the currently hot memory.
@@ -136,6 +138,8 @@ class MemoryController : public CgroupController {
   virtual ::util::StatusOr<::util::Bytes> GetDirtyLimit() const;
   virtual ::util::StatusOr<::util::Bytes> GetDirtyBackgroundLimit()
       const;
+
+  virtual ::util::StatusOr<bool> GetKMemChargeUsage() const;
 
   // Register a notification for an OOM event. The handler for the event is
   // returned on success.

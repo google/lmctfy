@@ -211,7 +211,8 @@ class MemoryResourceHandlerTest : public ::testing::Test {
     if (memory_stats_status_.ok()) {
       stats->mutable_container_data()->CopyFrom(
           memory_stats_->container_data());
-      stats->mutable_total_data()->CopyFrom(memory_stats_->total_data());
+      stats->mutable_hierarchical_data()->CopyFrom(
+          memory_stats_->hierarchical_data());
       stats->set_hierarchical_memory_limit(
           memory_stats_->hierarchical_memory_limit());
     }
@@ -269,7 +270,7 @@ TEST_F(MemoryResourceHandlerTest, StatsSuccess) {
     EXPECT_EQ(5, stats.memory().effective_limit());
     EXPECT_EQ(6, stats.memory().reservation());
     EXPECT_EQ(7, stats.memory().container_data().cache());
-    EXPECT_FALSE(stats.memory().total_data().has_cache());
+    EXPECT_FALSE(stats.memory().hierarchical_data().has_cache());
   }
 }
 
@@ -554,6 +555,22 @@ TEST_F(MemoryResourceHandlerTest, InvalidDirtyValues) {
                     handler_->Update(spec, Container::UPDATE_DIFF));
 }
 
+TEST_F(MemoryResourceHandlerTest, UpdateDiffKMemChargeUsageSucceeds) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_kmem_charge_usage(true);
+  EXPECT_CALL(*mock_memory_controller_, SetKMemChargeUsage(true))
+      .WillRepeatedly(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
+TEST_F(MemoryResourceHandlerTest, UpdateDiffKMemChargeUsageFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_kmem_charge_usage(true);
+  EXPECT_CALL(*mock_memory_controller_, SetKMemChargeUsage(true))
+      .WillRepeatedly(Return(Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_DIFF));
+}
+
 class MemoryResourceUpdateReplaceTest : public MemoryResourceHandlerTest {
  public:
   virtual void SetUp() {
@@ -574,6 +591,8 @@ class MemoryResourceUpdateReplaceTest : public MemoryResourceHandlerTest {
     EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(_))
         .WillRepeatedly(Return(Status::OK));
     EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_memory_controller_, SetKMemChargeUsage(_))
         .WillRepeatedly(Return(Status::OK));
   }
 };
@@ -596,6 +615,8 @@ TEST_F(MemoryResourceUpdateReplaceTest, Empty) {
   EXPECT_CALL(*mock_memory_controller_, SetDirtyRatio(75))
       .WillOnce(Return(Status::OK));
   EXPECT_CALL(*mock_memory_controller_, SetDirtyBackgroundRatio(10))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_memory_controller_, SetKMemChargeUsage(false))
       .WillOnce(Return(Status::OK));
 
   EXPECT_TRUE(handler_->Update(spec, Container::UPDATE_REPLACE).ok());
@@ -864,6 +885,22 @@ TEST_F(MemoryResourceUpdateReplaceTest, WithDirtyNothingNotFound) {
   EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
 }
 
+TEST_F(MemoryResourceUpdateReplaceTest, WithKMemChargeUsageSucceeds) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_kmem_charge_usage(true);
+  EXPECT_CALL(*mock_memory_controller_, SetKMemChargeUsage(true))
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
+TEST_F(MemoryResourceUpdateReplaceTest, WithKMemChargeUsageFails) {
+  ContainerSpec spec;
+  spec.mutable_memory()->set_kmem_charge_usage(true);
+  EXPECT_CALL(*mock_memory_controller_, SetKMemChargeUsage(true))
+      .WillOnce(Return(Status(NOT_FOUND, "")));
+  EXPECT_NOT_OK(handler_->Update(spec, Container::UPDATE_REPLACE));
+}
+
 // Tests for RegisterNotification().
 
 // Dummy callback used for testing.
@@ -984,6 +1021,8 @@ class MemorySpecGettingTest : public MemoryResourceHandlerTest {
         .WillRepeatedly(Return(StatusOr<Bytes>(Bytes(-1))));
     EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundLimit())
         .WillRepeatedly(Return(StatusOr<Bytes>(Bytes(-1))));
+    EXPECT_CALL(*mock_memory_controller_, GetKMemChargeUsage())
+        .WillRepeatedly(Return(true));
   }
 };
 
@@ -1137,6 +1176,21 @@ TEST_F(MemorySpecGettingTest, GetDirtyBackgroundLimit) {
 TEST_F(MemorySpecGettingTest, GetDirtyBackgroundLimitFailed) {
   ContainerSpec spec;
   EXPECT_CALL(*mock_memory_controller_, GetDirtyBackgroundLimit())
+      .WillOnce(Return(::util::Status::CANCELLED));
+  EXPECT_NOT_OK(handler_->Spec(&spec));
+}
+
+TEST_F(MemorySpecGettingTest, GetKMemChargeUsage) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetKMemChargeUsage())
+      .WillOnce(Return(true));
+  EXPECT_OK(handler_->Spec(&spec));
+  EXPECT_TRUE(spec.memory().kmem_charge_usage());
+}
+
+TEST_F(MemorySpecGettingTest, GetKMemChargeUsageFailed) {
+  ContainerSpec spec;
+  EXPECT_CALL(*mock_memory_controller_, GetKMemChargeUsage())
       .WillOnce(Return(::util::Status::CANCELLED));
   EXPECT_NOT_OK(handler_->Spec(&spec));
 }

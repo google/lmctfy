@@ -279,6 +279,16 @@ Status MemoryResourceHandler::Update(const ContainerSpec &spec,
   // Set dirty [background] ratio/limit data
   RETURN_IF_ERROR(SetDirty(memory_spec.dirty(), policy));
 
+  if (memory_spec.has_kmem_charge_usage()) {
+    RETURN_IF_ERROR(memory_controller_->SetKMemChargeUsage(
+        memory_spec.kmem_charge_usage()));
+  } else if (policy == Container::UPDATE_REPLACE) {
+    // This may not be supported in all kernels so don't fail if it is not
+    // supported and not specified.
+    RETURN_IF_ERROR(IgnoreNotFound(
+        memory_controller_->SetKMemChargeUsage(false)));
+  }
+
   return Status::OK;
 }
 
@@ -324,6 +334,8 @@ Status MemoryResourceHandler::Spec(ContainerSpec *spec) const {
                      memory_spec->mutable_dirty()->set_limit);
   SET_IF_PRESENT_VAL(memory_controller_->GetDirtyBackgroundLimit(),
                      memory_spec->mutable_dirty()->set_background_limit);
+  SET_IF_PRESENT(memory_controller_->GetKMemChargeUsage(),
+                 memory_spec->set_kmem_charge_usage);
 
   return Status::OK;
 }

@@ -31,9 +31,6 @@ const char KernelFiles::Cpu::kThrottlingStats[] = "cpu.stat";
 const char KernelFiles::BlockIO::kDiskTime[] = "blkio.time";
 const char KernelFiles::BlockIO::kWeight[] = "blkio.weight";
 const char KernelFiles::BlockIO::kPerDeviceWeight[] = "blkio.weight_device";
-const char KernelFiles::BlockIO::kLeafWeight[] = "blkio.leaf_weight";
-const char KernelFiles::BlockIO::kPerDeviceLeafWeight[] =
-    "blkio.leaf_weight_device";
 const char KernelFiles::BlockIO::kSectors[] = "blkio.sectors";
 const char KernelFiles::BlockIO::kServiceBytes[] = "blkio.io_service_bytes";
 const char KernelFiles::BlockIO::kServiceTime[] = "blkio.io_service_time";
@@ -80,6 +77,8 @@ const char KernelFiles::BlockIO::kThrottledIoServiceBytes[] =
 const char KernelFiles::CPUAcct::kUsage[] = "cpuacct.usage";
 const char KernelFiles::CPUAcct::kUsagePerCPU[] = "cpuacct.usage_percpu";
 const char KernelFiles::CPUAcct::kHistogram[] = "cpuacct.histogram";
+const char KernelFiles::CPUAcct::kStat[] = "cpuacct.stat";
+
 
 const char KernelFiles::Memory::Memsw::kLimitInBytes[] =
     "memory.memsw.limit_in_bytes";

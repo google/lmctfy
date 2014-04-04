@@ -136,6 +136,40 @@ TEST_F(CpuAcctControllerTest, GetPerCpuUsageInNsFails) {
   EXPECT_FALSE(controller_->GetPerCpuUsageInNs().ok());
 }
 
+TEST_F(CpuAcctControllerTest, GetCpuTime) {
+  const string kResFile = JoinPath(kMountPoint,
+                                   KernelFiles::CPUAcct::kStat);
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("user 1111\nsystem 121902102\n"),
+                      Return(true)));
+  StatusOr<CpuTime> statusor = controller_->GetCpuTime();
+  ASSERT_TRUE(statusor.ok());
+  CpuTime cpu_time = statusor.ValueOrDie();
+  const int64 user_hz = sysconf(_SC_CLK_TCK);
+  EXPECT_EQ(1111000000000 / user_hz, cpu_time.user.value());
+  EXPECT_EQ(121902102000000000 / user_hz, cpu_time.system.value());
+}
+
+TEST_F(CpuAcctControllerTest, GetCpuTimeNotFound) {
+  const string kResFile = JoinPath(kMountPoint,
+                                   KernelFiles::CPUAcct::kStat);
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+  EXPECT_ERROR_CODE(NOT_FOUND, controller_->GetCpuTime());
+}
+
+TEST_F(CpuAcctControllerTest, GetCpuTimeFails) {
+  const string kResFile = JoinPath(kMountPoint,
+                                   KernelFiles::CPUAcct::kStat);
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(Return(false));
+  EXPECT_FALSE(controller_->GetCpuTime().ok());
+}
+
 TEST_F(CpuAcctControllerTest, SetupHistograms) {
   const string kResFile = JoinPath(kMountPoint,
                                    KernelFiles::CPUAcct::kHistogram);
