@@ -1396,5 +1396,196 @@ TEST_F(MemoryControllerTest, RegisterOomNotificationFails) {
                     CallRegisterOomNotification(cb.get()));
 }
 
+class NumaStatTest : public MemoryControllerTest {
+ public:
+  void SetUp() override {
+    MemoryControllerTest::SetUp();
+    stats_.Clear();
+  }
+
+  int64 NodeTotal(const MemoryStats_NumaStats_NumaData_Stat &stat) {
+    int64 total = 0;
+    for (const auto &node : stat.node()) {
+      total += node.page_count();
+    }
+    return total;
+  }
+
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kNumaStat);
+  const string kStat =
+      "total=789 N0=608 N1=181\n"
+      "file=123 N0=2 N1=121\n"
+      "anon=78 N0=22 N1=56\n"
+      "unevictable=588 N0=584 N1=4\n"
+      "hierarchical_total=199270 N0=102844 N1=96426\n"
+      "hierarchical_file=120217 N0=69158 N1=51059\n"
+      "hierarchical_anon=72685 N0=29906 N1=42779\n"
+      "hierarchical_unevictable=6368 N0=3780 N1=2588\n";
+  MemoryStats stats_;
+};
+
+TEST_F(NumaStatTest, TotalStat) {
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStat), Return(true)));
+
+  ASSERT_OK(controller_->GetNumaStats(stats_.mutable_numa()));
+  EXPECT_EQ(789, stats_.numa().container_data().total().total_page_count());
+  EXPECT_EQ(2, stats_.numa().container_data().total().node_size());
+  EXPECT_EQ(0, stats_.numa().container_data().total().node(0).level());
+  EXPECT_EQ(608, stats_.numa().container_data().total().node(0).page_count());
+  EXPECT_EQ(1, stats_.numa().container_data().total().node(1).level());
+  EXPECT_EQ(181, stats_.numa().container_data().total().node(1).page_count());
+}
+
+TEST_F(NumaStatTest, StatTotals) {
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStat), Return(true)));
+
+  ASSERT_OK(controller_->GetNumaStats(stats_.mutable_numa()));
+
+  EXPECT_EQ(stats_.numa().container_data().total().total_page_count(),
+            NodeTotal(stats_.numa().container_data().total()));
+  EXPECT_EQ(stats_.numa().container_data().file().total_page_count(),
+            NodeTotal(stats_.numa().container_data().file()));
+  EXPECT_EQ(stats_.numa().container_data().anon().total_page_count(),
+            NodeTotal(stats_.numa().container_data().anon()));
+  EXPECT_EQ(stats_.numa().container_data().unevictable().total_page_count(),
+            NodeTotal(stats_.numa().container_data().unevictable()));
+
+  EXPECT_EQ(stats_.numa().hierarchical_data().total().total_page_count(),
+            NodeTotal(stats_.numa().hierarchical_data().total()));
+  EXPECT_EQ(stats_.numa().hierarchical_data().file().total_page_count(),
+            NodeTotal(stats_.numa().hierarchical_data().file()));
+  EXPECT_EQ(stats_.numa().hierarchical_data().anon().total_page_count(),
+            NodeTotal(stats_.numa().hierarchical_data().anon()));
+  EXPECT_EQ(stats_.numa().hierarchical_data().unevictable().total_page_count(),
+            NodeTotal(stats_.numa().hierarchical_data().unevictable()));
+}
+
+TEST_F(NumaStatTest, HierarchicalStats) {
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStat), Return(true)));
+
+  ASSERT_OK(controller_->GetNumaStats(stats_.mutable_numa()));
+  EXPECT_EQ(199270,
+            stats_.numa().hierarchical_data().total().total_page_count());
+  EXPECT_EQ(2, stats_.numa().hierarchical_data().total().node_size());
+  EXPECT_EQ(0, stats_.numa().hierarchical_data().total().node(0).level());
+  EXPECT_EQ(102844,
+            stats_.numa().hierarchical_data().total().node(0).page_count());
+  EXPECT_EQ(1, stats_.numa().hierarchical_data().total().node(1).level());
+  EXPECT_EQ(96426,
+            stats_.numa().hierarchical_data().total().node(1).page_count());
+}
+
+TEST_F(NumaStatTest, FileNotFound) {
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+
+  EXPECT_NOT_OK(controller_->GetNumaStats(stats_.mutable_numa()));
+}
+
+TEST_F(NumaStatTest, MissingTotalCount) {
+  const string kBadStat =
+      "total N0=1 N1=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_EQ(::util::error::FAILED_PRECONDITION,
+            controller_->GetNumaStats(stats_.mutable_numa()).error_code());
+}
+
+TEST_F(NumaStatTest, BadTotalCount) {
+  const string kBadStat =
+      "total=abc N0=1 N1=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_EQ(::util::error::FAILED_PRECONDITION,
+            controller_->GetNumaStats(stats_.mutable_numa()).error_code());
+}
+
+TEST_F(NumaStatTest, MissingLevelCount) {
+  const string kBadStat =
+      "total=2 N0 N1=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_EQ(::util::error::FAILED_PRECONDITION,
+            controller_->GetNumaStats(stats_.mutable_numa()).error_code());
+}
+
+TEST_F(NumaStatTest, BadLevelCount) {
+  const string kBadStat =
+      "total=2 N0=abc N1=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_EQ(::util::error::FAILED_PRECONDITION,
+            controller_->GetNumaStats(stats_.mutable_numa()).error_code());
+}
+
+TEST_F(NumaStatTest, BadStatName) {
+  const string kBadStat =
+      "nottotal=2 N0=1 N1=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_OK(controller_->GetNumaStats(stats_.mutable_numa()));
+}
+
+TEST_F(NumaStatTest, BadLevelName) {
+  const string kBadStat =
+      "total=2 N0=1 M1=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_EQ(::util::error::FAILED_PRECONDITION,
+            controller_->GetNumaStats(stats_.mutable_numa()).error_code());
+}
+
+TEST_F(NumaStatTest, BadLevelNumber) {
+  const string kBadStat =
+      "total=2 N0=1 Na=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_EQ(::util::error::FAILED_PRECONDITION,
+            controller_->GetNumaStats(stats_.mutable_numa()).error_code());
+}
+
+TEST_F(NumaStatTest, DuplicateLevel) {
+  const string kBadStat =
+      "total=2 N0=1 N0=1\n";
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kBadStat), Return(true)));
+
+  EXPECT_EQ(::util::error::FAILED_PRECONDITION,
+            controller_->GetNumaStats(stats_.mutable_numa()).error_code());
+}
+
 }  // namespace lmctfy
 }  // namespace containers

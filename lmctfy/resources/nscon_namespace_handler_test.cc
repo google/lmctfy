@@ -322,6 +322,33 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerCustomInit) {
   EXPECT_EQ(kContainerName, handler->container_name());
 }
 
+TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerWithConsole) {
+  ContainerSpec spec;
+  spec.mutable_virtual_host()->mutable_init()->mutable_run_spec()
+      ->mutable_console()->set_slave_pty("10");
+  // controller ownership transferred to namespace handler.
+  nscon::MockNamespaceController *mock_controller =
+      new nscon::StrictMockNamespaceController();
+  nscon::NamespaceSpec namespace_spec;
+  namespace_spec.mutable_pid();
+  namespace_spec.mutable_ipc();
+  namespace_spec.mutable_mnt();
+  namespace_spec.mutable_run_spec()->mutable_console()->set_slave_pty("10");
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(EqualsInitializedProto(namespace_spec), _))
+      .WillRepeatedly(Return(mock_controller));
+  EXPECT_CALL(*mock_controller, GetPid())
+      .WillRepeatedly(Return(kInit));
+
+  StatusOr<NamespaceHandler *> statusor =
+      factory_->CreateNamespaceHandler(kContainerName, spec);
+  ASSERT_OK(statusor);
+  EXPECT_NE(nullptr, statusor.ValueOrDie());
+  unique_ptr<NamespaceHandler> handler(statusor.ValueOrDie());
+  EXPECT_EQ(RESOURCE_VIRTUALHOST, handler->type());
+  EXPECT_EQ(kContainerName, handler->container_name());
+}
+
 
 // Tests for IsVirtualHost().
 typedef NsconNamespaceHandlerFactoryTest IsVirtualHostTest;

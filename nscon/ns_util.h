@@ -115,6 +115,17 @@ class NsUtil {
   // SavedNamespace class. Caller takes ownership of the returned object.
   virtual ::util::StatusOr<SavedNamespace *> SaveNamespace(int ns) const;
 
+  // Checks if a character device file exists at 'path'.
+  // Arguments:
+  //   path: The absolute path to the character device file.
+  // Returns:
+  //   OK: Iff a character device file exists at 'path'.
+  //   INVALID_ARGUMENT: If 'path' does not exist or does not point to a
+  //                     character device file.
+  //   INTERNAL: If any syscall fails.
+  virtual ::util::Status CharacterDeviceFileExists(
+      const string &path) const;
+
  protected:
   explicit NsUtil(::std::set<int> supported_namespaces)
       : supported_namespaces_(supported_namespaces) {}

@@ -106,6 +106,7 @@ const char KernelFiles::Memory::kIdlePageStats[] =
 const char KernelFiles::Memory::kLimitInBytes[] = "memory.limit_in_bytes";
 const char KernelFiles::Memory::kMaxUsageInBytes[] =
     "memory.max_usage_in_bytes";
+const char KernelFiles::Memory::kNumaStat[] = "memory.numa_stat";
 const char KernelFiles::Memory::kOomControl[] = "memory.oom_control";
 const char KernelFiles::Memory::kOomScoreBadness[] =
     "memory.oom_score_badness";

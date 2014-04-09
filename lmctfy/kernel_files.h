@@ -144,6 +144,7 @@ struct KernelFiles {
     static const char kIdlePageStats[];
     static const char kLimitInBytes[];
     static const char kMaxUsageInBytes[];
+    static const char kNumaStat[];
     static const char kOomControl[];
     static const char kOomScoreBadness[];
     static const char kShmId[];

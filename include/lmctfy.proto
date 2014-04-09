@@ -35,8 +35,8 @@ message ContainerSpec {
   // Commonly used resources
   optional CpuSpec cpu = 2;
   optional MemorySpec memory = 3;
-  optional DiskIoSpec diskio = 4;
-  optional NetworkSpec network = 5;
+    optional NetworkSpec network = 5;
+  optional BlockIoSpec blockio = 12;
 
   optional MonitoringSpec monitoring = 6;
   optional FilesystemSpec filesystem = 7;
@@ -45,7 +45,7 @@ message ContainerSpec {
   // Virtual host environment.
   optional VirtualHostSpec virtual_host = 10;
 
-  // Next ID: 12
+  // Next ID: 13
 }
 
 // Specification for supported notification events.
@@ -88,6 +88,16 @@ message RunSpec {
   }
   // If missing defaults to INHERIT.
   optional FdPolicy fd_policy = 1;
+
+  message Console {
+    // The name of the slave pseudoterminal to be used. The format is that of
+    // the output of ptsname().
+    // TODO(vishnuk): Support both '/dev/pts/xx' and 'xx' as input. As of now it
+    // is expected to be just 'xx'.
+    optional string slave_pty = 1;
+  }
+  // UNIMPLEMENTED
+  optional Console console = 2;
 }
 
 // VirtualHostSpec configures a host environment for the container.
@@ -104,6 +114,9 @@ message VirtualHostSpec {
   // provided.
   message Init {
     repeated string init_argv = 1;
+
+    // Runtime information.
+    optional RunSpec run_spec = 2;
   }
   optional Init init = 2;
 
@@ -205,40 +218,59 @@ message MemorySpec {
   optional bool kmem_charge_usage = 11;
 }
 
-message DiskIoSpec {
-  message DiskConfig {
-    // Logical name used as identifier by kernel (eg. sda)
-    optional string logical_disk_name = 1;
-    // Requested fraction of disk time [Range: 0 to 100].
-    optional int32 disk_time_fraction = 2;
-    // Portion of disk time fraction reserved for high-priority I/O.
-    // Should be less than disk_time_fraction [ Range: 0 to disk_time_fraction].
-    optional int32 priority_disk_time_fraction = 3;
-    // Maximum fraction of disk time that can be used. Going over this limit
-    // would throttle IO. [ Range: 0 to 100]. Total disk time used (priority +
-    // normal) is counted. There is no maximum limit by default.
-    optional int32 max_disk_time_fraction = 4;
+
+message BlockIoSpec {
+    // Block IO operations are only permitted on full devices, and not on
+  // partitions.
+  message Device {
+    optional int64 major = 1;
+    optional int64 minor = 2;
   }
 
-  // UNIMPLEMENTED
-  message DiskSpec {
-    repeated DiskConfig config = 1;
-  }
-  optional DiskSpec disk_spec = 1;
-
-  enum Priority {
-    // Only use shared disk time. Not allowed to reserve any time slices.
-    DEFAULT = 1;
-    // Can reserve time slices. Not allowed to use front-of-line pass.
-    // Time slice reservations can vary per disk.
-    PRODUCTION = 2;
-    // Allowed to use reserved time slices and front-of-line pass.
-    // Reservations and priority can vary per disk.
-    PRIORITY = 3;
+  enum OpType {
+    READ = 1;
+    WRITE = 2;
   }
 
-  // UNIMPLEMENTED
-  optional Priority priority = 2;
+    enum LimitType {
+    // IOs can be limited by iops or bytes.
+    BYTES_PER_SECOND = 1;
+    IO_PER_SECOND = 2;
+  }
+
+  // Limits and thresholds only work with cfq scheduler.
+  // TODO(jnagal): Handle cases where the requested device is not setup to use
+  // cfq. Fail the request, or switch to cfq dynamically.
+  message DeviceLimit {
+    optional Device device = 1;
+    // limit is the desired fraction of device I/O time between 1 and 100.
+    optional uint32 limit = 2;
+  }
+
+  message DeviceLimitSet {
+    // Default weight applied to all devices.
+    optional uint32 default_limit = 1;
+    // Per-device weight overrides.
+    repeated DeviceLimit device_limits = 2;
+  }
+
+  message MaxLimit {
+    repeated Device devices = 1;
+    optional OpType op_type = 2;
+    optional LimitType limit_type = 3;
+    optional int64 max_limit = 4;
+  }
+
+  message MaxLimitSet {
+    repeated MaxLimit max_limits = 1;
+  }
+
+  // Per-device overrides for the weight setting.
+  optional DeviceLimitSet device_limit_set = 1;
+  // Max allowed limits on each device. Thresholds can be applied on number of
+  // iops and bytes per second. Limits for read and write operations are
+  // specified separately.
+  optional MaxLimitSet max_device_limit_set = 2;
 }
 
 message NetworkSpec {
@@ -313,13 +345,13 @@ enum CgroupHierarchy {
   CGROUP_CPUACCT = 2;
   CGROUP_CPUSET = 3;
   CGROUP_FREEZER = 4;
-  CGROUP_IO = 5;
-  CGROUP_JOB = 6;
+    CGROUP_JOB = 6;
   CGROUP_MEMORY = 7;
   CGROUP_NET = 8;
   CGROUP_PERF_EVENT = 9;
   CGROUP_RLIMIT = 10;
   CGROUP_DEVICE = 11;
+  CGROUP_BLOCKIO = 12;
 }
 
 // A mount point for a set of cgroup subsystems.
@@ -335,14 +367,16 @@ message CgroupMount {
 message InitSpec {
   optional CpuInitSpec cpu = 1;
   optional MemoryInitSpec memory = 2;
-  optional DiskIoInitSpec diskio = 3;
-  optional NetworkInitSpec network = 4;
+    optional NetworkInitSpec network = 4;
 
   optional MonitoringInitSpec monitoring = 5;
   optional FilesystemInitSpec filesystem = 6;
+  optional BlockIoInitSpec blockio = 8;
 
   // The mount locations of the cgroup hierarchies.
   repeated CgroupMount cgroup_mount = 7;
+
+  // Next ID: 9
 }
 
 message CpuInitSpec {
@@ -352,6 +386,9 @@ message MemoryInitSpec {
 }
 
 message DiskIoInitSpec {
+}
+
+message BlockIoInitSpec {
 }
 
 message NetworkInitSpec {
@@ -368,11 +405,12 @@ message ContainerStats {
   // Commonly used resources
   optional CpuStats cpu = 1;
   optional MemoryStats memory = 2;
-  optional DiskIoStats diskio = 3;
-  optional NetworkStats network = 4;
+    optional NetworkStats network = 4;
+  optional BlockIoStats blockio = 7;
 
   optional MonitoringStats monitoring = 5;
   optional FilesystemStats filesystem = 6;
+  // Next ID : 8
 }
 
 // Type of scheduling histograms exported by kernel.
@@ -531,10 +569,30 @@ message MemoryStats {
   optional MemoryData hierarchical_data = 8;
 
   optional int64 hierarchical_memory_limit = 9;
+
+  message NumaStats {
+    message NumaData {
+      message Stat {
+        message Node {
+          optional int32 level = 1;
+          optional int64 page_count = 2;
+        }
+        repeated Node node = 1;
+        optional int64 total_page_count = 2;
+      }
+      optional Stat total = 1;
+      optional Stat file = 2;
+      optional Stat anon = 3;
+      optional Stat unevictable = 4;
+    }
+    optional NumaData container_data = 1;
+    optional NumaData hierarchical_data = 2;
+  }
+  optional NumaStats numa = 10;
 }
 
 
-message DiskIoStats {
+message BlockIoStats {
 }
 
 message NetworkStats {

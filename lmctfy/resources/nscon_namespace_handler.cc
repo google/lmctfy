@@ -103,6 +103,13 @@ NsconNamespaceHandlerFactory::CreateNamespaceHandler(
   if (spec.virtual_host().has_network()) {
     namespace_spec.mutable_net()->CopyFrom(spec.virtual_host().network());
   }
+  if (spec.virtual_host().has_init() &&
+      spec.virtual_host().init().has_run_spec() &&
+      spec.virtual_host().init().run_spec().has_console() &&
+      spec.virtual_host().init().run_spec().console().has_slave_pty()) {
+    namespace_spec.mutable_run_spec()->mutable_console()->set_slave_pty(
+        spec.virtual_host().init().run_spec().console().slave_pty());
+  }
   vector<string> init_argv(spec.virtual_host().init().init_argv().begin(),
                            spec.virtual_host().init().init_argv().end());
   unique_ptr<NamespaceController> namespace_controller(

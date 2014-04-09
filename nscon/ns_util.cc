@@ -40,6 +40,8 @@ using ::strings::Substitute;
 using ::system_api::GlobalLibcFsApi;
 using ::system_api::GlobalLibcProcessApi;
 using ::util::ScopedCleanup;
+using ::util::error::INTERNAL;
+using ::util::error::INVALID_ARGUMENT;
 using ::util::Status;
 using ::util::StatusOr;
 
@@ -102,7 +104,7 @@ bool NsUtil::IsNamespaceSupported(int ns) const {
 StatusOr<const char*> NsUtil::NsCloneFlagToName(int clone_flag) const {
   auto it = g_known_namespaces->find(clone_flag);
   if (it == g_known_namespaces->end()) {
-    return Status(::util::error::INVALID_ARGUMENT,
+    return Status(INVALID_ARGUMENT,
                   Substitute("Unknown namespace flag '$0'", clone_flag));
   }
 
@@ -112,8 +114,8 @@ StatusOr<const char*> NsUtil::NsCloneFlagToName(int clone_flag) const {
 Status NsUtil::AttachNamespaces(
     const vector<int>& namespaces, pid_t target) const {
   if (0 == target) {
-    return Status(::util::error::INVALID_ARGUMENT,
-                  Substitute("Invalid target PID '$0'", target));
+    return {INVALID_ARGUMENT,
+          Substitute("Invalid target PID '$0'", target)};
   }
 
   if (namespaces.empty()) {
@@ -134,9 +136,9 @@ Status NsUtil::AttachNamespaces(
         JoinPath("/proc", SimpleItoa(target), "ns", ns_file_name);
     int fd = GlobalLibcFsApi()->Open(filename.c_str(), O_RDONLY);
     if (fd < 0) {
-      return Status(::util::error::INTERNAL,
+      return {INTERNAL,
                     Substitute("AttachNamespaces Failed: Open($0): $1",
-                               filename, strerror(errno)));
+                               filename, StrError(errno))};
     }
 
     fd_list.push_back(fd);
@@ -144,9 +146,8 @@ Status NsUtil::AttachNamespaces(
 
   for (auto fd : fd_list) {
     if (GlobalLibcProcessApi()->Setns(fd, 0) < 0) {
-      return Status(
-          ::util::error::INTERNAL,
-          Substitute("AttachNamespaces Failed: Setns(): $0", strerror(errno)));
+      return {INTERNAL, Substitute("AttachNamespaces Failed: Setns(): $0",
+                                   StrError(errno))};
     }
   }
   // Close the FDs and check its return value. We pop_back() the FDs as we do
@@ -156,9 +157,8 @@ Status NsUtil::AttachNamespaces(
     int fd = fd_list.back();
     fd_list.pop_back();
     if (GlobalLibcFsApi()->Close(fd) < 0) {
-      return Status(
-          ::util::error::INTERNAL,
-          Substitute("AttachNamespaces Failed: Close(): $0", strerror(errno)));
+      return {INTERNAL, Substitute("AttachNamespaces Failed: Close(): $0",
+                                   StrError(errno))};
     }
   }
 
@@ -180,8 +180,7 @@ Status NsUtil::UnshareNamespaces(const vector<int> &namespaces) const {
   }
 
   if (GlobalLibcProcessApi()->Unshare(unshare_flags) < 0) {
-    return Status(::util::error::INTERNAL,
-                  Substitute("unshare failed: $0", strerror(errno)));
+    return {INTERNAL, Substitute("unshare failed: $0", StrError(errno))};
   }
 
   return Status::OK;
@@ -189,8 +188,7 @@ Status NsUtil::UnshareNamespaces(const vector<int> &namespaces) const {
 
 StatusOr<string> NsUtil::GetNamespaceId(pid_t pid, int ns) const {
   if (pid < 0) {
-    return Status(::util::error::INVALID_ARGUMENT,
-                  Substitute("Invalid pid $0", pid));
+    return Status(INVALID_ARGUMENT, Substitute("Invalid pid $0", pid));
   }
 
   const char *ns_name = RETURN_IF_ERROR(NsCloneFlagToName(ns));
@@ -205,9 +203,9 @@ StatusOr<string> NsUtil::GetNamespaceId(pid_t pid, int ns) const {
   memset(linkdata, 0, sizeof(linkdata));
   if (GlobalLibcFsApi()->ReadLink(ns_path.c_str(), linkdata,
                                   sizeof(linkdata)) < 0) {
-    return Status(::util::error::INTERNAL,
+    return Status(INTERNAL,
                   Substitute("readlink($0) failed: $1",
-                             ns_path, strerror(errno)));
+                             ns_path, StrError(errno)));
   }
 
   return string(linkdata);
@@ -215,8 +213,7 @@ StatusOr<string> NsUtil::GetNamespaceId(pid_t pid, int ns) const {
 
 StatusOr<const vector<int>> NsUtil::GetUnsharedNamespaces(pid_t pid) const {
   if (pid <= 0) {
-    return Status(::util::error::INVALID_ARGUMENT,
-                  Substitute("Invalid pid $0", pid));
+    return Status(INVALID_ARGUMENT, Substitute("Invalid pid $0", pid));
   }
 
   // Find out what namespaces we are in.
@@ -238,15 +235,34 @@ StatusOr<const vector<int>> NsUtil::GetUnsharedNamespaces(pid_t pid) const {
   return namespaces;
 }
 
+Status NsUtil::CharacterDeviceFileExists(const string &path) const {
+  struct stat stat_buf;
+  if (GlobalLibcFsApi()->Stat(path.c_str(), &stat_buf) != 0) {
+    if (errno != ENOENT) {
+      return {INTERNAL,
+          Substitute("Failed to stat character device: $0. Error: $1",
+                     path, StrError(errno))};
+    } else {
+      return {INVALID_ARGUMENT,
+            Substitute("Character device missing: $0", path)};
+    }
+  }
+  if (!S_ISCHR(stat_buf.st_mode)) {
+    return {INVALID_ARGUMENT,
+          Substitute("$0 is not a character device file.", path)};
+  }
+  return Status::OK;
+}
+
 // Open namespace file and remember its fd.
 StatusOr<SavedNamespace *> NsUtil::SaveNamespace(int ns) const {
   const string ns_file = JoinPath("/proc/self/ns",
                                   RETURN_IF_ERROR(NsCloneFlagToName(ns)));
   int fd = GlobalLibcFsApi()->Open(ns_file.c_str(), O_RDONLY);
   if (fd < 0) {
-    return Status(::util::error::INTERNAL,
+    return Status(INTERNAL,
                   Substitute("Failed to save namespace: open($0) failed: $1",
-                             ns_file, strerror(errno)));
+                             ns_file, StrError(errno)));
   }
 
   return new SavedNamespace(ns, fd);
@@ -255,21 +271,20 @@ StatusOr<SavedNamespace *> NsUtil::SaveNamespace(int ns) const {
 // Setns() to the namespace FD and then close it.
 Status SavedNamespace::RestoreAndDelete() {
   if (GlobalLibcProcessApi()->Setns(fd_, 0) < 0) {
-    return Status(::util::error::INTERNAL,
+    return {INTERNAL,
                   Substitute("RestoreAndDelete: setns() failed: $0",
-                             strerror(errno)));
+                             StrError(errno))};
   }
 
   if (GlobalLibcFsApi()->Close(fd_) < 0) {
-    return Status(::util::error::INTERNAL,
+    return {INTERNAL,
                   Substitute("RestoreAndDelete: close() failed: $0",
-                             strerror(errno)));
+                             StrError(errno))};
   }
 
   fd_closer_.Cancel();
   delete this;
   return Status::OK;
 }
-
 }  // namespace nscon
 }  // namespace containers

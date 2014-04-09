@@ -93,6 +93,17 @@ message MntNsSpec {
   repeated MountAction mount_action = 1;
 }
 
+message RunSpec {
+  message Console {
+    // The name of the slave pseudoterminal to be used. The format is that of
+    // the output of ptsname().
+    // TODO(vishnuk): Support both '/dev/pts/xx' and 'xx' as input. As of now it
+    // is expected to be just 'xx'.
+    optional string slave_pty = 1;
+  }
+  optional Console console = 1;
+}
+
 message NamespaceSpec {
   // Config options for each namespace. Only those namespaces will be enabled
   // for which the corresponding _spec option is set.
@@ -102,4 +113,5 @@ message NamespaceSpec {
   optional MntNsSpec mnt = 4;
   optional Network net = 5;
   optional UserNsSpec user = 6;
+  optional RunSpec run_spec = 7;
 }

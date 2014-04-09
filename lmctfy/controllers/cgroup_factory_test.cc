@@ -175,7 +175,7 @@ TEST_F(CgroupFactoryTest, SupportedHierarchyMapping) {
   EXPECT_EQ("job", factory_->GetHierarchyName(CGROUP_JOB));
   EXPECT_EQ("memory", factory_->GetHierarchyName(CGROUP_MEMORY));
   EXPECT_EQ("net", factory_->GetHierarchyName(CGROUP_NET));
-  EXPECT_EQ("io", factory_->GetHierarchyName(CGROUP_IO));
+  EXPECT_EQ("blkio", factory_->GetHierarchyName(CGROUP_BLOCKIO));
   EXPECT_EQ("perf_event", factory_->GetHierarchyName(CGROUP_PERF_EVENT));
   EXPECT_EQ("rlimit", factory_->GetHierarchyName(CGROUP_RLIMIT));
   EXPECT_EQ("",
@@ -259,7 +259,7 @@ TEST_F(CgroupFactoryTest, IsMounted) {
   EXPECT_TRUE(factory_->IsMounted(CGROUP_CPUACCT));
   EXPECT_FALSE(factory_->IsMounted(CGROUP_CPUSET));
   EXPECT_TRUE(factory_->IsMounted(CGROUP_MEMORY));
-  EXPECT_FALSE(factory_->IsMounted(CGROUP_IO));
+  EXPECT_FALSE(factory_->IsMounted(CGROUP_BLOCKIO));
   EXPECT_FALSE(factory_->IsMounted(CGROUP_NET));
   EXPECT_FALSE(factory_->IsMounted(CGROUP_PERF_EVENT));
 }
@@ -402,7 +402,7 @@ TEST_F(CgroupFactoryTest, DetectCgroupPathCgroupHierarchyIsNotMounted) {
   mock_lines_.ExpectFileLines("/proc/self/cgroup", {});
 
   EXPECT_ERROR_CODE(::util::error::NOT_FOUND,
-                    factory_->DetectCgroupPath(0, CGROUP_IO));
+                    factory_->DetectCgroupPath(0, CGROUP_BLOCKIO));
 }
 
 TEST_F(CgroupFactoryTest, DetectCgroupPathWithTidSuccess) {

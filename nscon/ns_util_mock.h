@@ -63,6 +63,9 @@ class MockNsUtil : public NsUtil {
   MOCK_CONST_METHOD1(SaveNamespace,
                     ::util::StatusOr<SavedNamespace *>(int ns));
 
+  MOCK_CONST_METHOD1(CharacterDeviceFileExists,
+                     ::util::Status(const string &path));
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MockNsUtil);
 };

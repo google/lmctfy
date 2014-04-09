@@ -70,7 +70,7 @@ void InitSupportedHierarchies() {
         {"cpu", CGROUP_CPU}, {"cpuacct", CGROUP_CPUACCT},
         {"cpuset", CGROUP_CPUSET}, {"job", CGROUP_JOB},
         {"freezer", CGROUP_FREEZER}, {"memory", CGROUP_MEMORY},
-        {"net", CGROUP_NET}, {"io", CGROUP_IO},
+        {"net", CGROUP_NET}, {"blkio", CGROUP_BLOCKIO},
         {"perf_event", CGROUP_PERF_EVENT}, {"rlimit", CGROUP_RLIMIT},
         { "devices", CGROUP_DEVICE}, };
   }

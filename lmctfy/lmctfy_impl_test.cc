@@ -596,7 +596,7 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   ContainerSpec spec;
   spec.mutable_cpu();
   spec.mutable_memory();
-  spec.mutable_diskio();
+  spec.mutable_blockio();
   spec.mutable_network();
   spec.mutable_monitoring();
   spec.mutable_filesystem();
@@ -605,8 +605,8 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
       new StrictMockResourceHandlerFactory(RESOURCE_CPU);
   MockResourceHandlerFactory *memory_handler =
       new StrictMockResourceHandlerFactory(RESOURCE_MEMORY);
-  MockResourceHandlerFactory *diskio_handler =
-      new StrictMockResourceHandlerFactory(RESOURCE_DISKIO);
+  MockResourceHandlerFactory *blockio_handler =
+      new StrictMockResourceHandlerFactory(RESOURCE_BLOCKIO);
   MockResourceHandlerFactory *network_handler =
       new StrictMockResourceHandlerFactory(RESOURCE_NETWORK);
   MockResourceHandlerFactory *monitoring_handler =
@@ -617,7 +617,7 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
       new StrictMockNamespaceHandlerFactory();
 
   const vector<ResourceHandlerFactory *> resource_factories = {
-    cpu_handler, memory_handler, diskio_handler, network_handler,
+    cpu_handler, memory_handler, blockio_handler, network_handler,
     monitoring_handler, filesystem_handler,
   };
 
@@ -647,9 +647,9 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   EXPECT_CALL(*memory_handler, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kName, RESOURCE_MEMORY))));
-  EXPECT_CALL(*diskio_handler, Create(kName, _))
+  EXPECT_CALL(*blockio_handler, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
-          new StrictMockResourceHandler(kName, RESOURCE_DISKIO))));
+          new StrictMockResourceHandler(kName, RESOURCE_BLOCKIO))));
   EXPECT_CALL(*network_handler, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kName, RESOURCE_NETWORK))));
@@ -2105,7 +2105,7 @@ TEST_F(ContainerImplTest, StatsSuccess) {
     ContainerStats stats = statusor.ValueOrDie();
     EXPECT_TRUE(stats.has_cpu());
     EXPECT_TRUE(stats.has_memory());
-    EXPECT_FALSE(stats.has_diskio());
+    EXPECT_FALSE(stats.has_blockio());
     EXPECT_FALSE(stats.has_network());
     EXPECT_FALSE(stats.has_monitoring());
     EXPECT_FALSE(stats.has_filesystem());
@@ -2130,7 +2130,7 @@ TEST_F(ContainerImplTest, StatsEmpty) {
     ContainerStats stats = statusor.ValueOrDie();
     EXPECT_FALSE(stats.has_cpu());
     EXPECT_FALSE(stats.has_memory());
-    EXPECT_FALSE(stats.has_diskio());
+    EXPECT_FALSE(stats.has_blockio());
     EXPECT_FALSE(stats.has_network());
     EXPECT_FALSE(stats.has_monitoring());
     EXPECT_FALSE(stats.has_filesystem());
@@ -3418,7 +3418,7 @@ TEST_F(ContainerImplTest, SpecSuccess) {
   ContainerSpec stats = statusor.ValueOrDie();
   EXPECT_TRUE(stats.has_cpu());
   EXPECT_TRUE(stats.has_memory());
-  EXPECT_FALSE(stats.has_diskio());
+  EXPECT_FALSE(stats.has_blockio());
   EXPECT_FALSE(stats.has_network());
   EXPECT_FALSE(stats.has_monitoring());
   EXPECT_FALSE(stats.has_filesystem());
@@ -3444,7 +3444,7 @@ TEST_F(ContainerImplTest, SpecEmpty) {
   ContainerSpec stats = statusor.ValueOrDie();
   EXPECT_FALSE(stats.has_cpu());
   EXPECT_FALSE(stats.has_memory());
-  EXPECT_FALSE(stats.has_diskio());
+  EXPECT_FALSE(stats.has_blockio());
   EXPECT_FALSE(stats.has_network());
   EXPECT_FALSE(stats.has_monitoring());
   EXPECT_FALSE(stats.has_filesystem());

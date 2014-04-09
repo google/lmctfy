@@ -156,6 +156,9 @@ class MemoryController : public CgroupController {
   // Get all stats from the memory.stat file
   virtual ::util::Status GetMemoryStats(MemoryStats *memory_stats) const;
 
+  // Get all stats from the memory.numa_stat file
+  virtual ::util::Status GetNumaStats(MemoryStats_NumaStats *numa_stats) const;
+
  private:
   // Gets a mapping of field_name to integer value of the specified stats file.
   //

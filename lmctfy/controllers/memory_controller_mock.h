@@ -96,6 +96,8 @@ class MockMemoryController : public MemoryController {
                ::util::StatusOr<ActiveNotifications::Handle>(
                    CgroupController::EventCallback *callback));
   MOCK_CONST_METHOD1(GetMemoryStats, ::util::Status(MemoryStats *stats));
+  MOCK_CONST_METHOD1(GetNumaStats,
+                     ::util::Status(MemoryStats_NumaStats *numa_stats));
 };
 
 typedef ::testing::StrictMock<MockMemoryController> StrictMockMemoryController;

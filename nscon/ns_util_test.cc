@@ -27,6 +27,8 @@ using ::std::string;
 
 using ::std::vector;
 using ::std::unique_ptr;
+using ::util::error::INTERNAL;
+using ::util::error::INVALID_ARGUMENT;
 using ::util::Status;
 using ::util::StatusOr;
 using ::testing::Assign;
@@ -35,6 +37,7 @@ using ::testing::DoAll;
 using ::testing::Invoke;
 using ::testing::NotNull;
 using ::testing::Return;
+using ::testing::SetArgPointee;
 using ::testing::SetErrnoAndReturn;
 using ::testing::StrEq;
 using ::testing::_;
@@ -78,8 +81,7 @@ ssize_t CustomReadLink(const char *path, char *buf, size_t len) {
 
 TEST_F(NsUtilTest, NsCloneFlagToName_InvalidFlags) {
   int flag = CLONE_FS;
-  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
-                    ns_util_->NsCloneFlagToName(flag));
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT, ns_util_->NsCloneFlagToName(flag));
 }
 
 TEST_F(NsUtilTest, NsCloneFlagToName_Success) {
@@ -96,13 +98,13 @@ TEST_F(NsUtilTest, AttachNamespaces_None) {
 TEST_F(NsUtilTest, AttachNamespaces_InvalidPid) {
   vector<int> namespaces = {CLONE_NEWIPC, CLONE_NEWNS};
   // Bad pid
-  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT,
                     ns_util_->AttachNamespaces(namespaces, 0));
 }
 
 TEST_F(NsUtilTest, AttachNamespaces_InvalidNs) {
   vector<int> namespaces = {CLONE_FS};  // Bad namespace flag
-  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT,
                     ns_util_->AttachNamespaces(namespaces, 9999));
 }
 
@@ -130,8 +132,7 @@ TEST_F(NsUtilTest, UnshareNamespaces_None) {
 TEST_F(NsUtilTest, UnshareNamespaces_Invalid) {
   // CLONE_FS is a valid clone(2) flag, but not a valid unshare(2) flag.
   vector<int> namespaces = {CLONE_NEWIPC, CLONE_NEWNS, CLONE_FS};
-  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
-                    ns_util_->UnshareNamespaces(namespaces));
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT, ns_util_->UnshareNamespaces(namespaces));
 }
 
 TEST_F(NsUtilTest, UnshareNamespaces_Selected) {
@@ -174,13 +175,12 @@ TEST_F(NsUtilTest, GetNamespaceId_Pid) {
 
 TEST_F(NsUtilTest, GetNamespaceId_BadPid) {
   const pid_t kPid = -1111;
-  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
-                    CallGetNamespaceId(kPid, CLONE_NEWPID));
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT, CallGetNamespaceId(kPid, CLONE_NEWPID));
 }
 
 TEST_F(NsUtilTest, GetNamespaceId_BadNamespace) {
   const pid_t kPid = 9999;
-  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT,
                     CallGetNamespaceId(kPid, CLONE_VFORK));
 }
 
@@ -232,7 +232,7 @@ TEST_F(NsUtilTest, SaveNamespace_OpenFailure) {
   EXPECT_CALL(libc_fs_api_.Mock(), Open(StrEq("/proc/self/ns/pid"), O_RDONLY))
       .WillOnce(SetErrnoAndReturn(EINVAL, -1));
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, ns_util_->SaveNamespace(kNs));
+  EXPECT_ERROR_CODE(INTERNAL, ns_util_->SaveNamespace(kNs));
 }
 
 TEST_F(NsUtilTest, RestoreAndDelete) {
@@ -252,7 +252,7 @@ TEST_F(NsUtilTest, RestoreAndDelete_SetnsFailure) {
   EXPECT_CALL(libc_process_api_.Mock(), Setns(kNsFd, 0))
       .WillOnce(SetErrnoAndReturn(EBADF, -1));
   EXPECT_CALL(libc_fs_api_.Mock(), Close(kNsFd)).WillOnce(Return(0));
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, saved_ns->RestoreAndDelete());
+  EXPECT_ERROR_CODE(INTERNAL, saved_ns->RestoreAndDelete());
 }
 
 TEST_F(NsUtilTest, RestoreAndDelete_CloseFailure) {
@@ -263,7 +263,46 @@ TEST_F(NsUtilTest, RestoreAndDelete_CloseFailure) {
   EXPECT_CALL(libc_fs_api_.Mock(), Close(kNsFd))
       .WillRepeatedly(SetErrnoAndReturn(EBADF, -1));
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, saved_ns->RestoreAndDelete());
+  EXPECT_ERROR_CODE(INTERNAL, saved_ns->RestoreAndDelete());
+}
+
+typedef NsUtilTest CharacterDeviceFileExistsTest;
+static const char *kCharDevFile = "/dev/pts/0";
+
+TEST_F(CharacterDeviceFileExistsTest, Success) {
+  struct stat statbuf;
+  statbuf.st_mode = 0;
+  statbuf.st_mode |= S_IFCHR;
+  EXPECT_CALL(libc_fs_api_.Mock(), Stat(StrEq(kCharDevFile), _))
+      .WillOnce(DoAll(SetArgPointee<1>(statbuf), Return(0)));
+
+  EXPECT_OK(ns_util_->CharacterDeviceFileExists(kCharDevFile));
+}
+
+TEST_F(CharacterDeviceFileExistsTest, StatFailure) {
+  EXPECT_CALL(libc_fs_api_.Mock(), Stat(StrEq(kCharDevFile), _))
+      .WillOnce(SetErrnoAndReturn(EACCES, -1));
+
+  EXPECT_ERROR_CODE(INTERNAL,
+                    ns_util_->CharacterDeviceFileExists(kCharDevFile));
+}
+
+TEST_F(CharacterDeviceFileExistsTest, NotExistsFailure) {
+  EXPECT_CALL(libc_fs_api_.Mock(), Stat(StrEq(kCharDevFile), _))
+      .WillOnce(SetErrnoAndReturn(ENOENT, -1));
+
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT,
+                    ns_util_->CharacterDeviceFileExists(kCharDevFile));
+}
+
+TEST_F(CharacterDeviceFileExistsTest, NotCharDevFailure) {
+  struct stat statbuf;
+  statbuf.st_mode = 0;
+  statbuf.st_mode |= S_IFDIR;
+  EXPECT_CALL(libc_fs_api_.Mock(), Stat(StrEq(kCharDevFile), _))
+      .WillOnce(DoAll(SetArgPointee<1>(statbuf), Return(0)));
+  EXPECT_ERROR_CODE(INVALID_ARGUMENT,
+                    ns_util_->CharacterDeviceFileExists(kCharDevFile));
 }
 
 }  // namespace nscon

@@ -342,6 +342,125 @@ StatusOr<map<string, int64>> MemoryController::GetStats(
   return output;
 }
 
+namespace {
+Status PopulateNumaStat(const vector<string> &node_levels,
+                        MemoryStats_NumaStats_NumaData_Stat *stat) {
+  set<int> seen_levels;
+  for (auto level_data : node_levels) {
+    const vector<string> level_parts =
+        Split(level_data, "=", strings::SkipEmpty());
+    if (level_parts.size() != 2) {
+      return Status(::util::error::FAILED_PRECONDITION,
+                    Substitute("Failed to parse pair from element \"$0\" "
+                                   "in NUMA stats",
+                               level_data));
+    }
+    if (level_parts[0].find("N") != 0) {
+      return Status(::util::error::FAILED_PRECONDITION,
+                    Substitute("Failed to find node level from \"$0\" "
+                                   "in NUMA stats",
+                               level_data));
+    }
+    int level = 0;
+    if (!SimpleAtoi(level_parts[0].substr(1, string::npos), &level)) {
+      return Status(::util::error::FAILED_PRECONDITION,
+                    Substitute("Failed to parse int from \"$0\" "
+                                   "for NUMA stats",
+                               level_parts[0]));
+    }
+    if (seen_levels.find(level) != seen_levels.end()) {
+      return Status(::util::error::FAILED_PRECONDITION,
+                    Substitute("Saw level $0 twice in line \"$1\" "
+                                   "for NUMA stats",
+                               level, level_data));
+    }
+    int64 page_count = 0;
+    if (!SimpleAtoi(level_parts[1], &page_count)) {
+      return Status(::util::error::FAILED_PRECONDITION,
+                    Substitute("Failed to parse int from \"$0\" "
+                                   "for NUMA stats",
+                               level_parts[1]));
+    }
+    MemoryStats_NumaStats_NumaData_Stat_Node *node = stat->add_node();
+    node->set_level(level);
+    node->set_page_count(page_count);
+    seen_levels.insert(level);
+  }
+  return Status::OK;
+}
+
+Status ProcessNumaLevelData(const string &level_data,
+                            string *type, bool *hierarchical,
+                            int64 *total_page_count) {
+  const vector<string> level_parts =
+      Split(level_data, "=", strings::SkipEmpty());
+  if (level_parts.size() != 2) {
+    return Status(::util::error::FAILED_PRECONDITION,
+                  Substitute("Failed to parse pair from element \"$0\" "
+                                 "in NUMA stats",
+                             level_data));
+  }
+
+  // The first value seen is the type=total pair
+  // Check if hierarchical
+  const vector<string> type_parts =
+      Split(level_parts[0], "_", strings::SkipEmpty());
+  if (type_parts.size() == 2 && type_parts[0] == "hierarchical") {
+    *hierarchical = true;
+    *type = type_parts[1];
+  } else {
+    *hierarchical = false;
+    *type = level_parts[0];
+  }
+  if (!SimpleAtoi(level_parts[1], total_page_count)) {
+    return Status(::util::error::FAILED_PRECONDITION,
+                  Substitute("Failed to parse int from \"$0\" for NUMA stats",
+                             level_parts[1]));
+  }
+  return Status::OK;
+}
+
+}  // namespace
+
+Status MemoryController::GetNumaStats(MemoryStats_NumaStats *numa_stats) const {
+  numa_stats->Clear();
+  StatusOr<string> statusor = GetParamString(KernelFiles::Memory::kNumaStat);
+  if (!statusor.ok()) {
+    return statusor.status();
+  }
+  for (auto line : Split(statusor.ValueOrDie(), "\n", strings::SkipEmpty())) {
+    vector<string> node_data = Split(line, " ", strings::SkipEmpty());
+    string level_name;
+    bool hierarchical;
+    int64 total_page_count;
+    RETURN_IF_ERROR(ProcessNumaLevelData(
+        node_data[0], &level_name, &hierarchical, &total_page_count));
+    MemoryStats_NumaStats_NumaData *numa_data =
+        (hierarchical ? numa_stats->mutable_hierarchical_data() :
+                        numa_stats->mutable_container_data());
+    MemoryStats_NumaStats_NumaData_Stat *stat = nullptr;
+    if (level_name == "total") {
+      stat = numa_data->mutable_total();
+    } else if (level_name == "file") {
+      stat = numa_data->mutable_file();
+    } else if (level_name == "anon") {
+      stat = numa_data->mutable_anon();
+    } else if (level_name == "unevictable") {
+      stat = numa_data->mutable_unevictable();
+    } else {
+      LOG(WARNING) << "Unknown level type " << level_name
+                   << " seen in numa stats retrieval.";
+    }
+
+    if (stat != nullptr) {
+      stat->set_total_page_count(total_page_count);
+      node_data.erase(node_data.begin());  // Line processed, leave levels only
+      RETURN_IF_ERROR(PopulateNumaStat(node_data, stat));
+    }
+  }
+  return Status::OK;
+}
+
 StatusOr<int64> MemoryController::GetValueFromStats(
     const map<string, int64> &stats, const string &value) const {
   auto it = stats.find(value);

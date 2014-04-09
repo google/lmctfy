@@ -196,6 +196,8 @@ Status ProcessLauncher::CloneFn(char **argv, bool remount_proc_sys_fs,
   CHECK(argv[0] != nullptr);
   CHECK(ipc_agent != nullptr);
 
+  // TODO(vishnuk): Attach to console if specified.
+
   if (remount_proc_sys_fs) {
     // TODO(adityakali): Try to report appropriate failure if any of these
     // fails.
