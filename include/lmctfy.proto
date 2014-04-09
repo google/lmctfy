@@ -274,7 +274,7 @@ message BlockIoSpec {
 }
 
 message NetworkSpec {
-  }
+}
 
 message MonitoringSpec {
   // UNIMPLEMENTED
