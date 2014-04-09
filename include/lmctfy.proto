@@ -239,7 +239,7 @@ message DiskIoSpec {
 }
 
 message NetworkSpec {
-  }
+}
 
 message MonitoringSpec {
   // UNIMPLEMENTED
