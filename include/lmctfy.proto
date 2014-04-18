@@ -35,7 +35,7 @@ message ContainerSpec {
   // Commonly used resources.
   optional CpuSpec cpu = 2;
   optional MemorySpec memory = 3;
-    optional NetworkSpec network = 5;
+  optional NetworkSpec network = 5;
   optional BlockIoSpec blockio = 12;
 
   optional MonitoringSpec monitoring = 6;
@@ -220,7 +220,7 @@ message MemorySpec {
 
 
 message BlockIoSpec {
-    // Block IO operations are only permitted on full devices, and not on
+  // Block IO operations are only permitted on full devices, and not on
   // partitions.
   message Device {
     optional int64 major = 1;
@@ -232,7 +232,7 @@ message BlockIoSpec {
     WRITE = 2;
   }
 
-    enum LimitType {
+  enum LimitType {
     // IOs can be limited by iops or bytes.
     BYTES_PER_SECOND = 1;
     IO_PER_SECOND = 2;
@@ -322,7 +322,7 @@ message DeviceSpec {
     optional DeviceType type = 2;
     repeated DeviceAccess access = 3;
     // Missing major/minor number implies any device.
-        optional int64 major = 4;
+    optional int64 major = 4;
     optional int64 minor = 5;
   }
 
@@ -345,7 +345,7 @@ enum CgroupHierarchy {
   CGROUP_CPUACCT = 2;
   CGROUP_CPUSET = 3;
   CGROUP_FREEZER = 4;
-    CGROUP_JOB = 6;
+  CGROUP_JOB = 6;
   CGROUP_MEMORY = 7;
   CGROUP_NET = 8;
   CGROUP_PERF_EVENT = 9;
@@ -367,7 +367,7 @@ message CgroupMount {
 message InitSpec {
   optional CpuInitSpec cpu = 1;
   optional MemoryInitSpec memory = 2;
-    optional NetworkInitSpec network = 4;
+  optional NetworkInitSpec network = 4;
 
   optional MonitoringInitSpec monitoring = 5;
   optional FilesystemInitSpec filesystem = 6;
@@ -405,7 +405,7 @@ message ContainerStats {
   // Commonly used resources
   optional CpuStats cpu = 1;
   optional MemoryStats memory = 2;
-    optional NetworkStats network = 4;
+  optional NetworkStats network = 4;
   optional BlockIoStats blockio = 7;
 
   optional MonitoringStats monitoring = 5;
@@ -591,12 +591,11 @@ message MemoryStats {
   optional NumaStats numa = 10;
 }
 
-
 message BlockIoStats {
 }
 
 message NetworkStats {
-  }
+}
 
 message MonitoringStats {
 }
