@@ -9,14 +9,15 @@
 #include "clmctfy_status.h"
 #include "clmctfy_status_internal.h"
 
-#define RETURN_IF_ERROR_PTR(s, ...)                                 \
-    do {                                                            \
-      const ::util::Status _status =                                \
-        ::util::errors_internal::PerformSideEffects(__VA_ARGS__);   \
-      if (PREDICT_FALSE(!_status.ok())) {                           \
-        if (s != NULL) ::util::internal::status_copy(s, _status);                     \
-        return (int)_status.error_code();                           \
-      }                                                             \
+#define RETURN_IF_ERROR_PTR(s, expr, out)                         \
+    do {                                                          \
+      auto _expr_result = (expr);                                 \
+      if (PREDICT_FALSE(!_expr_result.ok())) {                    \
+        const ::util::Status _status = _expr_result.status();     \
+        if (s != NULL) ::util::internal::status_copy(s, _status); \
+        return (int)_status.error_code();                         \
+      }                                                           \
+      (*(out)) = _expr_result.ValueOrDie();                       \
     } while (0)
 
 #define CHECK_NOTFAIL_OR_RETURN(status) do {  \

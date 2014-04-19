@@ -260,7 +260,7 @@ $(CREAPER): lmctfy-creaper.go
 
 %_proto: %.proto
 	$(PROTOC) $^ --cpp_out=.
-	$(PROTOC_C) $^ --c_out=$(dir $^) --proto_path=$(dir $^)
+	$(PROTOC_C) $^ --c_out=$(dir $^) --proto_path=$(dir $^):.
 
 %.pb.o: %_proto
 	$(create_bin)
