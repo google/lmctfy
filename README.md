@@ -20,6 +20,7 @@ lmctfy depends on the following libraries and expects them to be available on th
 * [Protocol Buffers](https://code.google.com/p/protobuf/)
 * [gflags](https://code.google.com/p/gflags/)
 * [RE2](https://code.google.com/p/re2/)
+* [AppArmor](http://packages.ubuntu.com/precise/libapparmor-dev)
 
 ### Building the CLI
 To build the `lmctfy` CLI:
