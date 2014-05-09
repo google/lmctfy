@@ -33,7 +33,7 @@ class OutputMap;
 // Command to initialize containers.
 ::util::Status InitContainers(const ::std::vector<string> &argv,
                               const ContainerApi *lmctfy,
-                              ::std::vector<OutputMap> *output);
+                              OutputMap *output);
 void RegisterInitCommand();
 
 }  // namespace cli

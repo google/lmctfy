@@ -21,12 +21,17 @@
 #include "util/file_lines.h"
 #include "strings/substitute.h"
 
+DEFINE_int32(nscon_output_fd, -1,
+             "File descriptor to which nscon will write its output."
+             " Any non negative fd is considered to be valid.");
+
 using ::std::unique_ptr;
 using ::strings::Substitute;
 using ::util::error::INTERNAL;
 using ::util::error::FAILED_PRECONDITION;
 using ::util::error::INVALID_ARGUMENT;
 using ::util::Status;
+using ::util::StatusOr;
 
 namespace containers {
 namespace nscon {
@@ -36,7 +41,7 @@ const char kThreads[] = "Threads:";
 const char kProcStatus[] = "/proc/self/status";
 }  // namespace
 
-NsconRunner::NsconRunner() {}
+NsconRunner::NsconRunner() : nscon_stdout_(stdout), nscon_stderr_(stderr) {}
 
 NsconRunner::~NsconRunner() {}
 
@@ -44,7 +49,7 @@ void NsconRunner::SetDefaultFlags() const {
   // Do not log non-error messages to a file in the CLI at all by default.
   FLAGS_minloglevel = FLAGS_stderrthreshold;
 
-  }
+}
 
 Status VerifyCurrentContextIsSingleThreaded() {
   // To catch regressions, ensure that we are indeed a single-threaded process.
@@ -70,12 +75,38 @@ Status VerifyCurrentContextIsSingleThreaded() {
   return Status::OK;
 }
 
-Status NsconRunner::Run(int argc, char **argv) const {
-  SetDefaultFlags();
-
-  if (argc < 2) {
-    return {INVALID_ARGUMENT, NsconCli::kNsconHelp};
+Status NsconRunner::SetupOutput() {
+  if (FLAGS_nscon_output_fd > -1) {
+    FILE *out = fdopen(FLAGS_nscon_output_fd, "w");
+    if (out == nullptr) {
+      return Status(INTERNAL,
+                    Substitute("fdopen failed nscon_output_fd: $0. Error: $1\n",
+                               FLAGS_nscon_output_fd, StrError(errno).c_str()));
+    }
+    nscon_stdout_ = out;
+    nscon_stderr_ = out;
   }
+  return Status::OK;
+}
+
+StatusOr<string> NsconRunner::InternalRun(
+    int argc, char **argv, const vector<string> &user_command) const {
+  RETURN_IF_ERROR(VerifyCurrentContextIsSingleThreaded());
+
+  unique_ptr<NamespaceControllerCli> namespace_controller_cli(
+      RETURN_IF_ERROR(NamespaceControllerCli::New()));
+  // Takes ownership of 'namespace_controller_cli'.
+  unique_ptr<NsconCli> nscon_cli(
+      new NsconCli(::std::move(namespace_controller_cli)));
+
+  vector<string> nscon_args;
+  nscon_args.insert(nscon_args.begin(), argv, argv + argc);
+
+  return nscon_cli->HandleUserInput(nscon_args, user_command);
+}
+
+int NsconRunner::Run(int argc, char **argv) {
+  SetDefaultFlags();
 
   // We don't want ParseCommandLineFlags to touch anything beyond '--'
   // separator. So extract out everything beyond '--' and update argc for
@@ -96,20 +127,20 @@ Status NsconRunner::Run(int argc, char **argv) const {
     }
   }
 
-    ::google::ParseCommandLineFlags(&argc, &argv, true);
+  ::gflags::ParseCommandLineFlags(&argc, &argv, true);
+  Status status = SetupOutput();
+  if (!status.ok()) {
+    fprintf(stderr, "%s\n", status.error_message().c_str());
+    return status.error_code();
+  }
 
-  RETURN_IF_ERROR(VerifyCurrentContextIsSingleThreaded());
-
-  unique_ptr<NamespaceControllerCli> namespace_controller_cli(
-      RETURN_IF_ERROR(NamespaceControllerCli::New()));
-  // Takes ownership of 'namespace_controller_cli'.
-  unique_ptr<NsconCli> nscon_cli(
-      new NsconCli(::std::move(namespace_controller_cli)));
-
-  vector<string> nscon_args;
-  nscon_args.insert(nscon_args.begin(), argv, argv + argc);
-
-  return nscon_cli->HandleUserInput(nscon_args, user_command);
+  StatusOr<string> statusor = InternalRun(argc, argv, user_command);
+  if (!statusor.ok()) {
+    fprintf(nscon_stderr_, "%s\n", statusor.status().error_message().c_str());
+    return statusor.status().error_code();
+  }
+  fprintf(nscon_stdout_, "%s\n", statusor.ValueOrDie().c_str());
+  return 0;
 }
 
 }  // namespace cli

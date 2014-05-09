@@ -86,6 +86,7 @@ using ::testing::StrEq;
 using ::testing::StrEq;
 using ::testing::StrictMock;
 using ::testing::_;
+using ::util::error::INTERNAL;
 using ::util::Status;
 using ::util::StatusOr;
 using ::util::error::FAILED_PRECONDITION;
@@ -100,13 +101,14 @@ typedef ::system_api::KernelAPIMock MockKernelApi;
 class MockContainerApiImpl : public ContainerApiImpl {
  public:
   MockContainerApiImpl(MockTasksHandlerFactory *mock_tasks_handler_factory,
-                   const CgroupFactory *cgroup_factory,
+                   CgroupFactory *cgroup_factory,
                    const vector<ResourceHandlerFactory *> &resource_factories,
                    const MockKernelApi *mock_kernel,
                    ActiveNotifications *active_notifications,
                    NamespaceHandlerFactory *namespace_handler_factory,
                    EventFdNotifications *eventfd_notifications)
-      : ContainerApiImpl(mock_tasks_handler_factory, cgroup_factory,
+      : ContainerApiImpl(mock_tasks_handler_factory,
+                     unique_ptr<CgroupFactory>(cgroup_factory),
                      resource_factories, mock_kernel, active_notifications,
                      namespace_handler_factory, eventfd_notifications,
                      unique_ptr<FreezerControllerFactory>(nullptr)) {}
@@ -133,19 +135,18 @@ class ContainerApiImplTest : public ::testing::Test {
     mock_handler_factory4_ = new NiceMockResourceHandlerFactory(
         RESOURCE_DEVICE);
     mock_namespace_handler_factory_ = new NiceMockNamespaceHandlerFactory();
-    EXPECT_CALL(*mock_namespace_handler_factory_, InitMachine(_))
-        .WillRepeatedly(Return(Status::OK));
-    EXPECT_CALL(*mock_namespace_handler_factory_, CreateNamespaceHandler(_, _))
+
+    EXPECT_CALL(*mock_namespace_handler_factory_,
+                CreateNamespaceHandler(_, _, _))
         .WillRepeatedly(Invoke([](const string &name,
-                                  const ContainerSpec &spec) {
+                                  const ContainerSpec &spec,
+                                  const MachineSpec &machine_spec) {
           return new StrictMockNamespaceHandler(name, RESOURCE_VIRTUALHOST);
         }));
-    vector<ResourceHandlerFactory *> resource_factories = {
-      mock_handler_factory1_,
-      mock_handler_factory2_,
-      mock_handler_factory3_,
-      mock_handler_factory4_,
-    };
+    resource_factories_.push_back(mock_handler_factory1_);
+    resource_factories_.push_back(mock_handler_factory2_);
+    resource_factories_.push_back(mock_handler_factory3_);
+    resource_factories_.push_back(mock_handler_factory4_);
 
     active_notifications_ = new ActiveNotifications();
     mock_eventfd_notifications_ = MockEventFdNotifications::NewStrict();
@@ -156,37 +157,46 @@ class ContainerApiImplTest : public ::testing::Test {
 
     lmctfy_.reset(
         new ContainerApiImpl(
-            mock_tasks_handler_factory_, mock_cgroup_factory_,
-            resource_factories, &mock_kernel_.Mock(),
+            mock_tasks_handler_factory_,
+            unique_ptr<CgroupFactory>(mock_cgroup_factory_),
+            resource_factories_, &mock_kernel_.Mock(),
             active_notifications_, mock_namespace_handler_factory_,
             mock_eventfd_notifications_,
             unique_ptr<FreezerControllerFactory>(
                 mock_freezer_controller_factory_)));
   }
 
-  // Expect the machine to have a set of mounts. If cgroups_mounted is true, it
-  // expects the supported hierarchies to be mounted on the machine.
-  void ExpectMachineMounts(bool cgroups_mounted) {
-    if (cgroups_mounted) {
-      mock_file_lines_.ExpectFileLines(
-          "/proc/mounts",
-          {"none /dev/cgroup/cpu cgroup rw,relatime,cpuacct,cpu 0 0",
-           "none /dev/cgroup/cpuset cgroup rw,relatime,cpuset 0 0",
-           "rootfs / rootfs rw 0 0",
-           "none /dev/cgroup/memory cgroup rw,relatime,memory 0 0",
-           "none /dev/cgroup/freezer cgroup rw,relatime,freezer 0 0",
-           "none /dev/cgroup/perf_event cgroup rw,relatime,perf_event 0 0",
-           "none /dev/cgroup/devices cgroup rw,relatime,devices 0 0",
-           "sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0",
-           "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0",
-           "none /dev/cgroup/job cgroup rw,relatime,job 0 0", });
-    } else {
-      mock_file_lines_.ExpectFileLines(
-          "/proc/mounts",
-          {"rootfs / rootfs rw 0 0",
-           "sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0",
-           "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0", });
+  void ExpectCgroupFactoryMountCall(const CgroupMount &cgroup) {
+    EXPECT_CALL(*mock_cgroup_factory_, Mount(EqualsInitializedProto(cgroup)))
+        .WillOnce(Return(Status::OK));
+  }
+
+  void ExpectCgroupFactoryMountFailure(const CgroupMount &cgroup,
+                                       const Status &error) {
+    EXPECT_CALL(*mock_cgroup_factory_, Mount(EqualsInitializedProto(cgroup)))
+        .WillOnce(Return(error));
+  }
+
+  void ExpectResourceFactoriesInitMachineCall(const InitSpec &init_spec) {
+    for (const auto rfactory : resource_factories_) {
+      EXPECT_CALL(
+          *reinterpret_cast<MockResourceHandlerFactory *>(rfactory),
+          InitMachine(EqualsInitializedProto(init_spec)))
+          .WillOnce(Return(Status::OK));
     }
+  }
+
+  void ExpectNamespaceHandlerFactoryInitMachine(const InitSpec &init_spec) {
+    EXPECT_CALL(*mock_namespace_handler_factory_,
+                InitMachine(EqualsInitializedProto(init_spec)))
+        .WillOnce(Return(Status::OK));
+  }
+
+  void ExpectNamespaceHandlerFactoryInitMachineFails(
+      const InitSpec &init_spec) {
+    EXPECT_CALL(*mock_namespace_handler_factory_,
+                InitMachine(EqualsInitializedProto(init_spec)))
+        .WillOnce(Return(Status(INTERNAL, "blah")));
   }
 
   StatusOr<string> CallResolveContainerName(const string &container_name) {
@@ -209,12 +219,14 @@ class ContainerApiImplTest : public ::testing::Test {
   MockLibcFsApiOverride mock_libc_fs_api_;
   FileLinesTestUtil mock_file_lines_;
   MockKernelApiOverride mock_kernel_;
+  vector<ResourceHandlerFactory *> resource_factories_;
 };
 
 // Tests for ContainerApiImpl::NewContainerApiImpl()
 
 TEST_F(ContainerApiImplTest, NewContainerApiImpl) {
-  MockCgroupFactory *mock_cgroup_factory = new StrictMockCgroupFactory();
+  unique_ptr<MockCgroupFactory> mock_cgroup_factory(
+      new StrictMockCgroupFactory());
 
   EXPECT_CALL(*mock_cgroup_factory, OwnsCgroup(_)).WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cgroup_factory, IsMounted(_)).WillRepeatedly(Return(true));
@@ -222,14 +234,16 @@ TEST_F(ContainerApiImplTest, NewContainerApiImpl) {
   EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   StatusOr<ContainerApi *> statusor =
-      ContainerApiImpl::NewContainerApiImpl(mock_cgroup_factory, &mock_kernel_.Mock());
+      ContainerApiImpl::NewContainerApiImpl(move(mock_cgroup_factory),
+                                    &mock_kernel_.Mock());
   ASSERT_OK(statusor);
   EXPECT_NE(nullptr, statusor.ValueOrDie());
   delete statusor.ValueOrDie();
 }
 
 TEST_F(ContainerApiImplTest, NewContainerApiImplNoJobHierarchy) {
-  MockCgroupFactory *mock_cgroup_factory = new StrictMockCgroupFactory();
+  unique_ptr<MockCgroupFactory> mock_cgroup_factory(
+      new StrictMockCgroupFactory());
 
   EXPECT_CALL(*mock_cgroup_factory, OwnsCgroup(_)).WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cgroup_factory, IsMounted(_)).WillRepeatedly(Return(true));
@@ -239,14 +253,16 @@ TEST_F(ContainerApiImplTest, NewContainerApiImplNoJobHierarchy) {
   EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   StatusOr<ContainerApi *> statusor =
-      ContainerApiImpl::NewContainerApiImpl(mock_cgroup_factory, &mock_kernel_.Mock());
+      ContainerApiImpl::NewContainerApiImpl(move(mock_cgroup_factory),
+                                    &mock_kernel_.Mock());
   ASSERT_OK(statusor);
   EXPECT_NE(nullptr, statusor.ValueOrDie());
   delete statusor.ValueOrDie();
 }
 
 TEST_F(ContainerApiImplTest, NewContainerApiImpl_NoFreezer) {
-  MockCgroupFactory *mock_cgroup_factory = new StrictMockCgroupFactory();
+  unique_ptr<MockCgroupFactory> mock_cgroup_factory(
+      new StrictMockCgroupFactory());
 
   EXPECT_CALL(*mock_cgroup_factory, OwnsCgroup(_)).WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_cgroup_factory, IsMounted(_)).WillRepeatedly(Return(true));
@@ -256,58 +272,16 @@ TEST_F(ContainerApiImplTest, NewContainerApiImpl_NoFreezer) {
   EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
 
   StatusOr<ContainerApi *> statusor =
-      ContainerApiImpl::NewContainerApiImpl(mock_cgroup_factory, &mock_kernel_.Mock());
+      ContainerApiImpl::NewContainerApiImpl(move(mock_cgroup_factory),
+                                    &mock_kernel_.Mock());
   ASSERT_OK(statusor);
   EXPECT_NE(nullptr, statusor.ValueOrDie());
   delete statusor.ValueOrDie();
 }
 
-// Tests for ContainerApiImpl::InitMachineImpl()
+// Tests for ContainerApiImpl::InitMachine()
 
-// Expect the specified mount to be expressed in data when it is cast to a
-// string.
-void ExpectMemoryMount(const string &source, const string &target,
-                       const string &filesystemtype, unsigned int mountflags,
-                       const void *data) {
-  EXPECT_THAT("memory", StrEq(static_cast<const char *>(data)));
-}
-void ExpectCpuAndCpuacctMount(const string &source, const string &target,
-                              const string &filesystemtype,
-                              unsigned int mountflags, const void *data) {
-  string actual = static_cast<const char *>(data);
-  EXPECT_TRUE(actual == "cpu,cpuacct" || actual == "cpuacct,cpu");
-}
-void ExpectCpusetMount(const string &source, const string &target,
-                       const string &filesystemtype, unsigned int mountflags,
-                       const void *data) {
-  EXPECT_THAT("cpuset", StrEq(static_cast<const char *>(data)));
-}
-void ExpectJobMount(const string &source, const string &target,
-                    const string &filesystemtype, unsigned int mountflags,
-                    const void *data) {
-  EXPECT_THAT("job", StrEq(static_cast<const char *>(data)));
-}
-void ExpectPerfEventMount(const string &source, const string &target,
-                          const string &filesystemtype, unsigned int mountflags,
-                          const void *data) {
-  EXPECT_THAT("perf_event", StrEq(static_cast<const char *>(data)));
-}
-
-void ExpectFreezerMount(const string &source, const string &target,
-                        const string &filesystemtype, unsigned int mountflags,
-                        const void *data) {
-  EXPECT_THAT("freezer", StrEq(static_cast<const char *>(data)));
-}
-
-void ExpectDeviceMount(const string &source, const string &target,
-                       const string &filesystemtype, unsigned int mountflags,
-                       const void *data) {
-  EXPECT_THAT("devices", StrEq(static_cast<const char *>(data)));
-}
-
-TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
-  ExpectMachineMounts(false);
-
+TEST_F(ContainerApiImplTest, InitMachineSuccess) {
   CgroupMount mount1;
   CgroupMount mount2;
   CgroupMount mount3;
@@ -334,139 +308,73 @@ TEST_F(ContainerApiImplTest, InitMachineImplSuccess) {
 
   InitSpec spec;
   spec.add_cgroup_mount()->CopyFrom(mount1);
+  ExpectCgroupFactoryMountCall(mount1);
+
   spec.add_cgroup_mount()->CopyFrom(mount2);
+  ExpectCgroupFactoryMountCall(mount2);
+
   spec.add_cgroup_mount()->CopyFrom(mount3);
+  ExpectCgroupFactoryMountCall(mount3);
+
   spec.add_cgroup_mount()->CopyFrom(mount4);
+  ExpectCgroupFactoryMountCall(mount4);
+
   spec.add_cgroup_mount()->CopyFrom(mount5);
+  ExpectCgroupFactoryMountCall(mount5);
+
   spec.add_cgroup_mount()->CopyFrom(mount6);
+  ExpectCgroupFactoryMountCall(mount6);
+
   spec.add_cgroup_mount()->CopyFrom(mount7);
+  ExpectCgroupFactoryMountCall(mount7);
 
-  EXPECT_CALL(mock_kernel_.Mock(), Access(_, _))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SafeWriteResFile(_, _, _, _))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/memory"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/cpu"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/cpuset"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/job"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/perf_event"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/freezer"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/devices"))
-      .WillRepeatedly(Return(0));
+  ExpectResourceFactoriesInitMachineCall(spec);
+  ExpectNamespaceHandlerFactoryInitMachine(spec);
 
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/memory", "cgroup", 0, _))
-      .WillOnce(DoAll(Invoke(&ExpectMemoryMount), Return(0)));
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/cpu", "cgroup", 0, _))
-      .WillOnce(DoAll(Invoke(&ExpectCpuAndCpuacctMount), Return(0)));
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/cpuset", "cgroup", 0, _))
-      .WillOnce(DoAll(Invoke(&ExpectCpusetMount), Return(0)));
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/job", "cgroup", 0, _))
-      .WillOnce(DoAll(Invoke(&ExpectJobMount), Return(0)));
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/perf_event", "cgroup", 0, _))
-      .WillOnce(DoAll(Invoke(&ExpectPerfEventMount), Return(0)));
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/freezer", "cgroup", 0, _))
-      .WillOnce(DoAll(Invoke(&ExpectFreezerMount), Return(0)));
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/devices", "cgroup", 0, _))
-      .WillOnce(DoAll(Invoke(&ExpectDeviceMount), Return(0)));
-  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
-
-  EXPECT_OK(ContainerApiImpl::InitMachineImpl(&mock_kernel_.Mock(), spec));
+  EXPECT_OK(lmctfy_->InitMachine(spec));
 }
 
-TEST_F(ContainerApiImplTest, InitMachineImplPartiallyInitialized) {
-  ExpectMachineMounts(true);
-
-  CgroupMount mount1;
-  CgroupMount mount2;
-  CgroupMount mount3;
-  CgroupMount mount4;
-  CgroupMount mount5;
-  CgroupMount mount6;
-  CgroupMount mount7;
-  mount1.set_mount_path("/dev/cgroup/memory");
-  mount1.add_hierarchy(CGROUP_MEMORY);
-  mount2.set_mount_path("/dev/cgroup/cpu");
-  mount2.add_hierarchy(CGROUP_CPU);
-  mount2.add_hierarchy(CGROUP_CPUACCT);
-  mount3.add_hierarchy(CGROUP_JOB);
-  mount3.set_mount_path("/dev/cgroup/job");
-  mount4.add_hierarchy(CGROUP_CPUSET);
-  mount4.set_mount_path("/dev/cgroup/cpuset");
-  mount5.add_hierarchy(CGROUP_PERF_EVENT);
-  mount5.set_mount_path("/dev/cgroup/perf_event");
-  mount6.add_hierarchy(CGROUP_FREEZER);
-  mount6.set_mount_path("/dev/cgroup/freezer");
-  mount7.add_hierarchy(CGROUP_DEVICE);
-  mount7.set_mount_path("/dev/cgroup/devices");
-
-  InitSpec spec;
-  spec.add_cgroup_mount()->CopyFrom(mount1);
-  spec.add_cgroup_mount()->CopyFrom(mount2);
-  spec.add_cgroup_mount()->CopyFrom(mount3);
-  spec.add_cgroup_mount()->CopyFrom(mount4);
-  spec.add_cgroup_mount()->CopyFrom(mount5);
-  spec.add_cgroup_mount()->CopyFrom(mount6);
-  spec.add_cgroup_mount()->CopyFrom(mount7);
-
-  EXPECT_CALL(mock_kernel_.Mock(), Access(_, _))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), SafeWriteResFile(_, _, _, _))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(), EpollCreate(_))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
-
-  // All cgroups are accessible.
-  vector<string> kPaths = {
-    "/dev/cgroup/cpu",
-    "/dev/cgroup/cpuset",
-    "/dev/cgroup/job",
-    "/dev/cgroup/memory",
-    "/dev/cgroup/perf_event",
-    "/dev/cgroup/freezer"
-    "/dev/cgroup/devices"
-  };
-  for (const string &hierarchy : kPaths) {
-    EXPECT_CALL(mock_kernel_.Mock(), Access(hierarchy, R_OK))
-        .WillRepeatedly(Return(0));
-  }
-
-  EXPECT_OK(ContainerApiImpl::InitMachineImpl(&mock_kernel_.Mock(), spec));
-}
-
-TEST_F(ContainerApiImplTest, InitMachineImplMountFails) {
-  ExpectMachineMounts(false);
-
+TEST_F(ContainerApiImplTest, InitMachineMountFails) {
   CgroupMount mount1;
   mount1.set_mount_path("/dev/cgroup/memory");
   mount1.add_hierarchy(CGROUP_MEMORY);
 
   InitSpec spec;
   spec.add_cgroup_mount()->CopyFrom(mount1);
+  ExpectCgroupFactoryMountFailure(mount1, Status(INTERNAL, "blah"));
 
-  EXPECT_CALL(mock_kernel_.Mock(), MkDirRecursive("/dev/cgroup/memory"))
-      .WillRepeatedly(Return(0));
-  EXPECT_CALL(mock_kernel_.Mock(),
-              Mount("cgroup", "/dev/cgroup/memory", "cgroup", 0, _))
-      .WillOnce(Return(1));
-  EXPECT_CALL(mock_libc_fs_api_.Mock(), LStat(_, _)).WillRepeatedly(Return(-1));
+  EXPECT_NOT_OK(lmctfy_->InitMachine(spec));
+}
 
-  EXPECT_NOT_OK(ContainerApiImpl::InitMachineImpl(&mock_kernel_.Mock(), spec));
+TEST_F(ContainerApiImplTest, InitMachineResourceInitFails) {
+  CgroupMount mount1;
+  mount1.set_mount_path("/dev/cgroup/memory");
+  mount1.add_hierarchy(CGROUP_MEMORY);
+
+  InitSpec spec;
+  spec.add_cgroup_mount()->CopyFrom(mount1);
+  ExpectCgroupFactoryMountCall(mount1);
+
+  EXPECT_CALL(
+      *reinterpret_cast<MockResourceHandlerFactory *>(resource_factories_[0]),
+      InitMachine(EqualsInitializedProto(spec)))
+      .WillOnce(Return(Status(INTERNAL, "blah")));
+
+  EXPECT_ERROR_CODE(INTERNAL, lmctfy_->InitMachine(spec));
+}
+
+TEST_F(ContainerApiImplTest, InitMachineNamespaceFactoryInitMachineFails) {
+  CgroupMount mount1;
+  mount1.set_mount_path("/dev/cgroup/memory");
+  mount1.add_hierarchy(CGROUP_MEMORY);
+
+  InitSpec spec;
+  spec.add_cgroup_mount()->CopyFrom(mount1);
+  ExpectCgroupFactoryMountCall(mount1);
+  ExpectResourceFactoriesInitMachineCall(spec);
+  ExpectNamespaceHandlerFactoryInitMachineFails(spec);
+
+  EXPECT_ERROR_CODE(INTERNAL, lmctfy_->InitMachine(spec));
 }
 
 // Tests for Get()
@@ -623,16 +531,17 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
 
   MockTasksHandlerFactory *mock_tasks_handler_factory =
       new StrictMockTasksHandlerFactory();
-  MockCgroupFactory *mock_cgroup_factory = new StrictMockCgroupFactory();
+  unique_ptr<MockCgroupFactory> mock_cgroup_factory(
+      new StrictMockCgroupFactory());
 
   MockFreezerControllerFactory *freezer_controller_factory =
-      new MockFreezerControllerFactory(mock_cgroup_factory);
+      new MockFreezerControllerFactory(mock_cgroup_factory.get());
 
   EXPECT_CALL(*freezer_controller_factory, Create(kName))
       .WillRepeatedly(Return(new StrictMockFreezerController()));
 
   lmctfy_.reset(new ContainerApiImpl(
-      mock_tasks_handler_factory, mock_cgroup_factory, resource_factories,
+      mock_tasks_handler_factory, move(mock_cgroup_factory), resource_factories,
       new StrictMock<MockKernelApi>(), new ActiveNotifications(),
       namespace_handler,
       MockEventFdNotifications::NewStrict(),
@@ -659,7 +568,7 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   EXPECT_CALL(*filesystem_handler, Create(kName, _))
       .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
           new StrictMockResourceHandler(kName, RESOURCE_FILESYSTEM))));
-  EXPECT_CALL(*namespace_handler, CreateNamespaceHandler(kName, _))
+  EXPECT_CALL(*namespace_handler, CreateNamespaceHandler(kName, _, _))
       .WillRepeatedly(Return(StatusOr<NamespaceHandler *>(
           new StrictMockNamespaceHandler(kName, RESOURCE_VIRTUALHOST))));
   EXPECT_CALL(*mock_tasks_handler_factory,
@@ -670,6 +579,118 @@ TEST_F(ContainerApiImplTest, CreateSuccessWithAllResources) {
   StatusOr<Container *> status = lmctfy_->Create(kName, spec);
   ASSERT_TRUE(status.ok());
   EXPECT_NE(static_cast<Container *>(NULL), status.ValueOrDie());
+  delete status.ValueOrDie();
+}
+
+Status PopulateMachineSpecCB(CgroupHierarchy hierarchy, const string &root,
+                             MachineSpec *spec) {
+  auto *virt_root = spec->mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root->set_root(root);
+  virt_root->set_hierarchy(hierarchy);
+  return Status::OK;
+}
+
+TEST_F(ContainerApiImplTest, CreateWithVirtualHost) {
+  const string kName = "/test";
+
+  ContainerSpec spec;
+  spec.mutable_cpu();
+  spec.mutable_memory();
+  spec.mutable_filesystem();
+  spec.mutable_virtual_host();
+
+  MachineSpec machine;
+  auto *virt_root1 = machine.mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root1->set_root(kName);
+  virt_root1->set_hierarchy(CGROUP_CPU);
+  auto *virt_root2 = machine.mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root2->set_root(kName);
+  virt_root2->set_hierarchy(CGROUP_MEMORY);
+  auto *virt_root3 = machine.mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root3->set_root(kName);
+  virt_root3->set_hierarchy(CGROUP_BLOCKIO);
+  auto *virt_root4 = machine.mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root4->set_root(kName);
+  virt_root4->set_hierarchy(CGROUP_DEVICE);
+
+  StrictMockFreezerController *freezer_cont = new StrictMockFreezerController();
+  StrictMockTasksHandler *task_hand = new StrictMockTasksHandler(kName);
+  StrictMockResourceHandler *rhand1 =
+      new StrictMockResourceHandler(kName, RESOURCE_CPU);
+  StrictMockResourceHandler *rhand2 =
+      new StrictMockResourceHandler(kName, RESOURCE_MEMORY);
+  StrictMockResourceHandler *rhand3 =
+      new StrictMockResourceHandler(kName, RESOURCE_FILESYSTEM);
+  StrictMockResourceHandler *rhand4 =
+      new StrictMockResourceHandler(kName, RESOURCE_DEVICE);
+
+  EXPECT_CALL(*freezer_cont, Enter(_)).WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*task_hand, TrackTasks(_)).WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*rhand1, Enter(_)).WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*rhand2, Enter(_)).WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*rhand3, Enter(_)).WillRepeatedly(Return(Status::OK));
+  EXPECT_CALL(*rhand4, Enter(_)).WillRepeatedly(Return(Status::OK));
+
+  EXPECT_CALL(*rhand1, PopulateMachineSpec(_)).WillRepeatedly(
+      Invoke([kName](MachineSpec *spec) {
+        return PopulateMachineSpecCB(CGROUP_CPU, kName, spec);
+      }));
+  EXPECT_CALL(*rhand2, PopulateMachineSpec(_)).WillRepeatedly(
+      Invoke([kName](MachineSpec *spec) {
+        return PopulateMachineSpecCB(CGROUP_MEMORY, kName, spec);
+      }));
+  EXPECT_CALL(*rhand3, PopulateMachineSpec(_)).WillRepeatedly(
+      Invoke([kName](MachineSpec *spec) {
+        return PopulateMachineSpecCB(CGROUP_BLOCKIO, kName, spec);
+      }));
+  EXPECT_CALL(*rhand4, PopulateMachineSpec(_)).WillRepeatedly(
+      Invoke([kName](MachineSpec *spec) {
+        return PopulateMachineSpecCB(CGROUP_DEVICE, kName, spec);
+      }));
+
+  EXPECT_CALL(*freezer_cont, PopulateMachineSpec(_))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*task_hand, PopulateMachineSpec(_))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_CALL(*mock_freezer_controller_factory_, Create(kName))
+      .WillRepeatedly(Return(freezer_cont));
+  EXPECT_CALL(*mock_tasks_handler_factory_, Exists(kName))
+      .WillRepeatedly(Return(false));
+  EXPECT_CALL(*mock_handler_factory1_, Create(kName, _))
+      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
+          new StrictMockResourceHandler(kName, RESOURCE_CPU))));
+  EXPECT_CALL(*mock_handler_factory2_, Create(kName, _))
+      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
+          new StrictMockResourceHandler(kName, RESOURCE_MEMORY))));
+  EXPECT_CALL(*mock_handler_factory3_, Create(kName, _))
+      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(
+          new StrictMockResourceHandler(kName, RESOURCE_FILESYSTEM))));
+  EXPECT_CALL(*mock_tasks_handler_factory_,
+              Create(kName, EqualsInitializedProto(spec)))
+      .WillRepeatedly(
+           Return(StatusOr<TasksHandler *>(task_hand)));
+
+  EXPECT_CALL(*mock_handler_factory1_, Get(kName))
+      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(rhand1)));
+  EXPECT_CALL(*mock_handler_factory2_, Get(kName))
+      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(rhand2)));
+  EXPECT_CALL(*mock_handler_factory3_, Get(kName))
+      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(rhand3)));
+  EXPECT_CALL(*mock_handler_factory4_, Get(kName))
+      .WillRepeatedly(Return(StatusOr<ResourceHandler *>(rhand4)));
+
+  EXPECT_CALL(*mock_cgroup_factory_, PopulateMachineSpec(NotNull()))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_CALL(*mock_namespace_handler_factory_, CreateNamespaceHandler(
+      kName, _, EqualsInitializedProto(machine)))
+      .WillOnce(Return(StatusOr<NamespaceHandler *>(
+          new StrictMockNamespaceHandler(kName, RESOURCE_VIRTUALHOST))));
+
+  StatusOr<Container *> status = lmctfy_->Create(kName, spec);
+  ASSERT_OK(status);
+  EXPECT_NE(nullptr, status.ValueOrDie());
   delete status.ValueOrDie();
 }
 
@@ -1095,7 +1116,9 @@ class ContainerApiImplDestroyTest : public ::testing::Test {
     active_notifications_ = new ActiveNotifications();
     mock_eventfd_notifications_ = MockEventFdNotifications::NewStrict();
     mock_lmctfy_.reset(new StrictMock<MockContainerApiImpl>(
-        mock_tasks_handler_factory_, mock_cgroup_factory_, resource_factories,
+        mock_tasks_handler_factory_,
+        mock_cgroup_factory_,
+        resource_factories,
         &mock_kernel_.Mock(), active_notifications_,
         mock_namespace_handler_factory_,
         mock_eventfd_notifications_));
@@ -1354,45 +1377,6 @@ TEST_F(ContainerApiImplTest, DetectNoSuchContainer) {
   EXPECT_EQ(Status::CANCELLED, statusor.status());
 }
 
-// Tests for InitMachine()
-
-TEST_F(ContainerApiImplTest, InitMachineSuccess) {
-  InitSpec spec;
-  spec.mutable_memory();
-
-  EXPECT_CALL(*mock_handler_factory1_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_handler_factory2_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_handler_factory3_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillOnce(Return(Status::OK));
-  EXPECT_CALL(*mock_handler_factory4_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillOnce(Return(Status::OK));
-
-  EXPECT_OK(lmctfy_->InitMachine(spec));
-}
-
-TEST_F(ContainerApiImplTest, InitMachineResourceHandlerInitFails) {
-  InitSpec spec;
-  spec.mutable_memory();
-
-  EXPECT_CALL(*mock_handler_factory1_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::OK));
-  EXPECT_CALL(*mock_handler_factory2_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::CANCELLED));
-  EXPECT_CALL(*mock_handler_factory3_,
-              InitMachine(EqualsInitializedProto(spec)))
-      .WillRepeatedly(Return(Status::OK));
-
-  EXPECT_EQ(Status::CANCELLED, lmctfy_->InitMachine(spec));
-}
-
 static bool CompareByName(Container *c1, Container *c2) {
   return c1->name() < c2->name();
 }
@@ -1425,7 +1409,8 @@ class ContainerImplTest : public ::testing::Test {
         new StrictMockNamespaceHandlerFactory());
 
     mock_lmctfy_.reset(new StrictMock<MockContainerApiImpl>(
-        new StrictMockTasksHandlerFactory(), new StrictMockCgroupFactory(),
+        new StrictMockTasksHandlerFactory(),
+        new StrictMockCgroupFactory(),
         vector<ResourceHandlerFactory *>(), &mock_kernel_.Mock(),
         new ActiveNotifications(), new StrictMockNamespaceHandlerFactory(),
         MockEventFdNotifications::NewStrict()));

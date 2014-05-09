@@ -29,6 +29,8 @@ using ::std::string;
 #include "util/task/statusor.h"
 
 namespace containers {
+class ConsoleUtil;
+
 namespace lmctfy {
 
 class NsconNamespaceHandlerFactory : public NamespaceHandlerFactory {
@@ -37,10 +39,12 @@ class NsconNamespaceHandlerFactory : public NamespaceHandlerFactory {
   // Does not own task_handlers_factory.
   NsconNamespaceHandlerFactory(
       const TasksHandlerFactory *tasks_handler_factory,
-      const nscon::NamespaceControllerFactory *namespace_controller_factory)
+      const nscon::NamespaceControllerFactory *namespace_controller_factory,
+      const ConsoleUtil *console_util)
       : tasks_handler_factory_(CHECK_NOTNULL(tasks_handler_factory)),
         namespace_controller_factory_(
-            CHECK_NOTNULL(namespace_controller_factory)) {}
+            CHECK_NOTNULL(namespace_controller_factory)),
+        console_util_(console_util) {}
 
   ~NsconNamespaceHandlerFactory() override {}
 
@@ -48,11 +52,10 @@ class NsconNamespaceHandlerFactory : public NamespaceHandlerFactory {
       const string &container_name) const override;
 
   ::util::StatusOr<NamespaceHandler *> CreateNamespaceHandler(
-      const string &container_name, const ContainerSpec &spec) override;
+      const string &container_name, const ContainerSpec &spec,
+      const MachineSpec &machine_spec) override;
 
-  ::util::Status InitMachine(const InitSpec &spec) override {
-    return ::util::Status::OK;
-  }
+  ::util::Status InitMachine(const InitSpec &spec) override;
 
  private:
   // Checks whether the specified container is a VirtualHost.
@@ -76,6 +79,8 @@ class NsconNamespaceHandlerFactory : public NamespaceHandlerFactory {
 
   const ::std::unique_ptr<const nscon::NamespaceControllerFactory>
       namespace_controller_factory_;
+
+  const ::std::unique_ptr<const ConsoleUtil> console_util_;
 
   friend class NsconNamespaceHandlerFactoryTest;
 

@@ -30,7 +30,10 @@ using ::system_api::KernelAPIMock;
 using ::util::FileLinesTestUtil;
 using ::std::map;
 using ::std::unique_ptr;
+using ::testing::Contains;
 using ::testing::DoAll;
+#include "util/testing/equals_initialized_proto.h"
+using ::testing::EqualsInitializedProto;
 using ::testing::InSequence;
 using ::testing::Invoke;
 using ::testing::NotNull;
@@ -60,6 +63,7 @@ static const char kMemoryMount[] = "/dev/cgroup/memory";
 static const char kNetMount[] = "/dev/cgroup/net";
 static const char kDevCgroup[] = "/dev/cgroup";
 static const char kDev[] = "/dev";
+static const char kProcCgroups[] = "/proc/cgroups";
 
 // Expect the mounted hierarchy to be of type net.
 static void CheckNet(const string &name, const string &path,
@@ -446,6 +450,52 @@ TEST_F(CgroupFactoryTest, DetectCgroupPathSubsystemNotFound) {
 
   EXPECT_ERROR_CODE(::util::error::NOT_FOUND,
                     factory_->DetectCgroupPath(0, CGROUP_MEMORY));
+}
+
+typedef CgroupFactoryTest GetSupportedHierarchiesTest;
+
+TEST_F(GetSupportedHierarchiesTest, Success) {
+  mock_lines_.ExpectFileLines(kProcCgroups,
+                              {"cpu 1 1 1", "memory 1 1 1", "freezer 1 1 1"});
+
+  StatusOr<vector<CgroupHierarchy>> statusor =
+      factory_->GetSupportedHierarchies();
+  ASSERT_OK(statusor);
+  const vector<CgroupHierarchy> result = statusor.ValueOrDie();
+  EXPECT_EQ(3, result.size());
+  EXPECT_THAT(result, Contains(CGROUP_CPU));
+  EXPECT_THAT(result, Contains(CGROUP_MEMORY));
+  EXPECT_THAT(result, Contains(CGROUP_FREEZER));
+}
+
+TEST_F(GetSupportedHierarchiesTest, DisabledHierarchy) {
+  mock_lines_.ExpectFileLines(kProcCgroups,
+                              {"cpu 1 1 1", "memory 1 1 0", "freezer 1 1 1"});
+
+  StatusOr<vector<CgroupHierarchy>> statusor =
+      factory_->GetSupportedHierarchies();
+  ASSERT_OK(statusor);
+  const vector<CgroupHierarchy> result = statusor.ValueOrDie();
+  EXPECT_EQ(2, result.size());
+  EXPECT_THAT(result, Contains(CGROUP_CPU));
+  EXPECT_THAT(result, Contains(CGROUP_FREEZER));
+}
+
+typedef CgroupFactoryTest PopulateMachineSpecTest;
+
+TEST_F(PopulateMachineSpecTest, Success) {
+  MachineSpec spec;
+  Status status = factory_->PopulateMachineSpec(&spec);
+
+  MachineSpec expected_spec;
+  CgroupMount *mount1 = expected_spec.add_cgroup_mount();
+  mount1->set_mount_path(kCpuMount);
+  mount1->add_hierarchy(CGROUP_CPU);
+  mount1->add_hierarchy(CGROUP_CPUACCT);
+  CgroupMount *mount2 = expected_spec.add_cgroup_mount();
+  mount2->set_mount_path(kMemoryMount);
+  mount2->add_hierarchy(CGROUP_MEMORY);
+  EXPECT_THAT(expected_spec, EqualsInitializedProto(spec));
 }
 
 }  // namespace lmctfy

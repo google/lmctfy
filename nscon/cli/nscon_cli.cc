@@ -28,6 +28,8 @@
 
 DEFINE_string(namespace_spec_file, "",
               "path to a file containing the NamespaceSpec.");
+DEFINE_string(run_spec_file, "",
+              "path to a file containing the RunSpec.");
 
 using ::strings::Join;
 using ::strings::Substitute;
@@ -117,8 +119,35 @@ StatusOr<NamespaceSpec> NsconCli::GetNamespaceSpec(
   return spec;
 }
 
-Status NsconCli::HandleUserInput(const vector<string> &argv,
-                                 const vector<string> &user_command) {
+StatusOr<RunSpec> NsconCli::GetRunSpec(const string &cmd_line_config) const {
+  RunSpec run_spec;
+  string config;
+  if (!FLAGS_run_spec_file.empty() && !cmd_line_config.empty()) {
+    return Status(INVALID_ARGUMENT,
+                  "Must specify the RunSpec either via "
+                  "command line or via the flag '--run_spec_file'");
+  } else if (!FLAGS_run_spec_file.empty()) {
+    RETURN_IF_ERROR(::file::GetContents(FLAGS_run_spec_file,
+                                        &config,
+                                        ::file::Defaults()));
+  } else if (!cmd_line_config.empty()) {
+    config = cmd_line_config;
+  } else {
+    // No RunSpec specified. Use empty one.
+    return run_spec;
+  }
+
+  // Try to parse the proto as both ASCII and binary.
+  if (!::google::protobuf::TextFormat::ParseFromString(config, &run_spec) &&
+      !run_spec.ParseFromString(config)) {
+    return Status(INVALID_ARGUMENT, "Cannot parse RunSpec config.");
+  }
+
+  return run_spec;
+}
+
+StatusOr<string> NsconCli::HandleUserInput(const vector<string> &argv,
+                                           const vector<string> &user_command) {
   if (argv.size() < 2) {
     return Status(INVALID_ARGUMENT,
                   Substitute("Insufficient arguments to nscon: $0\n$1",
@@ -127,11 +156,16 @@ Status NsconCli::HandleUserInput(const vector<string> &argv,
 
   const string nscon_op(argv[1]);
   if (nscon_op == kCreateCommand) {
+    if (argv.size() > 3) {
+      return Status(INVALID_ARGUMENT,
+                    Substitute("Too many arguments for 'create'\nUsage:\n$0",
+                               kNsconHelp));
+    }
     const string ns_spec_str = argv.size() > 2 ? argv[2] : "";
     return HandleCreate(RETURN_IF_ERROR(GetNamespaceSpec(ns_spec_str)),
                         user_command);
   } else if (nscon_op == kRunCommand) {
-    if (argv.size() < 3) {
+    if (argv.size() < 3 || argv.size() > 4) {
       return Status(INVALID_ARGUMENT,
                     Substitute("Invalid arguments for 'run'\nUsage:\n$0",
                                kNsconHelp));
@@ -140,9 +174,11 @@ Status NsconCli::HandleUserInput(const vector<string> &argv,
       return Status(INVALID_ARGUMENT, "Must specify command to run.");
     }
     const string nshandle_str = argv[2];
-    return HandleRun(nshandle_str, user_command);
+    const string run_spec_str = argv.size() > 3 ? argv[3] : "";
+    return HandleRun(nshandle_str, user_command,
+                     RETURN_IF_ERROR(GetRunSpec(run_spec_str)));
   } else if (nscon_op == kRunShellCommand) {
-    if (argv.size() < 3) {
+    if (argv.size() < 3 || argv.size() > 4) {
       return Status(INVALID_ARGUMENT,
                     Substitute("Invalid arguments for 'runshell'\nUsage:\n$0",
                                kNsconHelp));
@@ -151,7 +187,9 @@ Status NsconCli::HandleUserInput(const vector<string> &argv,
       return Status(INVALID_ARGUMENT, "Must specify command to run.");
     }
     const string nshandle_str = argv[2];
-    return HandleRunShell(nshandle_str, Join(user_command, " "));
+    const string run_spec_str = argv.size() > 3 ? argv[3] : "";
+    return HandleRunShell(nshandle_str, Join(user_command, " "),
+                          RETURN_IF_ERROR(GetRunSpec(run_spec_str)));
   } else if (nscon_op == kUpdateCommand) {
     if (argv.size() < 3 || argv.size() > 4) {
       return Status(INVALID_ARGUMENT,
@@ -180,46 +218,48 @@ Status NsconCli::HandleUserInput(const vector<string> &argv,
                            nscon_op, kNsconHelp));
 }
 
-Status NsconCli::HandleCreate(const NamespaceSpec &namespace_spec,
-                              const vector<string> &init_argv) const {
+StatusOr<string> NsconCli::HandleCreate(const NamespaceSpec &namespace_spec,
+                                        const vector<string> &init_argv) const {
   const string namespace_handle =
       RETURN_IF_ERROR(nscon_->Create(namespace_spec, init_argv));
 
-  // Print namespace handle on stdout.
-  fprintf(stdout, "%s\n", namespace_handle.c_str());
-
-  return Status::OK;
+  // Output namespace handle.
+  return Substitute("$0", namespace_handle.c_str());
 }
 
-Status NsconCli::HandleRunShell(const string &namespace_handle,
-                                const string &command) const {
+StatusOr<string> NsconCli::HandleRunShell(const string &namespace_handle,
+                                          const string &command,
+                                          const RunSpec &run_spec) const {
   pid_t pid =
-      RETURN_IF_ERROR(nscon_->RunShellCommand(namespace_handle, command));
+      RETURN_IF_ERROR(nscon_->RunShellCommand(namespace_handle, command,
+                                              run_spec));
 
-  // Print pid of new process on stdout.
-  fprintf(stdout, "%d\n", pid);
-
-  return Status::OK;
+  // Pass the pid to output.
+  return Substitute("$0", pid);
 }
 
-Status NsconCli::HandleRun(const string &namespace_handle,
-                           const vector<string> &command) const {
-  pid_t pid = RETURN_IF_ERROR(nscon_->Run(namespace_handle, command));
+StatusOr<string> NsconCli::HandleRun(const string &namespace_handle,
+                                     const vector<string> &command,
+                                     const RunSpec &run_spec) const {
+  pid_t pid = RETURN_IF_ERROR(nscon_->Run(namespace_handle, command, run_spec));
 
-  // Print pid of new process on stdout.
-  fprintf(stdout, "%d\n", pid);
-
-  return Status::OK;
+  // Pass the pid to output.
+  return Substitute("$0", pid);
 }
 
-Status NsconCli::HandleExec(const string &namespace_handle,
-                            const vector<string> &command) const {
-  return nscon_->Exec(namespace_handle, command);
+StatusOr<string> NsconCli::HandleExec(const string &namespace_handle,
+                                      const vector<string> &command) const {
+  RETURN_IF_ERROR(nscon_->Exec(namespace_handle, command));
+
+  return string();
 }
 
-Status NsconCli::HandleUpdate(const string &namespace_handle,
-                              const NamespaceSpec &namespace_spec) const {
-  return nscon_->Update(namespace_handle, namespace_spec);
+StatusOr<string> NsconCli::HandleUpdate(
+    const string &namespace_handle,
+    const NamespaceSpec &namespace_spec) const {
+  RETURN_IF_ERROR(nscon_->Update(namespace_handle, namespace_spec));
+
+  return string();
 }
 
 }  // namespace cli

@@ -33,7 +33,7 @@ class OutputMap;
 // Command to run a command in a container.
 ::util::Status RunInContainer(const ::std::vector<string> &argv,
                               const ContainerApi *lmctfy,
-                              ::std::vector<OutputMap> *output);
+                              OutputMap *output);
 void RegisterRunCommand();
 
 }  // namespace cli

@@ -56,6 +56,10 @@ using ::util::StatusOr;
 namespace containers {
 namespace nscon {
 
+// These should not collide with clone-flag values.
+static const int FSCONFIG = 0;
+static const int MACHINECONFIG = 1;
+
 static StatusOr<const char*> RealNsCloneFlagToName(int clone_flag) {
   switch (clone_flag) {
     case CLONE_NEWUSER:
@@ -101,11 +105,25 @@ class NamespaceControllerCliTest : public ::testing::Test {
   }
 
   void SetSupportedConfigurators(const vector<int> &namespaces,
-                                 map<int, MockNsConfigurator *> *mock_configs) {
+                                 map<int, MockNsConfigurator *> *mock_configs,
+                                 bool add_filesys_config) {
     // Exclusively support configurators for specified namespaces.
     EXPECT_CALL(*mock_config_factory_, Get(_))
         .WillRepeatedly(Return(Status(::util::error::NOT_FOUND,
                                       "Configurator not available")));
+    // First add the filesystem configurator.
+    if (add_filesys_config) {
+      MockNsConfigurator *mock_config =
+          new ::testing::StrictMock<MockNsConfigurator>();
+      EXPECT_CALL(*mock_config_factory_, GetFilesystemConfigurator())
+          .WillRepeatedly(Return(mock_config));
+      EXPECT_CALL(*mock_config, SetupOutsideNamespace(_, kPid_))
+          .WillRepeatedly(Return(Status::OK));
+      EXPECT_CALL(*mock_config, SetupInsideNamespace(_))
+          .WillRepeatedly(Return(Status::OK));
+      (*mock_configs)[FSCONFIG] = mock_config;
+    }
+
     for (auto ns : namespaces) {
       MockNsConfigurator *mock_config =
           new ::testing::StrictMock<MockNsConfigurator>(ns);
@@ -117,6 +135,18 @@ class NamespaceControllerCliTest : public ::testing::Test {
           .WillRepeatedly(Return(Status::OK));
       (*mock_configs)[ns] = mock_config;
     }
+  }
+
+  void AddMachineConfigurator(map<int, MockNsConfigurator *> *mock_configs) {
+    MockNsConfigurator *mock_config =
+        new ::testing::StrictMock<MockNsConfigurator>();
+    EXPECT_CALL(*mock_config_factory_, GetMachineConfigurator())
+        .WillRepeatedly(Return(mock_config));
+    EXPECT_CALL(*mock_config, SetupOutsideNamespace(_, kPid_))
+        .WillRepeatedly(Return(Status::OK));
+    EXPECT_CALL(*mock_config, SetupInsideNamespace(_))
+        .WillRepeatedly(Return(Status::OK));
+    (*mock_configs)[MACHINECONFIG] = mock_config;
   }
 
  protected:
@@ -131,7 +161,7 @@ class NamespaceControllerCliTest : public ::testing::Test {
   system_api::MockLibcFsApiOverride libc_fs_api_;
   system_api::MockLibcProcessApiOverride libc_process_api_;
 
-  google::FlagSaver flag_saver_;
+  gflags::FlagSaver flag_saver_;
 };
 
 TEST_F(NamespaceControllerCliTest, New) {
@@ -149,6 +179,8 @@ TEST_F(NamespaceControllerCliTest, Create) {
   spec.mutable_pid();
   spec.mutable_mnt();
   spec.mutable_ipc();
+  RunSpec *run_spec = spec.mutable_run_spec();
+  run_spec->mutable_console()->set_slave_pty("10");
 
   const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
@@ -156,11 +188,13 @@ TEST_F(NamespaceControllerCliTest, Create) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, true);
+  AddMachineConfigurator(&mock_configs);
 
   EXPECT_CALL(*mock_pl_,
-              LaunchWithConfiguration(kArgv, kNamespaces, SizeIs(3),
-                                      EqualsInitializedProto(spec)))
+              NewNsProcess(kArgv, kNamespaces, SizeIs(5),
+                           EqualsInitializedProto(spec),
+                           EqualsInitializedProto(*run_spec)))
       .WillOnce(Return(kPid_));
   EXPECT_CALL(*mock_nsh_factory_, Get(kPid_)).WillOnce(Return(mock_nshandle_));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
@@ -174,6 +208,7 @@ TEST_F(NamespaceControllerCliTest, Create_CustomFlags) {
   spec.mutable_pid();
   spec.mutable_mnt();
   spec.mutable_ipc();
+  RunSpec run_spec;
 
   FLAGS_nsinit_path = "/usr/local/bin/custominit";
   FLAGS_nsinit_uid = 12345;
@@ -183,11 +218,13 @@ TEST_F(NamespaceControllerCliTest, Create_CustomFlags) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, true);
+  AddMachineConfigurator(&mock_configs);
 
   EXPECT_CALL(*mock_pl_,
-              LaunchWithConfiguration(kArgv, kNamespaces, SizeIs(3),
-                                      EqualsInitializedProto(spec)))
+              NewNsProcess(kArgv, kNamespaces, SizeIs(5),
+                           EqualsInitializedProto(spec),
+                           EqualsInitializedProto(run_spec)))
       .WillOnce(Return(kPid_));
   EXPECT_CALL(*mock_nsh_factory_, Get(kPid_)).WillOnce(Return(mock_nshandle_));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
@@ -209,16 +246,17 @@ TEST_F(NamespaceControllerCliTest, Create_UnsupportedNamespace) {
   // Assume CLONE_NEWNS is not supported.
   SetSupportedNamespaces({ CLONE_NEWIPC, CLONE_NEWPID });
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators({CLONE_NEWIPC, CLONE_NEWPID }, &mock_configs);
+  SetSupportedConfigurators({CLONE_NEWIPC, CLONE_NEWPID }, &mock_configs, true);
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT, nscon_->Create(spec, {}));
 }
 
-TEST_F(NamespaceControllerCliTest, Create_LaunchFailure) {
+TEST_F(NamespaceControllerCliTest, Create_ProcessLauncherFailure) {
   NamespaceSpec spec;
   spec.mutable_pid();
   spec.mutable_mnt();
   spec.mutable_ipc();
+  RunSpec run_spec;
 
   const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
@@ -226,11 +264,13 @@ TEST_F(NamespaceControllerCliTest, Create_LaunchFailure) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, true);
+  AddMachineConfigurator(&mock_configs);
 
   EXPECT_CALL(*mock_pl_,
-              LaunchWithConfiguration(kArgv, kNamespaces, SizeIs(3),
-                                      EqualsInitializedProto(spec)))
+              NewNsProcess(kArgv, kNamespaces, SizeIs(5),
+                           EqualsInitializedProto(spec),
+                           EqualsInitializedProto(run_spec)))
       .WillOnce(Return(kPid_));
   EXPECT_CALL(*mock_nsh_factory_, Get(kPid_))
       .WillOnce(Return(Status(::util::error::INTERNAL, "nshandle failed")));
@@ -242,6 +282,7 @@ TEST_F(NamespaceControllerCliTest, Create_NsHandleFailure) {
   spec.mutable_pid();
   spec.mutable_mnt();
   spec.mutable_ipc();
+  RunSpec run_spec;
 
   const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
@@ -249,12 +290,14 @@ TEST_F(NamespaceControllerCliTest, Create_NsHandleFailure) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, true);
+  AddMachineConfigurator(&mock_configs);
 
   EXPECT_CALL(*mock_pl_,
-              LaunchWithConfiguration(kArgv, kNamespaces, SizeIs(3),
-                                      EqualsInitializedProto(spec)))
-      .WillOnce(Return(Status(::util::error::INTERNAL, "Launch failed")));
+              NewNsProcess(kArgv, kNamespaces, SizeIs(5),
+                           EqualsInitializedProto(spec),
+                           EqualsInitializedProto(run_spec)))
+      .WillOnce(Return(Status(::util::error::INTERNAL, "NewNsProcess failed")));
   EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Create(spec, {}));
 }
 
@@ -263,16 +306,19 @@ TEST_F(NamespaceControllerCliTest, Create_CustomInit) {
   spec.mutable_pid();
   spec.mutable_mnt();
   spec.mutable_ipc();
+  RunSpec run_spec;
 
   const vector<string> kArgv = { "string", "of", "argvs" };
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, true);
+  AddMachineConfigurator(&mock_configs);
 
   EXPECT_CALL(*mock_pl_,
-              LaunchWithConfiguration(kArgv, kNamespaces, SizeIs(3),
-                                      EqualsInitializedProto(spec)))
+              NewNsProcess(kArgv, kNamespaces, SizeIs(5),
+                           EqualsInitializedProto(spec),
+                           EqualsInitializedProto(run_spec)))
       .WillOnce(Return(kPid_));
   EXPECT_CALL(*mock_nsh_factory_, Get(kPid_)).WillOnce(Return(mock_nshandle_));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
@@ -281,8 +327,77 @@ TEST_F(NamespaceControllerCliTest, Create_CustomInit) {
   EXPECT_EQ(kHandleStr, statusor.ValueOrDie());
 }
 
+TEST_F(NamespaceControllerCliTest, Create_NoMntnsAndFilesysConfig) {
+  // Without MNT namespace, there should be no FilesystemConfigurator.
+  NamespaceSpec spec;
+  spec.mutable_pid();
+  spec.mutable_ipc();
+  RunSpec run_spec;
+
+  const string kInitUid = Substitute("--uid=$0", FLAGS_nsinit_uid);
+  const string kInitGid = Substitute("--gid=$0", FLAGS_nsinit_gid);
+  const vector<string> kArgv = { FLAGS_nsinit_path, kInitUid, kInitGid };
+  const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID };
+  SetSupportedNamespaces(kNamespaces);
+  map<int, MockNsConfigurator *> mock_configs;
+  SetSupportedConfigurators(kNamespaces, &mock_configs, false);
+  AddMachineConfigurator(&mock_configs);
+
+  EXPECT_CALL(*mock_pl_,
+              NewNsProcess(kArgv, kNamespaces, SizeIs(3),
+                           EqualsInitializedProto(spec),
+                           EqualsInitializedProto(run_spec)))
+      .WillOnce(Return(kPid_));
+  EXPECT_CALL(*mock_nsh_factory_, Get(kPid_)).WillOnce(Return(mock_nshandle_));
+  EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
+  StatusOr<const string> statusor = nscon_->Create(spec, {});
+  ASSERT_OK(statusor);
+  EXPECT_EQ(kHandleStr, statusor.ValueOrDie());
+}
+
+TEST_F(NamespaceControllerCliTest, Create_GetFilesystemConfigFailure) {
+  NamespaceSpec spec;
+  spec.mutable_pid();
+  spec.mutable_mnt();
+  spec.mutable_ipc();
+
+  // Failed to get the configurator.
+  EXPECT_CALL(*mock_config_factory_, GetFilesystemConfigurator())
+      .WillOnce(Return(Status(::util::error::INTERNAL,
+                              "config_factory failure")));
+
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Create(spec, {}));
+}
+
+TEST_F(NamespaceControllerCliTest, Create_FilesystemSpecWithoutMntnsSpec) {
+  // Specifying FilesystemSpec without MNTns spec is invalid.
+  NamespaceSpec spec;
+  spec.mutable_pid();
+  spec.mutable_fs();
+
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT, nscon_->Create(spec, {}));
+}
+
+TEST_F(NamespaceControllerCliTest, Create_GetMachineConfigFailure) {
+  NamespaceSpec spec;
+  spec.mutable_pid();
+  spec.mutable_mnt();
+
+  // Failed to get the configurator.
+  const vector<int> kNamespaces = { CLONE_NEWPID, CLONE_NEWNS };
+  SetSupportedNamespaces(kNamespaces);
+  map<int, MockNsConfigurator *> mock_configs;
+  SetSupportedConfigurators(kNamespaces, &mock_configs, true);
+  // Failed to get the configurator.
+  EXPECT_CALL(*mock_config_factory_, GetMachineConfigurator())
+      .WillOnce(Return(Status(::util::error::INTERNAL,
+                              "config_factory failure")));
+
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Create(spec, {}));
+}
 
 TEST_F(NamespaceControllerCliTest, RunShellCommand) {
+  RunSpec run_spec;
   const vector<int> kNamespaces = {CLONE_NEWPID, CLONE_NEWIPC};
   const pid_t kNewPid = 8080;
   const vector<string> kArgv = { "/bin/bash", "-c", "ls -l" };
@@ -292,14 +407,17 @@ TEST_F(NamespaceControllerCliTest, RunShellCommand) {
   EXPECT_CALL(*mock_nshandle_, ToPid()).WillOnce(Return(kPid_));
   EXPECT_CALL(*mock_ns_util_, GetUnsharedNamespaces(kPid_))
       .WillOnce(Return(kNamespaces));
-  EXPECT_CALL(*mock_pl_, Launch(kArgv, kNamespaces, kPid_))
+  EXPECT_CALL(*mock_pl_, NewNsProcessInTarget(kArgv, kNamespaces, kPid_,
+                                              EqualsInitializedProto(run_spec)))
       .WillOnce(Return(kNewPid));
-  StatusOr<pid_t> statusor = nscon_->RunShellCommand(kHandleStr, "ls -l");
+  StatusOr<pid_t> statusor = nscon_->RunShellCommand(kHandleStr, "ls -l",
+                                                     run_spec);
   ASSERT_OK(statusor);
   EXPECT_EQ(kNewPid, statusor.ValueOrDie());
 }
 
 TEST_F(NamespaceControllerCliTest, Run) {
+  RunSpec run_spec;
   const vector<int> kNamespaces = {CLONE_NEWPID, CLONE_NEWIPC};
   const pid_t kNewPid = 8080;
   const vector<string> kArgv = { "/bin/ls", "-l" };
@@ -309,9 +427,10 @@ TEST_F(NamespaceControllerCliTest, Run) {
   EXPECT_CALL(*mock_nshandle_, ToPid()).WillOnce(Return(kPid_));
   EXPECT_CALL(*mock_ns_util_, GetUnsharedNamespaces(kPid_))
       .WillOnce(Return(kNamespaces));
-  EXPECT_CALL(*mock_pl_, Launch(kArgv, kNamespaces, kPid_))
+  EXPECT_CALL(*mock_pl_, NewNsProcessInTarget(kArgv, kNamespaces, kPid_,
+                                              EqualsInitializedProto(run_spec)))
       .WillOnce(Return(kNewPid));
-  StatusOr<pid_t> statusor = nscon_->Run(kHandleStr, kArgv);
+  StatusOr<pid_t> statusor = nscon_->Run(kHandleStr, kArgv, run_spec);
   ASSERT_OK(statusor);
   EXPECT_EQ(kNewPid, statusor.ValueOrDie());
 }
@@ -332,7 +451,7 @@ TEST_F(UpdateTest, Success) {
   const vector<int> kNamespaces = { CLONE_NEWPID, CLONE_NEWNS, CLONE_NEWIPC };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, false);
 
   for (int ns : kNamespaces) {
     MockSavedNamespace *mock_saved_ns =
@@ -396,7 +515,7 @@ TEST_F(UpdateTest, UnsupportedConfigurator) {
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
   // Assume mnt doesn't have a configurator.
-  SetSupportedConfigurators({CLONE_NEWPID, CLONE_NEWIPC}, &mock_configs);
+  SetSupportedConfigurators({CLONE_NEWPID, CLONE_NEWIPC}, &mock_configs, false);
 
   ASSERT_ERROR_CODE(::util::error::NOT_FOUND, nscon_->Update(kHandleStr, spec));
 }
@@ -413,7 +532,7 @@ TEST_F(UpdateTest, SetupOutsideNsFailure) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, false);
 
   for (int ns : kNamespaces) {
     MockSavedNamespace *mock_saved_ns =
@@ -450,7 +569,7 @@ TEST_F(UpdateTest, AttachNamespacesFailure) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, false);
 
   for (int ns : kNamespaces) {
     MockSavedNamespace *mock_saved_ns =
@@ -486,7 +605,7 @@ TEST_F(UpdateTest, SetupInsideNsFailure) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, false);
 
   for (int ns : kNamespaces) {
     MockSavedNamespace *mock_saved_ns =
@@ -523,7 +642,7 @@ TEST_F(UpdateTest, SaveNamespaceFailure) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, false);
 
   // Success for IPC and PIDns, but failure for MNTns.
   for (int ns : { CLONE_NEWIPC, CLONE_NEWPID }) {
@@ -558,7 +677,7 @@ TEST_F(UpdateTest, SavedNamespaceRestoreFailure) {
   const vector<int> kNamespaces = { CLONE_NEWIPC, CLONE_NEWPID, CLONE_NEWNS };
   SetSupportedNamespaces(kNamespaces);
   map<int, MockNsConfigurator *> mock_configs;
-  SetSupportedConfigurators(kNamespaces, &mock_configs);
+  SetSupportedConfigurators(kNamespaces, &mock_configs, false);
 
   // Success for IPC and PIDns, but failure for MNTns.
   for (int ns : kNamespaces) {

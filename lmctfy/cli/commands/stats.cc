@@ -44,7 +44,7 @@ namespace cli {
 // Command to get stats for a container.
 static Status StatsContainer(const vector<string> &argv,
                              const ContainerApi *lmctfy,
-                             vector<OutputMap> *output,
+                             OutputMap *output,
                              Container::StatsType stats_type) {
   // Args: full|summary [<container name>]
   if (argv.size() < 1 || argv.size() > 2) {
@@ -79,20 +79,20 @@ static Status StatsContainer(const vector<string> &argv,
     ::google::protobuf::TextFormat::PrintToString(statusor_stats.ValueOrDie(),
                                         &stats_output);
   }
-  printf("%s", stats_output.c_str());
+  output->AddRaw(stats_output);
 
   return Status::OK;
 }
 
 // Get summary stats.
 Status StatsSummary(const vector<string> &argv, const ContainerApi *lmctfy,
-                    vector<OutputMap> *output) {
+                    OutputMap *output) {
   return StatsContainer(argv, lmctfy, output, Container::STATS_SUMMARY);
 }
 
 // Get full stats.
 Status StatsFull(const vector<string> &argv, const ContainerApi *lmctfy,
-                 vector<OutputMap> *output) {
+                 OutputMap *output) {
   return StatsContainer(argv, lmctfy, output, Container::STATS_FULL);
 }
 

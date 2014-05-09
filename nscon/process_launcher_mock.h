@@ -26,18 +26,20 @@ class MockProcessLauncher : public ProcessLauncher {
  public:
   MockProcessLauncher() : ProcessLauncher(nullptr, nullptr, nullptr) {}
 
-  MOCK_CONST_METHOD3(
-      Launch,
-      ::util::StatusOr<pid_t>(const ::std::vector<string> &argv,
-                              const ::std::vector<int> &namespaces,
-                              pid_t ns_target));
-
-  MOCK_CONST_METHOD4(LaunchWithConfiguration,
+  MOCK_CONST_METHOD4(NewNsProcessInTarget,
                      ::util::StatusOr<pid_t>(
-                        const ::std::vector<string> &argv,
-                        const ::std::vector<int> &namespaces,
-                        const ::std::vector<NsConfigurator *> configurators,
-                        const NamespaceSpec &spec));
+                         const ::std::vector<string> &argv,
+                         const ::std::vector<int> &namespaces,
+                         pid_t ns_target,
+                         const RunSpec &run_spec));
+
+  MOCK_CONST_METHOD5(NewNsProcess,
+                     ::util::StatusOr<pid_t>(
+                         const ::std::vector<string> &argv,
+                         const ::std::vector<int> &namespaces,
+                         const ::std::vector<NsConfigurator *> &configurators,
+                         const NamespaceSpec &spec,
+                         const RunSpec &run_spec));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockProcessLauncher);

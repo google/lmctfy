@@ -29,7 +29,11 @@ class MockNsConfiguratorFactory : public NsConfiguratorFactory {
 
   MockNsConfiguratorFactory() : NsConfiguratorFactory(nullptr /* ns_util */) {}
 
-  MOCK_METHOD1(Get, ::util::StatusOr<NsConfigurator *>(int ns));
+  MOCK_CONST_METHOD1(Get, ::util::StatusOr<NsConfigurator *>(int ns));
+  MOCK_CONST_METHOD0(GetFilesystemConfigurator,
+                     ::util::StatusOr<NsConfigurator *>());
+  MOCK_CONST_METHOD0(GetMachineConfigurator,
+                     ::util::StatusOr<NsConfigurator *>());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockNsConfiguratorFactory);

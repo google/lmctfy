@@ -97,7 +97,7 @@ class LibcFsApiImpl : public LibcFsApi {
 
   virtual int FError(FILE *stream) const;
 
-  virtual ssize_t Read(int file_descriptor, void *buf, size_t nbytes) const;
+  virtual ssize_t Read(int file_descriptor, char *buf, size_t nbytes) const;
 
   virtual ssize_t Write(int file_descriptor, const void *buf,
                         size_t nbytes) const;
@@ -123,6 +123,18 @@ class LibcFsApiImpl : public LibcFsApi {
   virtual int FnMatch(const char *pattern, const char *string, int flags) const;
 
   virtual int Ioctl(int fd, int request, void *argp) const;
+
+  virtual int Pipe(int pipefd[2]) const;
+
+  virtual int Pipe2(int pipefd[2], int flags) const;
+
+  virtual int ChRoot(const char *path) const;
+
+  virtual int PivotRoot(const char *new_root, const char *put_old) const;
+
+  virtual int Dup2(int olfd, int newfd) const;
+
+  virtual int FCntl(int fd, int cmd, int arg1) const;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LibcFsApiImpl);

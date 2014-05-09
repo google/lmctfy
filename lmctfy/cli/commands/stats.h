@@ -19,6 +19,7 @@
 using ::std::string;
 #include <vector>
 
+#include "lmctfy/cli/output_map.h"
 #include "util/task/status.h"
 
 namespace containers {
@@ -33,12 +34,12 @@ class OutputMap;
 // Command to get summary stats for a container.
 ::util::Status StatsSummary(const ::std::vector<string> &argv,
                             const ContainerApi *lmctfy,
-                            ::std::vector<OutputMap> *output);
+                            OutputMap *output);
 
 // Command to get full stats for a container.
 ::util::Status StatsFull(const ::std::vector<string> &argv,
                          const ContainerApi *lmctfy,
-                         ::std::vector<OutputMap> *output);
+                         OutputMap *output);
 
 void RegisterStatsCommand();
 

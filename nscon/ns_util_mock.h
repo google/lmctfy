@@ -66,6 +66,13 @@ class MockNsUtil : public NsUtil {
   MOCK_CONST_METHOD1(CharacterDeviceFileExists,
                      ::util::Status(const string &path));
 
+  MOCK_CONST_METHOD1(AttachToConsoleFd, ::util::Status(const int console_fd));
+
+  MOCK_CONST_METHOD1(OpenSlavePtyDevice,
+                     ::util::StatusOr<int>(const string &slave_pty));
+
+  MOCK_CONST_METHOD0(GetOpenFDs, ::util::StatusOr<::std::vector<int>>());
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MockNsUtil);
 };

@@ -26,6 +26,7 @@ using ::std::string;
 #include "include/lmctfy.pb.h"
 #include "include/namespace_controller.h"
 #include "include/namespaces.pb.h"
+#include "lmctfy/util/console_util.h"
 #include "util/errors.h"
 #include "util/file_lines.h"
 #include "strings/substitute.h"
@@ -33,6 +34,7 @@ using ::std::string;
 #include "util/task/status.h"
 
 using ::file::Dirname;
+using ::containers::ConsoleUtil;
 using ::containers::nscon::NamespaceController;
 using ::containers::nscon::NamespaceControllerFactory;
 using ::util::FileLines;
@@ -57,7 +59,8 @@ StatusOr<NamespaceHandlerFactory *> NamespaceHandlerFactory::New(
   NamespaceControllerFactory *namespace_controller_factory =
       RETURN_IF_ERROR(NamespaceControllerFactory::New());
   return new NsconNamespaceHandlerFactory(tasks_handler_factory,
-                                         namespace_controller_factory);
+                                          namespace_controller_factory,
+                                          new ConsoleUtil());
 }
 
 StatusOr<NamespaceHandler *> NsconNamespaceHandlerFactory::GetNamespaceHandler(
@@ -82,7 +85,8 @@ StatusOr<NamespaceHandler *> NsconNamespaceHandlerFactory::GetNamespaceHandler(
 
 StatusOr<NamespaceHandler *>
 NsconNamespaceHandlerFactory::CreateNamespaceHandler(
-    const string &container_name, const ContainerSpec &spec) {
+    const string &container_name, const ContainerSpec &spec,
+    const MachineSpec &machine_spec) {
   if (!spec.has_virtual_host()) {
     return Status(INVALID_ARGUMENT,
                   Substitute("No virtual host spec for container \"$0\"",
@@ -100,6 +104,8 @@ NsconNamespaceHandlerFactory::CreateNamespaceHandler(
   namespace_spec.mutable_pid();
   namespace_spec.mutable_ipc();
   namespace_spec.mutable_mnt();
+  // Inherit all fds to preserve stdin, stdout and stderr.
+  namespace_spec.mutable_run_spec()->set_inherit_fds(true);
   if (spec.virtual_host().has_network()) {
     namespace_spec.mutable_net()->CopyFrom(spec.virtual_host().network());
   }
@@ -110,8 +116,21 @@ NsconNamespaceHandlerFactory::CreateNamespaceHandler(
     namespace_spec.mutable_run_spec()->mutable_console()->set_slave_pty(
         spec.virtual_host().init().run_spec().console().slave_pty());
   }
+  if (spec.has_filesystem()) {
+    if (spec.filesystem().has_rootfs()) {
+      namespace_spec.mutable_fs()->set_rootfs_path(spec.filesystem().rootfs());
+    }
+    if (spec.filesystem().has_mounts()) {
+      namespace_spec.mutable_fs()->mutable_external_mounts()->CopyFrom(
+          spec.filesystem().mounts());
+    }
+  }
+
   vector<string> init_argv(spec.virtual_host().init().init_argv().begin(),
                            spec.virtual_host().init().init_argv().end());
+
+  namespace_spec.mutable_fs()->mutable_machine()->CopyFrom(machine_spec);
+
   unique_ptr<NamespaceController> namespace_controller(
       RETURN_IF_ERROR(namespace_controller_factory_->Create(namespace_spec,
                                                             init_argv)));
@@ -284,6 +303,11 @@ StatusOr<pid_t> NsconNamespaceHandlerFactory::DetectInit(
   return Status(UNAVAILABLE, "Ran out of tries while detecting init");
 }
 
+Status NsconNamespaceHandlerFactory::InitMachine(const InitSpec &spec) {
+  // Setup devpts namespace support.
+  return console_util_->EnableDevPtsNamespaceSupport();
+}
+
 Status NsconNamespaceHandler::Update(const ContainerSpec &spec,
                                      Container::UpdatePolicy policy) {
   // TODO(jnagal): Namespaces cannot be updated yet.
@@ -310,7 +334,23 @@ StatusOr<pid_t> NsconNamespaceHandler::Run(const vector<string> &command,
   if (command.empty()) {
     return Status(INVALID_ARGUMENT, "Command must not be empty");
   }
-  return namespace_controller_->Run(command);
+
+  // We need to convert lmctfy::RunSpec to nscon::RunSpec.
+  nscon::RunSpec nscon_run_spec;
+  if (spec.has_console() && spec.console().has_slave_pty()) {
+    nscon_run_spec.mutable_console()->set_slave_pty(spec.console().slave_pty());
+  }
+
+  if (spec.has_fd_policy() && (spec.fd_policy() == RunSpec::INHERIT)) {
+    nscon_run_spec.set_inherit_fds(true);
+  }
+
+  if (spec.has_apparmor_profile()) {
+    nscon_run_spec.set_apparmor_profile(spec.apparmor_profile());
+  }
+
+  // TODO(adityakali): Set uid & gid in nscon_run_spec.
+  return namespace_controller_->Run(command, nscon_run_spec);
 }
 
 Status NsconNamespaceHandler::Stats(Container::StatsType type,

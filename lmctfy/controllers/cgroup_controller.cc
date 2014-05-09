@@ -16,9 +16,11 @@
 
 #include "file/base/file.h"
 #include "file/base/path.h"
-#include "file/util/linux_fileops.h"
 #include "lmctfy/kernel_files.h"
+#include "global_utils/fs_utils.h"
 #include "util/errors.h"
+#include "util/scoped_cleanup.h"
+#include "system_api/libc_fs_api.h"
 #include "strings/numbers.h"
 #include "strings/split.h"
 #include "strings/stringpiece.h"
@@ -26,15 +28,22 @@
 #include "util/task/codes.pb.h"
 #include "util/task/status.h"
 
+using ::file::Basename;
 using ::file::JoinPath;
 using ::util::FileLines;
+using ::util::GlobalFsUtils;
+using ::system_api::GlobalLibcFsApi;
 using ::util::UnixGid;
 using ::util::UnixUid;
+using ::util::ScopedCleanup;
 using ::std::unique_ptr;
 using ::std::vector;
 using ::strings::SkipEmpty;
 using ::strings::Split;
 using ::strings::Substitute;
+using ::util::error::FAILED_PRECONDITION;
+using ::util::error::INTERNAL;
+using ::util::error::INVALID_ARGUMENT;
 using ::util::Status;
 using ::util::StatusOr;
 
@@ -42,10 +51,12 @@ namespace containers {
 namespace lmctfy {
 
 CgroupController::CgroupController(CgroupHierarchy type,
+                                   const string &hierarchy_path,
                                    const string &cgroup_path, bool owns_cgroup,
                                    const KernelApi *kernel,
                                    EventFdNotifications *eventfd_notifications)
     : type_(type),
+      hierarchy_path_(hierarchy_path),
       cgroup_path_(cgroup_path),
       owns_cgroup_(owns_cgroup),
       kernel_(CHECK_NOTNULL(kernel)),
@@ -57,10 +68,7 @@ CgroupController::~CgroupController() {
 Status CgroupController::Destroy() {
   // Rmdir the cgroup path if it is owned by this controller.
   if (owns_cgroup_) {
-    if (kernel_->RmDir(cgroup_path_) != 0) {
-      return Status(::util::error::FAILED_PRECONDITION,
-                    Substitute("Failed to rmdir \"$0\"", cgroup_path_));
-    }
+    RETURN_IF_ERROR(DeleteCgroupHierarchy(cgroup_path_));
   }
 
   delete this;
@@ -84,21 +92,17 @@ Status CgroupController::Delegate(UnixUid uid, UnixGid gid) {
 
   // Chown the cgroup itself so that the user/group can create subcontainers.
   if (kernel_->Chown(cgroup_path_, uid.value(), gid.value()) != 0) {
-    return Status(::util::error::INTERNAL,
-                  Substitute(
-                      "Failed to chown cgroup path \"$0\" to UID $1 and GID $2 "
-                      "with error: $3",
-                      cgroup_path_, uid.value(), gid.value(), errno));
+    return Status(FAILED_PRECONDITION, Substitute(
+        "Failed to chown cgroup path \"$0\" to UID $1 and GID $2 "
+        "with error: $3", cgroup_path_, uid.value(), gid.value(), errno));
   }
 
   // Chown the tasks file so that the user/group can enter the container.
   const string kTasksFile = CgroupFilePath(KernelFiles::CGroup::kTasks);
   if (kernel_->Chown(kTasksFile, uid.value(), gid.value()) != 0) {
-    return Status(::util::error::INTERNAL,
-                  Substitute(
-                      "Failed to chown tasks file \"$0\" to UID $1 and GID $2 "
-                      "with error: $3",
-                      kTasksFile, uid.value(), gid.value(), errno));
+    return Status(FAILED_PRECONDITION, Substitute(
+        "Failed to chown tasks file \"$0\" to UID $1 and GID $2 "
+        "with error: $3", kTasksFile, uid.value(), gid.value(), errno));
   }
 
   return Status::OK;
@@ -113,9 +117,13 @@ StatusOr<vector<pid_t>> CgroupController::GetProcesses() const {
 }
 
 StatusOr<vector<string>> CgroupController::GetSubcontainers() const {
-  return GetSubdirectories();
+  vector<string> subdirs;
+  RETURN_IF_ERROR(GetSubdirectories(cgroup_path_, &subdirs));
+  for (string &path : subdirs) {
+    path = Basename(path).ToString();
+  }
+  return subdirs;
 }
-
 Status CgroupController::EnableCloneChildren() {
   // No-op if the underlying cgroup is not owned by this controller.
   if (!owns_cgroup_) {
@@ -232,19 +240,60 @@ StatusOr<FileLines> CgroupController::GetParamLines(
   return FileLines(file_path);
 }
 
-StatusOr<vector<string>> CgroupController::GetSubdirectories() const {
-  // Get the subdirectories.
-  vector<string> subdirs;
-  string error;
-  if (!::file_util::LinuxFileOps::ListDirectorySubdirs(cgroup_path_, &subdirs,
-                                                       false, &error)) {
-    return Status(
-        ::util::error::FAILED_PRECONDITION,
-        Substitute("Failed to get subdirectories of \"$0\" with error \"$1\"",
-                   cgroup_path_, error));
+// Note: GetSubdirectories must insert the subdirectories to the back
+// of the provided vector.
+Status CgroupController::GetSubdirectories(const string &path,
+                                           vector<string> *entries) const {
+  DIR *dir = GlobalLibcFsApi()->OpenDir(path.c_str());
+  if (dir == nullptr) {
+    return Status(FAILED_PRECONDITION, Substitute(
+        "Unable to open directory \"$0\" with error \"$1\"",
+        path, StrError(errno)));
+  }
+  ScopedCleanup cleanup([dir]() {
+    GlobalLibcFsApi()->CloseDir(dir);
+  });
+  struct dirent readdir_buf, *de = nullptr;
+  while (GlobalLibcFsApi()->ReadDirR(dir, &readdir_buf, &de) == 0 &&
+         de != nullptr) {
+    if (strcmp(de->d_name, ".") != 0 && strcmp(de->d_name, "..") != 0) {
+      string full_path = file::JoinPath(path, de->d_name);
+      Status status = GlobalFsUtils()->DirExists(full_path);
+      if (status.ok()) {
+        entries->emplace_back(full_path);
+      } else if (status.error_code() != INVALID_ARGUMENT) {
+        return status;
+      }
+    }
+  }
+  return Status::OK;
+}
+
+Status CgroupController::DeleteCgroupHierarchy(const string &path) const {
+  vector<string> dirs_to_delete;
+  vector<string> dirs_to_check;
+
+  dirs_to_check.push_back(path);
+  while (!dirs_to_check.empty()) {
+    // Get the last element from dirs_to_check
+    const string current_path = dirs_to_check.back();
+    dirs_to_check.pop_back();
+
+    RETURN_IF_ERROR(GetSubdirectories(current_path, &dirs_to_check));
+
+    dirs_to_delete.emplace_back(current_path);
   }
 
-  return subdirs;
+  while (!dirs_to_delete.empty()) {
+    const string current_path = dirs_to_delete.back();
+    if (kernel_->RmDir(current_path) < 0) {
+      return Status(FAILED_PRECONDITION, Substitute(
+          "Unable to delete directory \"$0\" with error \"$1\"",
+          current_path, StrError(errno)));
+    }
+    dirs_to_delete.pop_back();
+  }
+  return Status::OK;
 }
 
 StatusOr<int64> CgroupController::GetChildrenLimit() const {
@@ -308,6 +357,13 @@ Status CgroupController::WriteStringToFile(const string &file_path,
 
 string CgroupController::CgroupFilePath(const string &cgroup_file) const {
   return JoinPath(cgroup_path_, cgroup_file);
+}
+
+Status CgroupController::PopulateMachineSpec(MachineSpec *spec) const {
+  auto *virt_root = spec->mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root->set_root(hierarchy_path_);
+  virt_root->set_hierarchy(type_);
+  return Status::OK;
 }
 
 }  // namespace lmctfy

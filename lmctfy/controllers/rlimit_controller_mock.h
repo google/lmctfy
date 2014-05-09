@@ -45,8 +45,9 @@ class MockRLimitController : public RLimitController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockRLimitController()
-      : RLimitController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-                         reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
+      : RLimitController(
+          "", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+          reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
   }
 
   MOCK_METHOD1(SetFdLimit, ::util::Status(int64 limit));

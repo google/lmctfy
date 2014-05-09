@@ -28,7 +28,7 @@ class MockCgroupController : public CgroupController {
   // unused by the mock.
   MockCgroupController(CgroupHierarchy type, const string &cgroup_path,
                        bool owns_cgroup)
-      : CgroupController(type, cgroup_path, owns_cgroup,
+      : CgroupController(type, "", cgroup_path, owns_cgroup,
                          reinterpret_cast<KernelApi *>(0xFFFFFFFF),
                          reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
   }
@@ -45,6 +45,7 @@ class MockCgroupController : public CgroupController {
   MOCK_CONST_METHOD0(GetChildrenLimit, ::util::StatusOr<int64>());
   MOCK_METHOD0(EnableCloneChildren, ::util::Status());
   MOCK_METHOD0(DisableCloneChildren, ::util::Status());
+  MOCK_CONST_METHOD1(PopulateMachineSpec, ::util::Status(MachineSpec *spec));
 };
 
 typedef ::testing::StrictMock<MockCgroupController> StrictMockCgroupController;

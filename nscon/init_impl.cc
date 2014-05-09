@@ -25,11 +25,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "base/integral_types.h"  // For uint64
 #include "base/logging.h"  // For CHECK macro
-#include "strings/numbers.h"
+#include "strings/numbers.h"  // For SimpleAtoi()
+
+#ifndef PR_SET_NO_NEW_PRIVS
+#define PR_SET_NO_NEW_PRIVS 38
+#endif
 
 struct InitOptions {
   uid_t uid;
@@ -41,7 +46,6 @@ static uint32 ParseIdOrDie(const char *str) {
   int32 val;
   // Accept only if conversion was successful.
   CHECK(SimpleAtoi(str, &val)) << "'" << str << "' is not a valid number";
-  CHECK_GT(val, 0) << "Id must be greater than 0";
   return val;
 }
 
@@ -78,9 +82,15 @@ void ParseInitOptions(int argc, char **argv, InitOptions *opts) {
 }
 
 int InitImpl(int argc, char **argv) {
-  InitOptions opts = { /* uid */ 0, /* gid */ 0 };
+  InitOptions opts = { /* uid */ static_cast<uid_t>(-1),
+                       /* gid */ static_cast<gid_t>(-1) };
 
   ParseInitOptions(argc, argv, &opts);
+
+  // Drop all privileges on setuid.
+  if (prctl(PR_SET_KEEPCAPS, 0, 0, 0, 0) < 0) {
+    err(-1, "prctl(PR_SET_KEEPCAPS)");
+  }
 
   // Ignore error here as we might already be the session leader.
   setsid();
@@ -91,18 +101,30 @@ int InitImpl(int argc, char **argv) {
     err(-1, "signal");
   }
 
-  if (opts.gid > 0) {
-    if (setresgid(opts.gid, opts.gid, opts.gid) < 0) {
-      err(-1, "setresgid");
-    }
-    gid_t groups[] = { opts.gid };
-    if (setgroups(1, groups) < 0) {
-      err(-1, "setgroups");
-    }
+  // Clear supplementary groups if we can.
+  gid_t *groups = NULL;
+  if ((setgroups(0, groups) < 0) && (errno != EPERM)) {
+    err(-1, "setgroups");
   }
 
-  if (opts.uid > 0 && setresuid(opts.uid, opts.uid, opts.uid) < 0) {
+  if ((opts.gid != -1) && (setresgid(opts.gid, opts.gid, opts.gid) < 0)) {
+    err(-1, "setresgid");
+  }
+
+  if ((opts.uid != -1) && (setresuid(opts.uid, opts.uid, opts.uid) < 0)) {
     err(-1, "setresuid");
+  }
+
+  // Disable ability to gain privileges.
+  if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
+    warn("prctl(PR_SET_NO_NEW_PRIVS)");
+  }
+
+  // Block all (possible) signals.
+  sigset_t mask;
+  sigfillset(&mask);
+  if (sigprocmask(SIG_SETMASK, &mask, NULL) < 0) {
+    err(-1, "sigprocmask");
   }
 
   // Close all fds. Note that this could be inaccurate if the caller had changed
@@ -112,12 +134,10 @@ int InitImpl(int argc, char **argv) {
     close(i);
   }
 
-  // Ignore all (possible) signals and go to sleep.
-  {
-    sigset_t mask;
-    sigfillset(&mask);
-    sigprocmask(SIG_SETMASK, &mask, NULL);
-    pause();
+  // Suspend ourself.
+  sigfillset(&mask);
+  while (true) {
+    sigsuspend(&mask);
   }
 
   return 0;

@@ -33,6 +33,7 @@ namespace containers {
 namespace nscon {
 
 class NamespaceSpec;
+class RunSpec;
 
 class NamespaceControllerCli {
  public:
@@ -46,11 +47,13 @@ class NamespaceControllerCli {
           const ::std::vector<string> &init_argv) const;
 
   virtual ::util::StatusOr<pid_t> RunShellCommand(const string &nshandlestr,
-                                                  const string &command) const;
+                                                  const string &command,
+                                                  const RunSpec &runspec) const;
 
   // Runs the given command directly (without the bash -c wrapper).
-  virtual ::util::StatusOr<pid_t> Run(
-      const string &nshandlestr, const ::std::vector<string> &commandv) const;
+  virtual ::util::StatusOr<pid_t> Run(const string &nshandlestr,
+                                      const ::std::vector<string> &commandv,
+                                      const RunSpec &runspec) const;
 
   // Does not return on success. On error, returns the Status containing error
   // information.

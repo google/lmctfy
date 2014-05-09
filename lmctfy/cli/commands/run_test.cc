@@ -49,10 +49,11 @@ namespace {
 
 static const char kContainerName[] = "/test";
 static const char kCmd[] = "echo hi";
+static const char *kArgv[] = {"echo", "hi"};
 
-class RunTest : public ::testing::Test {
+class RunExecTest : public ::testing::Test {
  public:
-  RunTest() : argv_({"run", kContainerName, kCmd}) {
+  RunExecTest() : argv_({"run", kContainerName, kArgv[0], kArgv[1]}) {
     detached_spec_.set_fd_policy(RunSpec::DETACHED);
   }
 
@@ -77,29 +78,29 @@ class RunTest : public ::testing::Test {
   MockContainer *mock_container_;
 };
 
-TEST_F(RunTest, ForegroundSuccess) {
-  vector<OutputMap> output;
+TEST_F(RunExecTest, ForegroundSuccess) {
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
   EXPECT_CALL(*mock_container_,
-              Exec(ElementsAre("/bin/sh", "-c", kCmd)))
+              Exec(ElementsAre(kArgv[0], kArgv[1])))
       .WillRepeatedly(Return(Status::OK));
 
   FLAGS_lmctfy_no_wait = false;
   EXPECT_OK(RunInContainer(argv_, mock_lmctfy_.get(), &output));
-  EXPECT_EQ(0, output.size());
+  EXPECT_EQ(0, output.NumPairs());
 }
 
-TEST_F(RunTest, ForegroundExecFails) {
-  vector<OutputMap> output;
+TEST_F(RunExecTest, ForegroundExecFails) {
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
   EXPECT_CALL(*mock_container_,
-              Exec(ElementsAre("/bin/sh", "-c", kCmd)))
+              Exec(ElementsAre(kArgv[0], kArgv[1])))
       .WillRepeatedly(Return(Status::CANCELLED));
 
   FLAGS_lmctfy_no_wait = false;
@@ -107,8 +108,8 @@ TEST_F(RunTest, ForegroundExecFails) {
             RunInContainer(argv_, mock_lmctfy_.get(), &output));
 }
 
-TEST_F(RunTest, ForegroundGetFails) {
-  vector<OutputMap> output;
+TEST_F(RunExecTest, ForegroundGetFails) {
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
@@ -121,29 +122,29 @@ TEST_F(RunTest, ForegroundGetFails) {
   delete mock_container_;
 }
 
-TEST_F(RunTest, BackgroundSuccess) {
-  vector<OutputMap> output;
+TEST_F(RunExecTest, BackgroundSuccess) {
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
-  EXPECT_CALL(*mock_container_, Run(ElementsAre("/bin/sh", "-c", kCmd),
+  EXPECT_CALL(*mock_container_, Run(ElementsAre(kArgv[0], kArgv[1]),
                                     EqualsInitializedProto(detached_spec_)))
       .WillRepeatedly(Return(42));
 
   FLAGS_lmctfy_no_wait = true;
   EXPECT_TRUE(RunInContainer(argv_, mock_lmctfy_.get(), &output).ok());
-  ASSERT_EQ(1, output.size());
-  EXPECT_EQ("42", output[0].GetValueByKey("pid"));
+  ASSERT_EQ(1, output.NumPairs());
+  EXPECT_TRUE(output.ContainsPair("pid", "42"));
 }
 
-TEST_F(RunTest, BackgroundRunFails) {
-  vector<OutputMap> output;
+TEST_F(RunExecTest, BackgroundRunFails) {
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(mock_container_));
 
-  EXPECT_CALL(*mock_container_, Run(ElementsAre("/bin/sh", "-c", kCmd),
+  EXPECT_CALL(*mock_container_, Run(ElementsAre(kArgv[0], kArgv[1]),
                                     EqualsInitializedProto(detached_spec_)))
       .WillRepeatedly(Return(Status::CANCELLED));
 
@@ -152,8 +153,8 @@ TEST_F(RunTest, BackgroundRunFails) {
             RunInContainer(argv_, mock_lmctfy_.get(), &output));
 }
 
-TEST_F(RunTest, BackgroundGetFails) {
-  vector<OutputMap> output;
+TEST_F(RunExecTest, BackgroundGetFails) {
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
       .WillRepeatedly(Return(Status::CANCELLED));
@@ -164,6 +165,62 @@ TEST_F(RunTest, BackgroundGetFails) {
 
   // The mock container is never returned so delete it.
   delete mock_container_;
+}
+
+class RunBashTest : public ::testing::Test {
+ public:
+  RunBashTest() : argv_({"run", kContainerName, kCmd}) {
+    detached_spec_.set_fd_policy(RunSpec::DETACHED);
+  }
+
+  virtual void SetUp() {
+    mock_lmctfy_.reset(new StrictMockContainerApi());
+    mock_container_ = new StrictMockContainer(kContainerName);
+  }
+
+  // Start a no-op child process we can reap. The child will exit with
+  // exit_code.
+  pid_t StartChild(int exit_code) {
+    SubProcess sp;
+    sp.SetArgv({"/bin/sh", "-c", Substitute("exit $0", exit_code)});
+    sp.Start();
+    return sp.pid();
+  }
+
+ protected:
+  RunSpec detached_spec_;
+  const vector<string> argv_;
+  unique_ptr<MockContainerApi> mock_lmctfy_;
+  MockContainer *mock_container_;
+};
+
+TEST_F(RunBashTest, ForegroundSuccess) {
+  OutputMap output;
+
+  EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
+      .WillRepeatedly(Return(mock_container_));
+
+  EXPECT_CALL(*mock_container_, Exec(ElementsAre("/bin/sh", "-c", kCmd)))
+      .WillRepeatedly(Return(Status::OK));
+
+  FLAGS_lmctfy_no_wait = false;
+  EXPECT_OK(RunInContainer(argv_, mock_lmctfy_.get(), &output));
+  EXPECT_EQ(0, output.NumPairs());
+}
+
+TEST_F(RunBashTest, ForegroundExecFails) {
+  OutputMap output;
+
+  EXPECT_CALL(*mock_lmctfy_, Get(kContainerName))
+      .WillRepeatedly(Return(mock_container_));
+
+  EXPECT_CALL(*mock_container_,
+              Exec(ElementsAre("/bin/sh", "-c", kCmd)))
+      .WillRepeatedly(Return(Status::CANCELLED));
+
+  FLAGS_lmctfy_no_wait = false;
+  EXPECT_EQ(Status::CANCELLED,
+            RunInContainer(argv_, mock_lmctfy_.get(), &output));
 }
 
 }  // namespace

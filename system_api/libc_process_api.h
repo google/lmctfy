@@ -45,6 +45,7 @@ class LibcProcessApi {
   virtual void _Exit(int status) const = 0;
   virtual int Unshare(int flags) const = 0;
   virtual int Setns(int fd, int nstype) const = 0;
+  virtual pid_t SetSid() const = 0;
 
   // If child has been successfuly waited, then Wait and WaitPid return its pid.
   // If |status| pointer wasn't null they also put opaque status information
@@ -57,6 +58,9 @@ class LibcProcessApi {
   virtual uid_t GetUid() const = 0;
   virtual pid_t GetPid() const = 0;
   virtual pid_t GetPGid(pid_t pid) const = 0;
+  virtual int SetResUid(uid_t ruid, uid_t euid, uid_t suid) const = 0;
+  virtual int SetResGid(gid_t rgid, gid_t egid, gid_t sgid) const = 0;
+  virtual int SetGroups(size_t size, const gid_t *list) const = 0;
 
  protected:
   LibcProcessApi() {}

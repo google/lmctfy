@@ -42,13 +42,15 @@ namespace containers {
 namespace lmctfy {
 
 static const char kCgroupPath[] = "/dev/cgroup/freezer/test";
+static const char kHierarchyPath[] = "/test";
 
 class TestableFreezerController : public FreezerController {
  public:
-  TestableFreezerController(const string &cgroup_path, bool owns_cgroup,
+  TestableFreezerController(const string &hierarchy_path,
+                            const string &cgroup_path, bool owns_cgroup,
                             const KernelApi *kernel,
                             EventFdNotifications *eventfd_notifications)
-      : FreezerController(cgroup_path, owns_cgroup, kernel,
+      : FreezerController(hierarchy_path, cgroup_path, owns_cgroup, kernel,
                           eventfd_notifications) {}
 
   virtual ~TestableFreezerController() {}
@@ -76,7 +78,7 @@ class FreezerControllerTest : public ::testing::Test {
     mock_kernel_.reset(new ::testing::StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
     controller_.reset(
-        new TestableFreezerController(kCgroupPath, false,
+        new TestableFreezerController(kHierarchyPath, kCgroupPath, false,
                                       mock_kernel_.get(),
                                       mock_eventfd_notifications_.get()));
   }

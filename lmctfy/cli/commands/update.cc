@@ -42,7 +42,7 @@ namespace cli {
 Status UpdateContainer(Container::UpdatePolicy policy,
                        const vector<string> &argv,
                        const ContainerApi *lmctfy,
-                       vector<OutputMap> *output) {
+                       OutputMap *output) {
   // Args: replace/diff <container name> [<container spec>]
   if (!in_range(argv.size(), 2, 4)) {
     return Status(::util::error::INVALID_ARGUMENT,
@@ -65,13 +65,13 @@ Status UpdateContainer(Container::UpdatePolicy policy,
 
 Status UpdateReplace(const vector<string> &argv,
                      const ContainerApi *lmctfy,
-                     vector<OutputMap> *output) {
+                     OutputMap *output) {
   return UpdateContainer(Container::UPDATE_REPLACE, argv, lmctfy, output);
 }
 
 Status UpdateDiff(const vector<string> &argv,
                   const ContainerApi *lmctfy,
-                  vector<OutputMap> *output) {
+                  OutputMap *output) {
   return UpdateContainer(Container::UPDATE_DIFF, argv, lmctfy, output);
 }
 

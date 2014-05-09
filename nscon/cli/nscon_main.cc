@@ -15,7 +15,7 @@
 #include "nscon/cli/nscon_main.h"
 
 #include "nscon/cli/nscon_runner.h"
-#include "util/task/status.h"
+#include "util/task/statusor.h"
 
 namespace containers {
 namespace nscon {
@@ -24,11 +24,7 @@ namespace cli {
 // Main function of nscon.
 int Main(int argc, char *argv[]) {
   NsconRunner nscon_runner;
-  ::util::Status status = nscon_runner.Run(argc, argv);
-  if (!status.ok()) {
-    fprintf(stderr, "%s\n", status.error_message().c_str());
-  }
-  return status.error_code();
+  return nscon_runner.Run(argc, argv);
 }
 
 }  // namespace cli

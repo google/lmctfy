@@ -9,6 +9,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ import (
 	"syscall"
 )
 
-// containerSpecInput wraps two possible ContainerSpec inputs to gcontain which
+// containerSpecInput wraps two possible ContainerSpec inputs to lmctfy which
 // is either via the command line as a string or through a config file.
 type containerSpec struct {
 	commandLine string
@@ -53,19 +54,35 @@ func destroyContainer(containerName string) {
 
 // createContainer uses lmctfy to create a container with the given name and
 // lmctfy spec. Returns the output of lmctfy process.
-func createContainer(containerName string, Spec containerSpec) (string, error) {
-	var cmd *exec.Cmd
-	if Spec.specFile != "" {
-		cmd = exec.Command(*lmctfyBinPath, "create", containerName, "-c", Spec.specFile)
-	} else {
-		cmd = exec.Command(*lmctfyBinPath, "create", containerName, Spec.commandLine)
+func createContainer(containerName string, spec containerSpec) (string, error) {
+	readPipe, writePipe, err := os.Pipe()
+	if err != nil {
+		return "", err
 	}
+	defer readPipe.Close()
+	// output fd is 3 because writePipe is the first entry in exec.Cmd.ExtraFiles
+	args := []string{*lmctfyBinPath, "create", containerName, "--lmctfy_output_fd=3"}
+
+	if spec.specFile != "" {
+		args = append(args, "-c", spec.specFile)
+	} else {
+		args = append(args, spec.commandLine)
+	}
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = os.Stdin
+	cmd.ExtraFiles = []*os.File{writePipe}
 	if *debug {
 		fmt.Println(strings.Join(cmd.Args, " "))
 	}
-	out, err := cmd.CombinedOutput()
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("container creation failed. error: %s", err)
+	}
+	writePipe.Close()
+	out, err := ioutil.ReadAll(readPipe)
 	if err != nil {
-		return "", fmt.Errorf("container creation failed %s. error: %s", out, err)
+		return "", err
 	}
 	return string(out), nil
 }

@@ -1,0 +1,102 @@
+// Copyright 2014 Google Inc. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto2";
+
+package containers;
+
+// Known and supported cgroup hierarchies.
+enum CgroupHierarchy {
+  CGROUP_UNKNOWN = 0;
+  CGROUP_CPU = 1;
+  CGROUP_CPUACCT = 2;
+  CGROUP_CPUSET = 3;
+  CGROUP_FREEZER = 4;
+  CGROUP_JOB = 6;
+  CGROUP_MEMORY = 7;
+  CGROUP_NET = 8;
+  CGROUP_PERF_EVENT = 9;
+  CGROUP_RLIMIT = 10;
+  CGROUP_DEVICE = 11;
+  CGROUP_BLOCKIO = 12;
+}
+
+// A mount point for a set of cgroup subsystems.
+message CgroupMount {
+  // The full path to where the cgroups should be mounted.
+  optional string mount_path = 1;
+
+  // Type of the cgroup subsystems to be mounted at this point.
+  repeated CgroupHierarchy hierarchy = 2;
+}
+
+// Machine-wide configurations that are not specific to any container.
+message MachineSpec {
+  // The Virtual root of the machine.
+  message VirtualRoot {
+
+    // The virtual root of each cgroup hierarchy. This virtual root
+    // is where the cgroup hierarchy is actually rooted, but is
+    // hidden for the purpose of the Virtual Host.
+    message CgroupVirtualRoot {
+      // The cgroup hierarchy specified in this virtual root.
+      optional CgroupHierarchy hierarchy = 1;
+
+      // The virtual root of the hierarchy.
+      optional string root = 2;
+    }
+    repeated CgroupVirtualRoot cgroup_virtual_root = 1;
+  }
+  optional VirtualRoot virtual_root = 1;
+
+  // The mount locations of the cgroup hierarchies on the machine.
+  repeated CgroupMount cgroup_mount = 2;
+}
+
+// Describes how to setup lmctfy at machine boot.
+message InitSpec {
+  optional CpuInitSpec cpu = 1;
+  optional MemoryInitSpec memory = 2;
+  optional NetworkInitSpec network = 4;
+
+  optional MonitoringInitSpec monitoring = 5;
+  optional FilesystemInitSpec filesystem = 6;
+  optional BlockIoInitSpec blockio = 8;
+
+  // The mount locations of the cgroup hierarchies.
+  repeated CgroupMount cgroup_mount = 7;
+
+  // Next ID: 9
+}
+
+message CpuInitSpec {
+}
+
+message MemoryInitSpec {
+}
+
+message DiskIoInitSpec {
+}
+
+message BlockIoInitSpec {
+}
+
+message NetworkInitSpec {
+}
+
+message MonitoringInitSpec {
+}
+
+message FilesystemInitSpec {
+}

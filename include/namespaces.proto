@@ -21,6 +21,7 @@ syntax = "proto2";
 package containers.nscon;
 
 import "include/virtual_host.proto";
+import "include/config.proto";
 
 // Structure that represents a single entry in uid/gid map file when
 // usernamespace is used. These files describe the mapping from UID/GID used
@@ -61,34 +62,32 @@ message PidNsSpec {
 message IpcNsSpec {
 }
 
-message Unmount {
-  // Must be absolute path.
-  optional string path = 1;
-  // All mountpoints under the directory identified by 'path' (including path
-  // itself) will be unmounted.
-  optional bool do_recursive = 2;
-}
-
-message Mount {
-  // Required.
-  optional string source = 1;
-  // Required. Must be absolute path.
-  optional string target = 2;
-  // Ex: "tmpfs", etc.
-  optional string fstype = 3;
-  // Ex: MS_BIND, MS_RDONLY, etc.
-  optional uint64 flags = 4;
-  // Ex: "size=XXM", etc.
-  optional string options = 5;
-}
-
-// This is a union type. Select exactly one.
-message MountAction {
-  optional Unmount unmount = 1;
-  optional Mount mount = 2;
-}
-
 message MntNsSpec {
+  // This is a union type. Select exactly one.
+  message MountAction {
+    message Unmount {
+      // Must be absolute path.
+      optional string path = 1;
+      // All mountpoints under the directory identified by 'path' (including path
+      // itself) will be unmounted.
+      optional bool do_recursive = 2;
+    }
+    optional Unmount unmount = 1;
+
+    message Mount {
+      // Required.
+      optional string source = 1;
+      // Required. Must be absolute path.
+      optional string target = 2;
+      // Ex: "tmpfs", etc.
+      optional string fstype = 3;
+      // Ex: MS_BIND, MS_RDONLY, etc.
+      optional uint64 flags = 4;
+      // Ex: "size=XXM", etc.
+      optional string options = 5;
+    }
+    optional Mount mount = 2;
+  }
   // Mount/Unmount actions executed in the order they appear here.
   repeated MountAction mount_action = 1;
 }
@@ -102,6 +101,35 @@ message RunSpec {
     optional string slave_pty = 1;
   }
   optional Console console = 1;
+
+  // User ID of the process.
+  optional uint32 uid = 2;
+  // Group ID of the process.
+  optional uint32 gid = 3;
+  // Supplementary groups.
+  repeated uint32 groups = 4;
+  // Let the process inherit open FDs. By default, all FDs are closed.
+  optional bool inherit_fds = 5;
+  // AppArmor profile name.
+  optional string apparmor_profile = 6;
+}
+
+message FilesystemSpec {
+  // Path which will act as root ("/") for all processes. All started processes
+  // will have their root ("/") here. If not specified, the current rootfs is
+  // left unchanged. This must be an absolute path.
+  optional string rootfs_path = 1;
+
+  // Specify whether you want to chroot() (instead of pivot_root()) to the
+  // filesystem at rootfs_path. Default is false.
+  optional bool chroot_to_rootfs = 2;
+
+  // The MachineSpec to write to the Virtual Host.
+  optional MachineSpec machine = 3;
+
+  // A list of file system entities that needs to be made available from the
+  // global namespace inside the new namespace.
+  optional Mounts external_mounts = 4;
 }
 
 message NamespaceSpec {
@@ -114,4 +142,8 @@ message NamespaceSpec {
   optional Network net = 5;
   optional UserNsSpec user = 6;
   optional RunSpec run_spec = 7;
+
+  // This is non-namespace spec which specifies some common configuration
+  // outside of all namespaces. This is applied only at namespace creation time.
+  optional FilesystemSpec fs = 8;
 }

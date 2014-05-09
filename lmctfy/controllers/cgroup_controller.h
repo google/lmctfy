@@ -148,8 +148,8 @@ class CgroupControllerFactory
       return statusor.status();
     }
 
-    return new ControllerType(statusor.ValueOrDie(), owns_cgroup_, kernel_,
-                              eventfd_notifications_);
+    return new ControllerType(hierarchy_path, statusor.ValueOrDie(),
+                              owns_cgroup_, kernel_, eventfd_notifications_);
   }
 
   ::util::StatusOr<ControllerType *> Create(const string &hierarchy_path)
@@ -164,8 +164,8 @@ class CgroupControllerFactory
           cgroup_factory_->Get(hierarchy_type, hierarchy_path));
     }
 
-    return new ControllerType(cgroup_path, owns_cgroup_, kernel_,
-                              eventfd_notifications_);
+    return new ControllerType(hierarchy_path, cgroup_path, owns_cgroup_,
+                              kernel_, eventfd_notifications_);
   }
 
   bool Exists(const string &hierarchy_path) const override {
@@ -299,13 +299,19 @@ class CgroupController {
   virtual ::util::Status EnableCloneChildren();
   virtual ::util::Status DisableCloneChildren();
 
+  virtual ::util::Status PopulateMachineSpec(MachineSpec *spec) const;
+
   bool owns_cgroup() const { return owns_cgroup_; }
 
   CgroupHierarchy type() const { return type_; }
 
+  // Relative path to the container in this cgroup hierarchy.
+  const string &hierarchy_path() const { return hierarchy_path_; }
+
  protected:
   // Arguments:
   //   type: The type of hierarchy this controller affects.
+  //   hierarchy_path: The relative path to the cgroup.
   //   cgroup_path: See the documentation for cgroup_path_ below.
   //   owns_cgroup: Whether this controller owns the underlying cgroup_path and
   //       it can perform creation/destruction on it. If N cgroup hierarchies
@@ -313,7 +319,8 @@ class CgroupController {
   //   kernel: Wrapper for all kernel calls. Does not take ownership.
   //   eventfd_notifications: Set of eventfd-based notifications. Does not take
   //       ownership.
-  CgroupController(CgroupHierarchy type, const string &cgroup_path,
+  CgroupController(CgroupHierarchy type, const string &hierarchy_path,
+                   const string &cgroup_path,
                    bool owns_cgroup, const KernelApi *kernel,
                    EventFdNotifications *eventfd_notifications);
 
@@ -354,12 +361,24 @@ class CgroupController {
   virtual ::util::StatusOr< ::util::FileLines> GetParamLines(
       const string &cgroup_file) const;
 
-  // Gets the subdirectories of this controller.
+  // Gets the subdirectories of this controller. This function adds the
+  // directories to the end of the provided vector.
   //
+  // Arguments:
+  //   path: The path at which to get the subdirectories.
+  //   entries: The vector to add the entries to.
   // Return:
-  //   StatusOr: Status of the operation. Iff OK, a vector of subdirectories is
-  //       provided.
-  virtual ::util::StatusOr< ::std::vector<string>> GetSubdirectories() const;
+  //   Status: Status of the operation.
+  virtual ::util::Status GetSubdirectories(
+      const string &path, ::std::vector<string> *entries) const;
+
+  // Recursively deletes all directories at the given path.
+  //
+  // Arguments:
+  //   path: The path under which to delete all subdirectories.
+  // Return:
+  //   StatusOr: Status of the operation.
+  virtual ::util::Status DeleteCgroupHierarchy(const string &path) const;
 
   // Registers the specified notification for the cgroup_file event given the
   // specified arguments.
@@ -429,6 +448,9 @@ class CgroupController {
   // The cgroup hierarchy type controlled by this controller.
   const CgroupHierarchy type_;
 
+  // Relative path to the container in this cgroup hierarchy.
+  const string hierarchy_path_;
+
   // Absolute path to the cgroup directory of this cgroup controller. Note that
   // this may not always be a concat of the cgroup mount point and the
   // container name since a resource handler may have a different mapping.
@@ -449,7 +471,8 @@ class CgroupController {
   EventFdNotifications *eventfd_notifications_;
 
   friend class CgroupControllerTest;
-  friend class GetSubdirectoriesTest;
+  friend class GetParamLinesTest;
+  friend class CgroupControllerRealTest;
 
   DISALLOW_COPY_AND_ASSIGN(CgroupController);
 };

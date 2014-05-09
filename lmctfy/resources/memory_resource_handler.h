@@ -102,6 +102,9 @@ class MemoryResourceHandler : public CgroupResourceHandler {
   ::util::Status SetDirty(const MemorySpec_Dirty &dirty,
                           Container::UpdatePolicy policy);
 
+  // Gets the dirty memory spec from the kernel and updates 'memory_spec'.
+  ::util::Status GetDirtyMemorySpec(MemorySpec *memory_spec) const;
+
   // The Memory cgroup controller, it is owned by controllers.
   MemoryController *memory_controller_;
 

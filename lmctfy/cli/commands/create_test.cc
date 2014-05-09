@@ -214,17 +214,10 @@ TEST_F(CreateTest, ReturnsInitPid) {
   EXPECT_CALL(*mock_container_, GetInitPid())
       .WillOnce(Return(kInitPid));
 
-  vector<OutputMap> output;
+  OutputMap output;
   EXPECT_TRUE(CreateContainer(args, mock_lmctfy_.get(), &output).ok());
 
-  bool found_init_pid = false;
-  for (const OutputMap &output_map : output) {
-    if (output_map.GetValueByKey("init_pid") == SimpleItoa(kInitPid)) {
-      found_init_pid = true;
-      break;
-    }
-  }
-  EXPECT_TRUE(found_init_pid)
+  EXPECT_TRUE(output.ContainsPair("init_pid", SimpleItoa(kInitPid)))
       << "Expected to find 'Init PID' in the output map of create.";
 }
 

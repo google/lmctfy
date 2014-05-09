@@ -67,11 +67,11 @@ enum class FreezerState {
 class FreezerController : public CgroupController {
  public:
   // Does not take ownership of kernel.
-  FreezerController(const string &cgroup_path, bool owns_cgroup,
-                    const KernelApi *kernel,
+  FreezerController(const string &hierarchy_path, const string &cgroup_path,
+                    bool owns_cgroup, const KernelApi *kernel,
                     EventFdNotifications *eventfd_notifications)
-      : CgroupController(CGROUP_FREEZER, cgroup_path, owns_cgroup, kernel,
-                         eventfd_notifications) {}
+      : CgroupController(CGROUP_FREEZER, hierarchy_path, cgroup_path,
+                         owns_cgroup, kernel, eventfd_notifications) {}
   virtual ~FreezerController() {}
 
   // Freeze this cgroup. This unschedules all tasks and does not allow them to

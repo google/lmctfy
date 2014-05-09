@@ -31,7 +31,7 @@ class OutputMap;
 // Command to pause a container.
 ::util::Status PauseContainer(const ::std::vector<string> &argv,
                               const ContainerApi *lmctfy,
-                              ::std::vector<OutputMap> *output);
+                              OutputMap *output);
 void RegisterPauseCommand();
 
 }  // namespace cli

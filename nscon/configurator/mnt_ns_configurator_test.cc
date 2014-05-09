@@ -44,6 +44,9 @@ namespace nscon {
 
 class MntNsConfiguratorTest : public ::testing::Test {
  protected:
+  typedef MntNsSpec_MountAction_Unmount Unmount;
+  typedef MntNsSpec_MountAction_Mount Mount;
+
   void SetUp() override {
     mock_ns_util_.reset(new ::testing::StrictMock<MockNsUtil>());
     mnt_ns_config_.reset(new MntNsConfigurator(mock_ns_util_.get()));
@@ -57,7 +60,6 @@ class MntNsConfiguratorTest : public ::testing::Test {
     return mnt_ns_config_->DoMountAction(m);
   }
 
- protected:
   ::system_api::MockLibcFsApiOverride mock_libc_fs_api_;
   ::util::MockMountUtilsOverride mount_util_;
   unique_ptr<MockNsUtil> mock_ns_util_;
@@ -190,7 +192,7 @@ TEST_F(MntNsConfiguratorTest, SetupInsideNamespace_NoMntnsActions) {
 TEST_F(MntNsConfiguratorTest, SetupInsideNamespace_SuccessWithMultipleActions) {
   NamespaceSpec spec;
   MntNsSpec *mntns = spec.mutable_mnt();
-  MountAction *mount_action = mntns->add_mount_action();
+  MntNsSpec_MountAction *mount_action = mntns->add_mount_action();
   // Add action for unmounting /sys
   Unmount *um = mount_action->mutable_unmount();
   um->set_path("/sys");

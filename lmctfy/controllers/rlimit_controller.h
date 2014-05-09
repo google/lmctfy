@@ -53,8 +53,8 @@ class RLimitControllerFactory
 class RLimitController : public CgroupController {
  public:
   // Does not take ownership of kernel.
-  RLimitController(const string &cgroup_path, bool owns_cgroup,
-                   const KernelApi *kernel,
+  RLimitController(const string &hierarchy_path, const string &cgroup_path,
+                   bool owns_cgroup, const KernelApi *kernel,
                    EventFdNotifications *eventfd_notifications);
   virtual ~RLimitController() {}
 

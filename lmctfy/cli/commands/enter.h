@@ -33,7 +33,7 @@ class OutputMap;
 // Command to enter a TID into a container.
 ::util::Status EnterContainer(const ::std::vector<string> &argv,
                               const ContainerApi *lmctfy,
-                              ::std::vector<OutputMap> *output);
+                              OutputMap *output);
 void RegisterEnterCommand();
 
 }  // namespace cli

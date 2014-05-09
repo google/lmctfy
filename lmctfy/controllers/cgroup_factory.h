@@ -21,6 +21,7 @@ using ::std::string;
 
 #include "base/macros.h"
 #include "system_api/kernel_api.h"
+#include "include/config.pb.h"
 #include "include/lmctfy.pb.h"
 #include "util/task/statusor.h"
 
@@ -81,10 +82,17 @@ class CgroupFactory {
   virtual ::util::StatusOr<string> DetectCgroupPath(
       pid_t tid, CgroupHierarchy hierarchy) const;
 
+  // Gets a list of the supported hierarchies on the current machine. These are
+  // the hierarchies that are enabled on the system.
+  virtual ::std::vector<CgroupHierarchy> GetSupportedHierarchies() const;
+
   // Gets the name of the specified hierarchy. An empty string is returned if
   // there is no such hierarchy. If IsMounted() returns true, a non-empty string
   // is guaranteed to be returned from this function.
   virtual string GetHierarchyName(CgroupHierarchy hierarchy) const;
+
+  //  Populates the machine spec with information about the current mounts.
+  virtual ::util::Status PopulateMachineSpec(MachineSpec *spec) const;
 
  protected:
   // Arguments:

@@ -54,6 +54,8 @@ static const int32 kMinEvictionPriority = 0;
 static const int32 kMaxEvictionPriority = 10000;
 static const int32 kDefaultDirtyRatio = 75;
 static const int32 kDefaultDirtyBackgroundRatio = 10;
+static const Bytes kDefaultDirtyLimit = Bytes(0);
+static const Bytes kDefaultDirtyBackgroundLimit = Bytes(0);
 
 StatusOr<MemoryResourceHandlerFactory *> MemoryResourceHandlerFactory::New(
     CgroupFactory *cgroup_factory, const KernelApi *kernel,
@@ -131,58 +133,58 @@ Status MemoryResourceHandler::CreateOnlySetup(const ContainerSpec &spec) {
 
 Status MemoryResourceHandler::SetDirty(const MemorySpec_Dirty &dirty,
                                        Container::UpdatePolicy policy) {
-  // If we're told that a limit or ratio is being set to -1, that's clearing
-  // and the other type may be used.  Rely on the kernel invalidating the type
-  // that's not being used.
-  const bool has_setable_ratio = (dirty.has_ratio() && dirty.ratio() != -1);
-  const bool has_setable_bg_ratio =
-      (dirty.has_background_ratio() && dirty.background_ratio() != -1);
-  const bool has_setable_limit = (dirty.has_limit() && dirty.limit() != -1);
-  const bool has_setable_bg_limit =
-      (dirty.has_background_limit() && dirty.background_limit() != -1);
+  const bool setting_ratio = dirty.has_ratio() || dirty.has_background_ratio();
+  const bool setting_limit = dirty.has_limit() || dirty.has_background_limit();
 
   // First do error checking and make sure only one type is used.
-  if (has_setable_ratio || has_setable_bg_ratio) {
-    if (has_setable_limit || has_setable_bg_limit) {
-      return Status(
-          ::util::error::INVALID_ARGUMENT,
-          "Cannot set both dirty ratio and limit");
-    }
-  }
-
-  // Expect to have both ratios or both limits
-  if (has_setable_ratio != has_setable_bg_ratio) {
+  if (setting_ratio && setting_limit) {
     return Status(
         ::util::error::INVALID_ARGUMENT,
-        "Need both dirty ratio and dirty background ratio");
-  }
-  if (has_setable_limit != has_setable_bg_limit) {
-    return Status(
-        ::util::error::INVALID_ARGUMENT,
-        "Need both dirty limit and dirty background limit");
+        "Cannot set both dirty ratio and limit");
   }
 
-  if (has_setable_ratio) {
+  // Don't require both ratio/bg_ratio or limit/bg_limit together, as it's
+  // possible for just one of the two to be changing.  e.g., if we have 0 bg
+  // ratio but are changing the ratio, the SetDirty update will only include
+  // the ratio value and not the bg value.
+  if (dirty.has_ratio()) {
     RETURN_IF_ERROR(memory_controller_->SetDirtyRatio(dirty.ratio()));
+  }
+  if (dirty.has_background_ratio()) {
     RETURN_IF_ERROR(memory_controller_->SetDirtyBackgroundRatio(
         dirty.background_ratio()));
   }
-  if (has_setable_limit) {
+  if (dirty.has_limit()) {
     RETURN_IF_ERROR(memory_controller_->SetDirtyLimit(Bytes(dirty.limit())));
+  }
+  if (dirty.has_background_limit()) {
     RETURN_IF_ERROR(memory_controller_->SetDirtyBackgroundLimit(
         Bytes(dirty.background_limit())));
   }
 
   // Set any that need to be set which aren't included
   if (policy == Container::UPDATE_REPLACE) {
-    // If there is no limit set, we must be setting ratios
-    if (!has_setable_limit && !has_setable_bg_limit) {
-      if (!has_setable_ratio) {
+    // If we're not setting limits, we should be setting ratio (if neither is
+    // requested, default to ratio).
+    if (!setting_limit) {
+      if (!dirty.has_ratio()) {
         RETURN_IF_ERROR(IgnoreNotFound(
             memory_controller_->SetDirtyRatio(kDefaultDirtyRatio)));
+      }
+      if (!dirty.has_background_ratio()) {
         RETURN_IF_ERROR(
             IgnoreNotFound(memory_controller_->SetDirtyBackgroundRatio(
                 kDefaultDirtyBackgroundRatio)));
+      }
+    } else {
+      if (!dirty.has_limit()) {
+        RETURN_IF_ERROR(IgnoreNotFound(
+            memory_controller_->SetDirtyLimit(kDefaultDirtyLimit)));
+      }
+      if (!dirty.has_background_limit()) {
+        RETURN_IF_ERROR(
+            IgnoreNotFound(memory_controller_->SetDirtyBackgroundLimit(
+                kDefaultDirtyBackgroundLimit)));
       }
     }
   }
@@ -295,21 +297,67 @@ Status MemoryResourceHandler::Update(const ContainerSpec &spec,
 Status MemoryResourceHandler::Stats(Container::StatsType type,
                                     ContainerStats *output) const {
   MemoryStats *stats = output->mutable_memory();
+  Status any_failure = Status::OK;
 
   // TODO(jonathanw): limit and reservation are spec, not stats; remove them
   // from Stats since they're returned in Spec.
-  SET_IF_PRESENT_VAL(memory_controller_->GetWorkingSet(),
-                     stats->set_working_set);
-  SET_IF_PRESENT_VAL(memory_controller_->GetUsage(), stats->set_usage);
-  SET_IF_PRESENT_VAL(memory_controller_->GetMaxUsage(), stats->set_max_usage);
-  SET_IF_PRESENT_VAL(memory_controller_->GetLimit(), stats->set_limit);
-  SET_IF_PRESENT_VAL(memory_controller_->GetEffectiveLimit(),
-                     stats->set_effective_limit);
-  SET_IF_PRESENT_VAL(memory_controller_->GetSoftLimit(),
-                     stats->set_reservation);
+  SET_IF_PRESENT_VAL_SAVE_FAILURE(
+      memory_controller_->GetWorkingSet(), stats->set_working_set, any_failure);
+  SET_IF_PRESENT_VAL_SAVE_FAILURE(
+      memory_controller_->GetUsage(), stats->set_usage, any_failure);
+  SET_IF_PRESENT_VAL_SAVE_FAILURE(
+      memory_controller_->GetMaxUsage(), stats->set_max_usage, any_failure);
+  SET_IF_PRESENT_VAL_SAVE_FAILURE(
+      memory_controller_->GetLimit(), stats->set_limit, any_failure);
+  SET_IF_PRESENT_VAL_SAVE_FAILURE(
+      memory_controller_->GetEffectiveLimit(),
+      stats->set_effective_limit, any_failure);
+  SET_IF_PRESENT_VAL_SAVE_FAILURE(
+      memory_controller_->GetSoftLimit(), stats->set_reservation, any_failure);
+  SET_IF_PRESENT_SAVE_FAILURE(
+      memory_controller_->GetFailCount(), stats->set_fail_count, any_failure);
 
-  RETURN_IF_ERROR(memory_controller_->GetMemoryStats(stats));
+  SAVE_IF_ERROR(memory_controller_->GetMemoryStats(stats), any_failure);
+  SAVE_IF_ERROR(memory_controller_->GetNumaStats(stats->mutable_numa()),
+                any_failure);
+  SAVE_IF_ERROR(IgnoreNotFound(
+      memory_controller_->GetIdlePageStats(stats->mutable_idle_page())),
+      any_failure);
+  SAVE_IF_ERROR(memory_controller_->GetCompressionSamplingStats(
+                    stats->mutable_compression_sampling()),
+                any_failure);
 
+  return any_failure;
+}
+
+// Ratio gets preference over limits.
+// As per our current memcg interface, we expect both limit and ratio to be
+// exported and be greater than or equal to zero.
+// TODO(kyurtsever, vishnuk): Error out if either limit or ratio is not set or
+// is lesser than 0.
+Status MemoryResourceHandler::GetDirtyMemorySpec(
+    MemorySpec *memory_spec) const {
+  auto dirty_spec = memory_spec->mutable_dirty();
+  SET_IF_PRESENT(memory_controller_->GetDirtyRatio(),
+                 dirty_spec->set_ratio);
+  SET_IF_PRESENT_VAL(memory_controller_->GetDirtyLimit(),
+                     dirty_spec->set_limit);
+  if (dirty_spec->limit() > 0) {
+    dirty_spec->clear_ratio();
+  } else {
+    dirty_spec->clear_limit();
+  }
+
+  SET_IF_PRESENT(memory_controller_->GetDirtyBackgroundRatio(),
+                 dirty_spec->set_background_ratio);
+  SET_IF_PRESENT_VAL(memory_controller_->GetDirtyBackgroundLimit(),
+                     dirty_spec->set_background_limit);
+
+  if (dirty_spec->background_limit() > 0) {
+    dirty_spec->clear_background_ratio();
+  } else {
+    dirty_spec->clear_background_limit();
+  }
   return Status::OK;
 }
 
@@ -326,17 +374,9 @@ Status MemoryResourceHandler::Spec(ContainerSpec *spec) const {
                  memory_spec->set_compression_sampling_ratio);
   SET_IF_PRESENT(memory_controller_->GetStalePageAge(),
                  memory_spec->set_stale_page_age);
-  SET_IF_PRESENT(memory_controller_->GetDirtyRatio(),
-                 memory_spec->mutable_dirty()->set_ratio);
-  SET_IF_PRESENT(memory_controller_->GetDirtyBackgroundRatio(),
-                 memory_spec->mutable_dirty()->set_background_ratio);
-  SET_IF_PRESENT_VAL(memory_controller_->GetDirtyLimit(),
-                     memory_spec->mutable_dirty()->set_limit);
-  SET_IF_PRESENT_VAL(memory_controller_->GetDirtyBackgroundLimit(),
-                     memory_spec->mutable_dirty()->set_background_limit);
   SET_IF_PRESENT(memory_controller_->GetKMemChargeUsage(),
                  memory_spec->set_kmem_charge_usage);
-
+  RETURN_IF_ERROR(GetDirtyMemorySpec(memory_spec));
   return Status::OK;
 }
 

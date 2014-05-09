@@ -67,6 +67,7 @@ class CgroupTasksHandler : public TasksHandler {
   ::util::Status TrackTasks(const ::std::vector<pid_t> &tids) override;
   ::util::Status Delegate(::util::UnixUid uid,
                           ::util::UnixGid gid) override;
+  ::util::Status PopulateMachineSpec(MachineSpec *spec) const override;
   ::util::StatusOr<::std::vector<string>> ListSubcontainers(
       TasksHandler::ListType type) const override;
   ::util::StatusOr<::std::vector<pid_t>> ListProcesses(

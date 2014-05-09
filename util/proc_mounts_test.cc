@@ -49,12 +49,13 @@ class ProcMountsTest : public ::testing::Test {
     mock_file_lines_.ExpectFileLines(
         mounts_file, {"rootfs / rootfs rw 0 0",
                       "sysfs_fs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0",
-                      "proc /proc proc rw,nosuid 2 3"});
+                      "proc /proc proc rw,nosuid 2 3",
+                      "none /non/existant\\040(deleted) none abc 0 0"});
   }
 
   // Check the mounts created by ExpectDefaultMounts exist.
   void CheckDefaultMounts(const vector<ProcMountsData> &mounts) {
-    ASSERT_EQ(3, mounts.size());
+    ASSERT_EQ(4, mounts.size());
 
     EXPECT_EQ("rootfs", mounts[0].device);
     EXPECT_EQ("/", mounts[0].mountpoint);
@@ -84,6 +85,14 @@ class ProcMountsTest : public ::testing::Test {
     EXPECT_THAT(mounts[2].options, Contains("nosuid"));
     EXPECT_EQ(2, mounts[2].fs_freq);
     EXPECT_EQ(3, mounts[2].fs_passno);
+
+    EXPECT_EQ("none", mounts[3].device);
+    EXPECT_EQ("/non/existant", mounts[3].mountpoint);
+    EXPECT_EQ("none", mounts[3].type);
+    ASSERT_EQ(1, mounts[3].options.size());
+    EXPECT_THAT(mounts[3].options, Contains("abc"));
+    EXPECT_EQ(0, mounts[3].fs_freq);
+    EXPECT_EQ(0, mounts[3].fs_passno);
   }
 
  protected:

@@ -29,6 +29,7 @@ namespace containers {
 namespace nscon {
 
 class NamespaceSpec;
+class RunSpec;
 
 typedef ResultCallback<SubProcess *> SubProcessFactory;
 
@@ -69,7 +70,8 @@ class NamespaceControllerImpl : public NamespaceController {
   // See include/namespace_controller.h for documentation
   // of these methods.
   virtual ::util::StatusOr<pid_t> Run(
-      const ::std::vector<string> &command) const;
+      const ::std::vector<string> &command,
+      const RunSpec &run_spec) const;
   virtual ::util::Status Exec(const ::std::vector<string> &command) const;
   virtual ::util::Status Update(const NamespaceSpec &spec);
   virtual ::util::Status Destroy();

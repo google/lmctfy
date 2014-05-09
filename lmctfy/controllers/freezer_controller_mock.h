@@ -47,13 +47,14 @@ class MockFreezerController : public FreezerController {
   // The mock won't use the additional parameters so it is okay to fake them.
   MockFreezerController()
       : FreezerController(
-            "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            "", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_METHOD0(Destroy, ::util::Status());
   MOCK_METHOD1(Enter, ::util::Status(pid_t tid));
   MOCK_METHOD2(Delegate, ::util::Status(::util::UnixUid uid,
                                         ::util::UnixGid gid));
+  MOCK_CONST_METHOD1(PopulateMachineSpec, ::util::Status(MachineSpec *spec));
   MOCK_CONST_METHOD0(GetThreads, ::util::StatusOr< ::std::vector<pid_t>>());
   MOCK_CONST_METHOD0(GetProcesses, ::util::StatusOr< ::std::vector<pid_t>>());
   MOCK_CONST_METHOD0(GetSubcontainers,

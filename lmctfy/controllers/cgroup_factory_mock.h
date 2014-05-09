@@ -47,6 +47,8 @@ class MockCgroupFactory : public CgroupFactory {
                      ::util::StatusOr<string>(pid_t tid,
                                               CgroupHierarchy hierarchy));
   MOCK_CONST_METHOD1(GetHierarchyName, string(CgroupHierarchy hierarchy));
+  MOCK_CONST_METHOD0(GetSupportedHierarchies, ::std::vector<CgroupHierarchy>());
+  MOCK_CONST_METHOD1(PopulateMachineSpec, ::util::Status(MachineSpec *spec));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockCgroupFactory);

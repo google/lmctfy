@@ -68,7 +68,7 @@ class MockLibcFsApi : public LibcFsApi {
   MOCK_CONST_METHOD3(FGetS, char *(char *buf, int n, FILE *));
   MOCK_CONST_METHOD1(FError, int(FILE *stream));
   MOCK_CONST_METHOD3(Read,
-                     ssize_t(int file_descriptor, void *buf, size_t nbytes));
+                     ssize_t(int file_descriptor, char *buf, size_t nbytes));
   MOCK_CONST_METHOD3(Write, ssize_t(int file_descriptor, const void *buf,
                                     size_t nbytes));
   MOCK_CONST_METHOD1(FSync, int(int file_descriptor));
@@ -84,6 +84,12 @@ class MockLibcFsApi : public LibcFsApi {
   MOCK_CONST_METHOD3(FnMatch,
                      int(const char *pattern, const char *string, int flags));
   MOCK_CONST_METHOD3(Ioctl, int(int fd, int request, void *argp));
+  MOCK_CONST_METHOD1(Pipe, int(int pipefd[2]));
+  MOCK_CONST_METHOD2(Pipe2, int(int pipefd[2], int flags));
+  MOCK_CONST_METHOD1(ChRoot, int(const char *path));
+  MOCK_CONST_METHOD2(PivotRoot, int(const char *new_root, const char *put_old));
+  MOCK_CONST_METHOD2(Dup2, int(int oldfd, int newfd));
+  MOCK_CONST_METHOD3(FCntl, int(int fd, int cmd, int arg1));
 };
 
 extern const LibcFsApi *GlobalLibcFsApi();

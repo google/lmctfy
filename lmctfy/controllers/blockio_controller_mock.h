@@ -46,14 +46,15 @@ class MockBlockIoController : public BlockIoController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockBlockIoController()
-      : BlockIoController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-                      reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
+      : BlockIoController(
+          "", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+          reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
-  MOCK_METHOD1(UpdateLimit, ::util::Status(uint32 limit));
-  MOCK_CONST_METHOD0(GetLimit, ::util::Status<uint32>());
+  MOCK_METHOD1(UpdateDefaultLimit, ::util::Status(uint32 limit));
+  MOCK_CONST_METHOD0(GetDefaultLimit, ::util::Status<uint32>());
   MOCK_METHOD1(UpdatePerDeviceLimit, ::util::Status(
       const BlockIoSpec::DeviceLimitSet &device_limits));
-  MOCK_CONST_METHOD0(GetPerDeviceLimit,
+  MOCK_CONST_METHOD0(GetDeviceLimits,
                      ::util::StatusOr<BlockIoSpec::DeviceLimitSet>());
   MOCK_METHOD1(UpdateMaxLimit, ::util::Status(
       const BlockIoSpec::MaxLimitSet &max_limits));

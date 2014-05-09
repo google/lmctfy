@@ -54,6 +54,21 @@ class NetNsConfigurator : public NsConfigurator {
   // Returns OK iff the net_spec is correctly formed.
   ::util::Status SanityCheckNetSpec(const Network &net_spec) const;
 
+  // Returns a command to connect the |outside| end of veth pair to the
+  // specified |bridge|
+  ::std::vector<string> GetBridgeAddInterfaceCommand(
+      const string &outside, const Network_Bridge& bridge) const;
+
+  // Returns a command to connect the |outside| end of veth pair to the
+  // specified ethernet |bridge|.
+  ::std::vector<string> GetEthBridgeAddInterfaceCommand(
+      const string &outside, const string &bridge) const;
+
+  // Returns a command to connect the |outside| end of veth pair to the
+  // specified OpenVSwitch (OVS) |bridge|.
+  ::std::vector<string> GetOvsBridgeAddInterfaceCommand(
+      const string &outside, const string &bridge) const;
+
   // Returns a command that creates a veth pair, whose endpoints are names
   // |outside| and |inside|.  |outside| resides in the default namespace,
   // whereas |inside| is assigned to the network namespace.
@@ -71,6 +86,9 @@ class NetNsConfigurator : public NsConfigurator {
   ::std::vector<string> GetActivateInterfaceCommand(
       const string &interface) const;
 
+  // Returns a command to set |mtu| for a |interface|.
+  ::std::vector<string> GetSetMtuCommand(const string &interface,
+                                         int32 mtu) const;
   // Returns a command that brings up network |interface| inside the namespace,
   // assigns a virtual IP along with netmask (if specified) to it, and
   // adds a default route via gateway.  Both netmask and gateway are optional,

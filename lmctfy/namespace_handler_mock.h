@@ -30,10 +30,11 @@ class MockNamespaceHandlerFactory : public NamespaceHandlerFactory {
   MOCK_CONST_METHOD1(
       GetNamespaceHandler,
       ::util::StatusOr<NamespaceHandler *>(const string &container_name));
-  MOCK_METHOD2(
+  MOCK_METHOD3(
       CreateNamespaceHandler,
       ::util::StatusOr<NamespaceHandler *>(const string &container_name,
-                                           const ContainerSpec &spec));
+                                           const ContainerSpec &spec,
+                                           const MachineSpec &machine_spec));
   MOCK_METHOD1(InitMachine, ::util::Status(const InitSpec &spec));
 };
 

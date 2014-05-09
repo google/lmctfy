@@ -40,13 +40,14 @@ namespace containers {
 namespace lmctfy {
 
 static const char kMountPoint[] = "/dev/cgroup/rlimit/test";
+static const char kHierarchyPath[] = "/test";
 
 class RLimitControllerTest : public ::testing::Test {
  public:
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock< ::system_api::KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
-    controller_.reset(new RLimitController(kMountPoint, true,
+    controller_.reset(new RLimitController(kHierarchyPath, kMountPoint, true,
                                            mock_kernel_.get(),
                                            mock_eventfd_notifications_.get()));
   }

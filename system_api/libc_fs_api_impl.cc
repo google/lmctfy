@@ -23,6 +23,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 namespace system_api {
@@ -144,9 +145,9 @@ char *LibcFsApiImpl::FGetS(char *buf, int n, FILE *stream) const {
 
 int LibcFsApiImpl::FError(FILE *stream) const { return ::ferror(stream); }
 
-ssize_t LibcFsApiImpl::Read(int file_descriptor, void *buf,
+ssize_t LibcFsApiImpl::Read(int file_descriptor, char *buf,
                             size_t nbytes) const {
-  return read(file_descriptor, buf, nbytes);
+  return ::read(file_descriptor, reinterpret_cast<void *>(buf), nbytes);
 }
 
 ssize_t LibcFsApiImpl::Write(int file_descriptor, const void *buf,
@@ -200,4 +201,27 @@ int LibcFsApiImpl::Ioctl(const int fd, const int request,
   return ioctl(fd, request, argp);
 }
 
+int LibcFsApiImpl::Pipe(int pipefd[2]) const {
+  return ::pipe(pipefd);
+}
+
+int LibcFsApiImpl::Pipe2(int pipefd[2], int flags) const {
+  return pipe2(pipefd, flags);
+}
+
+int LibcFsApiImpl::ChRoot(const char *path) const {
+  return chroot(path);
+}
+
+int LibcFsApiImpl::PivotRoot(const char *new_root, const char *put_old) const {
+  return syscall(SYS_pivot_root, new_root, put_old);
+}
+
+int LibcFsApiImpl::Dup2(int oldfd, int newfd) const {
+  return ::dup2(oldfd, newfd);
+}
+
+int LibcFsApiImpl::FCntl(int fd, int cmd, int arg1) const {
+  return ::fcntl(fd, cmd, arg1);
+}
 }  // namespace system_api

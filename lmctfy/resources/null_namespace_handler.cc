@@ -50,6 +50,10 @@ NullNamespaceHandlerFactory::NullNamespaceHandlerFactory(
 
 StatusOr<NamespaceHandler *> NullNamespaceHandlerFactory::GetNamespaceHandler(
     const string &container_name) const {
+  if (container_name != "/") {
+    return Status(::util::error::NOT_FOUND,
+                  "Virtual host is not isolated for " + container_name);
+  }
   return new NullNamespaceHandler(container_name,
                                   kernel_,
                                   subprocess_factory_.get());
@@ -57,7 +61,8 @@ StatusOr<NamespaceHandler *> NullNamespaceHandlerFactory::GetNamespaceHandler(
 
 StatusOr<NamespaceHandler *>
 NullNamespaceHandlerFactory::CreateNamespaceHandler(
-    const string &container_name, const ContainerSpec &spec) {
+    const string &container_name, const ContainerSpec &spec,
+    const MachineSpec &machine_spec) {
   return Status(
       ::util::error::UNIMPLEMENTED,
       "Namespace creation with NullNamespaceHandler is not supported.");

@@ -32,6 +32,8 @@ using ::util::gtl::LazyStaticPtr;
 // All keys must match this regex.
 static const char kKeyStartCharRegex[] = "A-Za-z0-9";
 static const char kKeyCharRegex[] = "-A-Za-z0-9_.";
+// kRawKey can't be set by user and signifies that the value is raw.
+static const char kRawKey[] = ".raw";
 
 namespace containers {
 namespace lmctfy {
@@ -75,12 +77,6 @@ OutputMap &OutputMap::Add(const string &key, const string &value) {
                         MakeRegexSet(kKeyCharRegex) + "*"))
       << "invalid key name: " << sanitized_key;
 
-  // Ignore existing keys.
-  if (GetValueByKey(sanitized_key) != "") {
-    DCHECK(false) << "key already exists: " << sanitized_key;
-    return *this;
-  }
-
   pairs_.push_back(make_pair(sanitized_key, value));
   return *this;
 }
@@ -90,30 +86,31 @@ OutputMap &OutputMap::AddBool(const string &key, bool value) {
   return Add(key, value ? "yes" : "no");
 }
 
-// Get the value for a key.
-const string &OutputMap::GetValueByKey(const string &key) const {
-  CHECK_NE(key, "");
-  for (size_t i = 0; i < pairs_.size(); i++) {
-    if (pairs_[i].first == key) {
-      return pairs_[i].second;
+OutputMap &OutputMap::AddRaw(const string &value) {
+  pairs_.push_back(make_pair(kRawKey, value));
+  return *this;
+}
+
+bool OutputMap::ContainsPair(const string &key, const string &value) const {
+  for (const auto &pair : pairs_) {
+    if (pair.first == key && pair.second == value) {
+      return true;
     }
   }
-  // Don't return reference-to-temporary!
-  static LazyStaticPtr<string> empty_string;
-  return *empty_string;
+  return false;
 }
 
 // Print all the pairs in this set.
 void OutputMap::Print(FILE *out, Style style) const {
   switch (style) {
     case STYLE_PAIRS:
-      PrintPairs(out);
+      PrintAll(out, PrintPair);
       break;
     case STYLE_VALUES:
-      PrintValues(out);
+      PrintAll(out, PrintValue);
       break;
     case STYLE_LONG:
-      PrintLong(out);
+      PrintAll(out, PrintLong);
       break;
     default:
       LOG(ERROR) << "unknown OutputMap style: " << style;
@@ -121,34 +118,30 @@ void OutputMap::Print(FILE *out, Style style) const {
   }
 }
 
-void OutputMap::PrintPairs(FILE *out) const {
-  for (size_t i = 0; i < pairs_.size(); i++) {
-    if (i > 0) {
-      fprintf(out, " ");
+void OutputMap::PrintAll(
+    FILE *out,
+    ::std::function<void(FILE *, PairVector::const_reference)> printer) const {
+  for (const auto &pair : pairs_) {
+    if (pair.first == kRawKey) {
+      // Raw values are not affected by styles.
+      fputs(pair.second.c_str(), out);
+    } else {
+      printer(out, pair);
     }
-    fprintf(out, "%s=\"%s\"",
-            pairs_[i].first.c_str(),
-            strings::CEscape(pairs_[i].second).c_str());
   }
-  fprintf(out, "\n");
 }
 
-void OutputMap::PrintValues(FILE *out) const {
-  for (size_t i = 0; i < pairs_.size(); i++) {
-    if (i > 0) {
-      fprintf(out, " | ");
-    }
-    fprintf(out, "%s", pairs_[i].second.c_str());
-  }
-  fprintf(out, "\n");
+void OutputMap::PrintPair(FILE *out, PairVector::const_reference pair) {
+  fprintf(out, "%s=\"%s\"\n", pair.first.c_str(),
+          strings::CEscape(pair.second).c_str());
 }
 
-void OutputMap::PrintLong(FILE *out) const {
-  for (size_t i = 0; i < pairs_.size(); i++) {
-    fprintf(out, "%-20s | %s\n",
-            pairs_[i].first.c_str(), pairs_[i].second.c_str());
-  }
-  fprintf(out, "\n");
+void OutputMap::PrintValue(FILE *out, PairVector::const_reference pair) {
+  fprintf(out, "%s\n", pair.second.c_str());
+}
+
+void OutputMap::PrintLong(FILE *out, PairVector::const_reference pair) {
+  fprintf(out, "%-20s | %s\n\n", pair.first.c_str(), pair.second.c_str());
 }
 
 }  // namespace cli

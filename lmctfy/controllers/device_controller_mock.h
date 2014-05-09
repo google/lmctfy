@@ -45,8 +45,9 @@ class MockDeviceController : public DeviceController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockDeviceController()
-      : DeviceController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-                      reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
+      : DeviceController(
+          "", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+          reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_METHOD1(SetRestrictions, ::util::Status(
       const DeviceSpec::DeviceRestrictionsSet &restrictions));

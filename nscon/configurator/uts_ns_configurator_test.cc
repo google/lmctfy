@@ -68,7 +68,7 @@ TEST_F(UtsNsConfiguratorTest, SetupInsideNamespace_WithHostname_AFailure) {
   NamespaceSpec spec;
   spec.mutable_uts()->set_vhostname(kHostname);
   EXPECT_CALL(mock_libc_net_api_.Mock(),
-              SetHostname(StrEq(kHostname.c_str()), kHostname.size()))
+              SetHostname(StrEq(kHostname), kHostname.size()))
       .WillOnce(Return(-1));
   EXPECT_ERROR_CODE(::util::error::INTERNAL,
                     uts_ns_config_->SetupInsideNamespace(spec));
@@ -79,7 +79,7 @@ TEST_F(UtsNsConfiguratorTest, SetupInsideNamespace_WithHostname_Success) {
   NamespaceSpec spec;
   spec.mutable_uts()->set_vhostname(kHostname);
   EXPECT_CALL(mock_libc_net_api_.Mock(),
-              SetHostname(StrEq(kHostname.c_str()), kHostname.size()))
+              SetHostname(StrEq(kHostname), kHostname.size()))
       .WillOnce(Return(0));
   ASSERT_OK(uts_ns_config_->SetupInsideNamespace(spec));
 }

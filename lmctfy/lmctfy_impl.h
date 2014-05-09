@@ -34,6 +34,9 @@ using ::std::string;
 #include "util/task/statusor.h"
 
 namespace containers {
+
+class InitSpec;
+
 namespace lmctfy {
 
 class ActiveNotifications;
@@ -44,7 +47,6 @@ class ContainerStats;
 class EventFdNotifications;
 class FreezerController;
 class FreezerControllerFactory;
-class InitSpec;
 class LockHandler;
 class LockHandlerFactory;
 class TasksHandler;
@@ -62,15 +64,19 @@ class ContainerApiImpl : public ContainerApi {
  public:
   // Exposed for use in testing.
   static ::util::StatusOr<ContainerApiImpl *> NewContainerApiImpl(
-      CgroupFactory *cgroup_factory, const KernelApi *kernel);
-  static ::util::Status InitMachineImpl(const KernelApi *kernel,
-                                        const InitSpec &spec);
+      ::std::unique_ptr<CgroupFactory> cgroup_factory, const KernelApi *kernel);
+  static ::util::Status InitMachineImpl(
+      const KernelApi *kernel,
+      ::std::unique_ptr<CgroupFactory> cgroup_factory,
+      const InitSpec &spec);
 
   // ContainerApiImpl takes ownership of all pointers except kernel.
   // ResourceHandlerFactories generate resource-specific ResourceHandlers.
+  // TODO(vishnuk): Take all arguments that are owned by ContainerApiImpl as
+  // unique_ptrs.
   ContainerApiImpl(
       TasksHandlerFactory *tasks_handler_factory,
-      const CgroupFactory *cgroup_factory,
+      ::std::unique_ptr<CgroupFactory> cgroup_factory,
       const ::std::vector<ResourceHandlerFactory *> &resource_factories,
       const KernelApi *kernel,
       ActiveNotifications *active_notifications,
@@ -121,7 +127,7 @@ class ContainerApiImpl : public ContainerApi {
   const KernelApi *kernel_;
 
   // Factory for cgroup paths. Auto-detects where the cgroups are located.
-  ::std::unique_ptr<const CgroupFactory> cgroup_factory_;
+  ::std::unique_ptr<CgroupFactory> cgroup_factory_;
 
   // Notifications currently active and in use.
   ::std::unique_ptr<ActiveNotifications> active_notifications_;

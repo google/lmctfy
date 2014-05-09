@@ -55,7 +55,7 @@ static StatusOr<string> ContainerNameOrSelf(const vector<string> & argv,
 
 // Command to list subcontainers.
 Status ListContainers(const vector<string> &argv, const ContainerApi *lmctfy,
-                      vector<OutputMap> *output) {
+                      OutputMap *output) {
   // Args: containers [<container name>]
   if (argv.size() < 1 || argv.size() > 2) {
     return Status(::util::error::INVALID_ARGUMENT,
@@ -80,7 +80,7 @@ Status ListContainers(const vector<string> &argv, const ContainerApi *lmctfy,
 
   // Output subcontainer names.
   for (Container *cont : subcontainers) {
-    output->push_back(OutputMap("name", cont->name()));
+    output->Add("name", cont->name());
   }
 
   return Status::OK;
@@ -95,7 +95,7 @@ enum ListType {
 // Helper for use by ListPids/ListTids.
 static Status ListPidsOrTids(const vector<string> &argv,
                              const ContainerApi *lmctfy,
-                             vector<OutputMap> *output,
+                             OutputMap *output,
                              ListType list_type) {
   // Args: pids|tids [container name]
   if (argv.size() < 1 || argv.size() > 2) {
@@ -134,7 +134,7 @@ static Status ListPidsOrTids(const vector<string> &argv,
   // Output subcontainer names.
   const string output_type = list_type == LIST_PIDS ? "pid" : "tid";
   for (pid_t pid : statusor_pids.ValueOrDie()) {
-    output->push_back(OutputMap(output_type, Substitute("$0", pid)));
+    output->Add(output_type, Substitute("$0", pid));
   }
 
   return Status::OK;
@@ -142,13 +142,13 @@ static Status ListPidsOrTids(const vector<string> &argv,
 
 // Command to list PIDs.
 Status ListPids(const vector<string> &argv, const ContainerApi *lmctfy,
-                vector<OutputMap> *output) {
+                OutputMap *output) {
   return ListPidsOrTids(argv, lmctfy, output, LIST_PIDS);
 }
 
 // Command to list TIDs.
 Status ListTids(const vector<string> &argv, const ContainerApi *lmctfy,
-                vector<OutputMap> *output) {
+                OutputMap *output) {
   return ListPidsOrTids(argv, lmctfy, output, LIST_TIDS);
 }
 

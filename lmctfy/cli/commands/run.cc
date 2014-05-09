@@ -46,19 +46,25 @@ namespace cli {
 
 // Command to run a command in a container.
 Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
-                      vector<OutputMap> *output) {
-  // Args: run <container name> <command>
-  if (argv.size() != 3) {
+                      OutputMap *output) {
+  // Args: run <container name> command...
+  if (argv.size() < 3) {
     return Status(::util::error::INVALID_ARGUMENT,
-                  "See help for supported options.");
+                  "Insufficient arguments. See help.");
   }
   const string container_name = argv[1];
-
-  // Run the specified command through /bin/sh.
   vector<string> args;
-  args.push_back("/bin/sh");
-  args.push_back("-c");
-  args.push_back(argv[2]);
+  if ((argv.size() == 3) && (argv[2].find(" ") != string::npos)) {
+    // Command is a single word with a space. For backwards compatibility, run
+    // the specified command through /bin/sh.
+    args.push_back("/bin/sh");
+    args.push_back("-c");
+    args.push_back(argv[2]);
+  } else {
+    for (auto it = argv.begin() + 2; it != argv.end(); ++it) {
+      args.push_back(*it);
+    }
+  }
 
   // Ensure the container exists.
   unique_ptr<Container> container(
@@ -71,7 +77,7 @@ Status RunInContainer(const vector<string> &argv, const ContainerApi *lmctfy,
 
     pid_t pid =
         RETURN_IF_ERROR(container->Run(args, spec));
-    output->push_back(OutputMap("pid", Substitute("$0", pid)));
+    output->Add("pid", Substitute("$0", pid));
   } else {
     RETURN_IF_ERROR(container->Exec(args));
   }
@@ -83,9 +89,9 @@ void RegisterRunCommand() {
   RegisterRootCommand(
       CMD("run",
           "Run the specified command in the specified container. Execs the "
-          "specified command under /bin/sh. If -n is specified, runs the "
+          "specified command under execv(). If -n is specified, runs the "
           "command in the background and returns the PID of the new process",
-          "[-n] <container name> \"<command>\"", CMD_TYPE_SETTER, 2, 2,
+          "[-n] <container name> <command...>", CMD_TYPE_SETTER, 2, INT_MAX,
           &RunInContainer));
 }
 

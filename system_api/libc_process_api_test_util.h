@@ -46,6 +46,7 @@ class MockLibcProcessApi : public LibcProcessApi {
   MOCK_CONST_METHOD1(_Exit, void(int status));
   MOCK_CONST_METHOD1(Unshare, int(int flags));
   MOCK_CONST_METHOD2(Setns, int(int fd, int nstype));
+  MOCK_CONST_METHOD0(SetSid, pid_t());
   MOCK_CONST_METHOD1(Wait, pid_t(int *status));
   MOCK_CONST_METHOD3(WaitPid, pid_t(pid_t pid, int *status, int options));
   MOCK_CONST_METHOD4(WaitId, int(idtype_t idtype, id_t id,
@@ -53,6 +54,9 @@ class MockLibcProcessApi : public LibcProcessApi {
   MOCK_CONST_METHOD0(GetUid, uid_t());
   MOCK_CONST_METHOD0(GetPid, pid_t());
   MOCK_CONST_METHOD1(GetPGid, pid_t(pid_t));
+  MOCK_CONST_METHOD3(SetResUid, int(uid_t ruid, uid_t euid, uid_t suid));
+  MOCK_CONST_METHOD3(SetResGid, int(gid_t rgid, gid_t egid, gid_t sgid));
+  MOCK_CONST_METHOD2(SetGroups, int(size_t size, const gid_t *list));
 };
 
 extern const LibcProcessApi *GlobalLibcProcessApi();

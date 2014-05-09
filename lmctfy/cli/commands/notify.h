@@ -33,12 +33,12 @@ class OutputMap;
 // Register and wait for an out of memory notification.
 ::util::Status MemoryOomHandler(const ::std::vector<string> &argv,
                                 const ContainerApi *lmctfy,
-                                ::std::vector<OutputMap> *output);
+                                OutputMap *output);
 
 // Register and wait for a memory usage threshold notification.
 ::util::Status MemoryThresholdHandler(const ::std::vector<string> &argv,
                                       const ContainerApi *lmctfy,
-                                      ::std::vector<OutputMap> *output);
+                                      OutputMap *output);
 
 void RegisterNotifyCommands();
 

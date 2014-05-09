@@ -48,11 +48,9 @@ struct SubProcess::CommBuf {
   explicit CommBuf(int num_chan)
       : cmsg_buf(CMSG_SPACE(num_chan * sizeof(int)), 0),
         fds(num_chan, -1) {
-    errno = 0;
-    errmsg[0] = '\0';
   }
-  int error_no;
-  char errmsg[kErrorMsgMaxLen];
+  int error_no = 0;
+  char errmsg[kErrorMsgMaxLen] = {};
   vector<char> cmsg_buf;
   vector<int> fds;
 };

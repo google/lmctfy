@@ -47,13 +47,14 @@ using ::util::CpuMask;
 
 static const char kParentMountPoint[] = "/dev/cgroup/cpuset";
 static const char kMountPoint[] = "/dev/cgroup/cpuset/test";
+static const char kHierarchyPath[] = "/test";
 
 class CpusetControllerTest : public ::testing::Test {
  public:
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
-    controller_.reset(new CpusetController(kMountPoint, true,
+    controller_.reset(new CpusetController(kHierarchyPath, kMountPoint, true,
                                            mock_kernel_.get(),
                                            mock_eventfd_notifications_.get()));
   }

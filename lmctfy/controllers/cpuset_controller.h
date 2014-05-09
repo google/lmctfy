@@ -20,7 +20,6 @@
 using ::std::string;
 
 #include "base/macros.h"
-
 #include "util/resset.h"
 #include "lmctfy/controllers/cgroup_controller.h"
 #include "include/lmctfy.pb.h"
@@ -56,8 +55,8 @@ class CpusetControllerFactory
 // Class is thread-safe.
 class CpusetController : public CgroupController {
  public:
-  CpusetController(const string &cgroup_path, bool owns_cgroup,
-                   const KernelApi *kernel,
+  CpusetController(const string &hierarchy_path, const string &cgroup_path,
+                   bool owns_cgroup, const KernelApi *kernel,
                    EventFdNotifications *eventfd_notifications);
   virtual ~CpusetController() {}
 

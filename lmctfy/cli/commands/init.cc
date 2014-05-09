@@ -45,7 +45,7 @@ namespace cli {
 
 // Command to initialize containers.
 Status InitContainers(const vector<string> &argv, const ContainerApi *lmctfy,
-                      vector<OutputMap> *output) {
+                      OutputMap *output) {
   // Args: init <container spec>
   if (argv.size() != 2 && argv.size() != 1) {
     return Status(::util::error::INVALID_ARGUMENT, "See help for options.");

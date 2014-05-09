@@ -24,6 +24,7 @@
 #include "base/mutex.h"
 #include "file/base/path.h"
 #include "lmctfy/util/proc_cgroup.h"
+#include "lmctfy/util/proc_cgroups.h"
 #include "util/errors.h"
 #include "util/proc_mounts.h"
 #include "strings/join.h"
@@ -55,18 +56,18 @@ static const char kCgroupMountType[] = "cgroup";
 
 // Map from hierarchy name to CgroupHierarchy for all supported hierarchies.
 static LazyStaticPtr<map<string, CgroupHierarchy>>
-    supported_hierarchies;
-static Mutex supported_hierarchies_init_lock(::base::LINKER_INITIALIZED);
+    g_supported_hierarchies;
+static Mutex g_supported_hierarchies_init_lock(::base::LINKER_INITIALIZED);
 
 namespace internal {
 
 // Safely initialize the supported hierarchies global map.
 void InitSupportedHierarchies() {
-  MutexLock m(&supported_hierarchies_init_lock);
+  MutexLock m(&g_supported_hierarchies_init_lock);
 
   // Only initialize once.
-  if (supported_hierarchies->empty()) {
-    *supported_hierarchies = {
+  if (g_supported_hierarchies->empty()) {
+    *g_supported_hierarchies = {
         {"cpu", CGROUP_CPU}, {"cpuacct", CGROUP_CPUACCT},
         {"cpuset", CGROUP_CPUSET}, {"job", CGROUP_JOB},
         {"freezer", CGROUP_FREEZER}, {"memory", CGROUP_MEMORY},
@@ -82,7 +83,7 @@ void InitSupportedHierarchies() {
 static set<string> GetSupportedHierarchyNames() {
   set<string> result;
 
-  for (const auto &name_hierarchy_pair : *supported_hierarchies) {
+  for (const auto &name_hierarchy_pair : *g_supported_hierarchies) {
     result.insert(name_hierarchy_pair.first);
   }
 
@@ -93,8 +94,8 @@ static set<string> GetSupportedHierarchyNames() {
 // i.e.: "memory" -> CGROUP_MEMORY
 static StatusOr<CgroupHierarchy> GetCgroupHierarchy(
     const string &hierarchy_name) {
-  auto it = supported_hierarchies->find(hierarchy_name);
-  if (it == supported_hierarchies->end()) {
+  auto it = g_supported_hierarchies->find(hierarchy_name);
+  if (it == g_supported_hierarchies->end()) {
     return Status(
         ::util::error::INVALID_ARGUMENT,
         Substitute("Unknown cgroup hierarchy \"$0\"", hierarchy_name));
@@ -350,13 +351,62 @@ StatusOr<string> CgroupFactory::DetectCgroupPath(
 
 string CgroupFactory::GetHierarchyName(
     CgroupHierarchy hierarchy) const {
-  for (const auto &name_hierarchy_pair : *supported_hierarchies) {
+  for (const auto &name_hierarchy_pair : *g_supported_hierarchies) {
     if (name_hierarchy_pair.second == hierarchy) {
       return name_hierarchy_pair.first;
     }
   }
 
   return "";
+}
+
+vector<CgroupHierarchy> CgroupFactory::GetSupportedHierarchies()
+    const {
+  // Get all enabled cgroup hierarchies.
+  set<string> enabled_hierarchies;
+  for (const ProcCgroupsData &data : ProcCgroups()) {
+    if (data.enabled) {
+      enabled_hierarchies.insert(data.hierarchy_name);
+    }
+  }
+
+  // Add all the enabled hierarchies we know to the supported set.
+  vector<CgroupHierarchy> supported;
+  for (const auto &name_hierarchy_pair : *g_supported_hierarchies) {
+    if (enabled_hierarchies.find(name_hierarchy_pair.first) !=
+        enabled_hierarchies.end()) {
+      supported.push_back(name_hierarchy_pair.second);
+    }
+  }
+  return supported;
+}
+
+// Populate the machine spec with cgroup_mounts. This code will turn a map of:
+// { CgroupHierarchy -> MountPath } into a map of:
+// { MountPath -> List<CgroupHierarchy> } within the machine spec.
+Status CgroupFactory::PopulateMachineSpec(MachineSpec *spec) const {
+  for (const auto name_hierarchy_pair : mount_paths_) {
+    bool found_mount = false;
+
+    // Look through the current list of cgroup_mounts to find a path
+    // that matches the mounted path.
+    for (auto &mount : *spec->mutable_cgroup_mount()) {
+      if (mount.mount_path() == name_hierarchy_pair.second.path) {
+        mount.add_hierarchy(name_hierarchy_pair.first);
+        found_mount = true;
+        continue;
+      }
+    }
+
+    // If no cgroup_mount was found to have this mounted path, create a
+    // new cgroup_mount which does.
+    if (!found_mount) {
+      CgroupMount *mount = spec->add_cgroup_mount();
+      mount->set_mount_path(name_hierarchy_pair.second.path);
+      mount->add_hierarchy(name_hierarchy_pair.first);
+    }
+  }
+  return Status::OK;
 }
 
 }  // namespace lmctfy

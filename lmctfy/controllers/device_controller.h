@@ -54,11 +54,11 @@ class DeviceControllerFactory
 class DeviceController : public CgroupController {
  public:
   // Does not take ownership of kernel.
-  DeviceController(const string &cgroup_path, bool owns_cgroup,
-                   const KernelApi *kernel,
+  DeviceController(const string &hierarchy_path, const string &cgroup_path,
+                   bool owns_cgroup, const KernelApi *kernel,
                    EventFdNotifications *eventfd_notifications)
-      : CgroupController(CGROUP_DEVICE, cgroup_path, owns_cgroup, kernel,
-                         eventfd_notifications) {}
+      : CgroupController(CGROUP_DEVICE, hierarchy_path, cgroup_path,
+                         owns_cgroup, kernel, eventfd_notifications) {}
   ~DeviceController() override {}
 
   // Set device access restrictions on the cgroup.

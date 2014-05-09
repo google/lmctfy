@@ -27,7 +27,6 @@ using ::std::string;
 namespace containers {
 namespace lmctfy {
 
-
 // TODO(jnagal): Replace with throttling data proto from lmctfy.proto.
 struct ThrottlingStats {
   ThrottlingStats() : nr_periods(0), nr_throttled(0), throttled_time(0) {}
@@ -69,8 +68,8 @@ class CpuControllerFactory
 // Class is thread-safe.
 class CpuController : public CgroupController {
  public:
-  CpuController(const string &cgroup_path, bool owns_cgroup,
-                const KernelApi *kernel,
+  CpuController(const string &hierarchy_path, const string &cgroup_path,
+                bool owns_cgroup, const KernelApi *kernel,
                 EventFdNotifications *eventfd_notifications);
   virtual ~CpuController() {}
 

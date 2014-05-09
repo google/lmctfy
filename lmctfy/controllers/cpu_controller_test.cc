@@ -41,13 +41,15 @@ namespace containers {
 namespace lmctfy {
 
 static const char kMountPoint[] = "/dev/cgroup/cpu/test";
+static const char kHierarchyPath[] = "/test";
 
 class CpuControllerTest : public ::testing::Test {
  public:
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
-    controller_.reset(new CpuController(kMountPoint, true, mock_kernel_.get(),
+    controller_.reset(new CpuController(kHierarchyPath, kMountPoint, true,
+                                        mock_kernel_.get(),
                                         mock_eventfd_notifications_.get()));
   }
 

@@ -46,7 +46,7 @@ class MockCpuController : public CpuController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockCpuController()
-      : CpuController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+      : CpuController("", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
                       reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_METHOD1(SetMilliCpus, ::util::Status(int64 milli_cpus));

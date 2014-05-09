@@ -17,11 +17,12 @@
 namespace containers {
 namespace lmctfy {
 
-PerfController::PerfController(const string &cgroup_path, bool owns_cgroup,
+PerfController::PerfController(const string &hierarchy_path,
+                               const string &cgroup_path, bool owns_cgroup,
                                const KernelApi *kernel,
                                EventFdNotifications *eventfd_notifications)
-    : CgroupController(CGROUP_PERF_EVENT, cgroup_path, owns_cgroup, kernel,
-                       eventfd_notifications) {}
+    : CgroupController(CGROUP_PERF_EVENT, hierarchy_path, cgroup_path,
+                       owns_cgroup, kernel, eventfd_notifications) {}
 
 }  // namespace lmctfy
 }  // namespace containers

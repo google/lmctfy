@@ -73,11 +73,12 @@ class NamespaceHandlerFactory {
   ::util::StatusOr<GeneralResourceHandler *> Create(
       const string &container_name,
       const ContainerSpec &spec) {
-     return CreateNamespaceHandler(container_name, spec);
+     return CreateNamespaceHandler(container_name, spec, {});
   }
   virtual ::util::StatusOr<NamespaceHandler *> CreateNamespaceHandler(
       const string &container_name,
-      const ContainerSpec &spec) = 0;
+      const ContainerSpec &spec,
+      const MachineSpec &machine_spec) = 0;
 
   // Initialize this handler on this machine. This setup is idempotent and only
   // needs to be done once at machine bootup.

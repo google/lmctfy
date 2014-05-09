@@ -49,24 +49,16 @@ class ListTest : public ::testing::Test {
   virtual void SetUp() {
     mock_lmctfy_.reset(new StrictMockContainerApi());
     mock_container_ = new StrictMockContainer(kContainerName);
-    output_.clear();
   }
 
   // Expect the output to contain the specified container names. The container
   // name should be under the "name" key in the output maps.
   void ExpectContainers(const vector<string> &expected_containers) {
     // Ensure all containers are in the output.
-    ASSERT_EQ(expected_containers.size(), output_.size());
+    ASSERT_EQ(expected_containers.size(), output_.NumPairs());
     for (const string &container_name : expected_containers) {
-      bool found = false;
-      for (const OutputMap &output_map : output_) {
-        if (output_map.GetValueByKey("name") == container_name) {
-          found = true;
-          break;
-        }
-      }
-
-      EXPECT_TRUE(found) << "Expected to find container " << container_name;
+      EXPECT_TRUE(output_.ContainsPair("name", container_name))
+          << "Expected to find container " << container_name;
     }
   }
 
@@ -75,18 +67,11 @@ class ListTest : public ::testing::Test {
   void ExpectPids(const string &key_name,
                   const vector<pid_t> &expected_pids) {
     // Ensure all PIDs/TIDs are in the output.
-    ASSERT_EQ(expected_pids.size(), output_.size());
+    ASSERT_EQ(expected_pids.size(), output_.NumPairs());
     for (pid_t pid : expected_pids) {
-      bool found = false;
       const string pid_as_str = Substitute("$0", pid);
-      for (const OutputMap &output_map : output_) {
-        if (output_map.GetValueByKey(key_name) == pid_as_str) {
-          found = true;
-          break;
-        }
-      }
-
-      EXPECT_TRUE(found) << "Expected to find PID/TID " << pid_as_str;
+      EXPECT_TRUE(output_.ContainsPair(key_name, pid_as_str))
+          << "Expected to find PID/TID " << pid_as_str;
     }
   }
 
@@ -94,7 +79,7 @@ class ListTest : public ::testing::Test {
   const vector<string> args_;
   unique_ptr<MockContainerApi> mock_lmctfy_;
   MockContainer *mock_container_;
-  vector<OutputMap> output_;
+  OutputMap output_;
 };
 
 // Tests for: list containers.

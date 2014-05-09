@@ -59,11 +59,12 @@ static CpuMask ResSetToCpuMask(const ResSet &res) {
   return cpu_mask;
 }
 
-CpusetController::CpusetController(const string &cgroup_path, bool owns_cgroup,
+CpusetController::CpusetController(const string &hierarchy_path,
+                                   const string &cgroup_path, bool owns_cgroup,
                                    const KernelApi *kernel,
                                    EventFdNotifications *eventfd_notifications)
-    : CgroupController(CGROUP_CPUSET, cgroup_path, owns_cgroup, kernel,
-                       eventfd_notifications) {}
+    : CgroupController(CGROUP_CPUSET, hierarchy_path, cgroup_path, owns_cgroup,
+                       kernel, eventfd_notifications) {}
 
 Status CpusetController::SetCpuMask(const CpuMask &mask) {
   string cpu_string = FormatCPUs(mask);

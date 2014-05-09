@@ -33,7 +33,7 @@ class OutputMap;
 // Command to kill all PIDs/TIDs a container.
 ::util::Status KillAllInContainer(const ::std::vector<string> &argv,
                                   const ContainerApi *lmctfy,
-                                  ::std::vector<OutputMap> *output);
+                                  OutputMap *output);
 void RegisterKillAllCommand();
 
 }  // namespace cli

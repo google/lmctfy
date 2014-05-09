@@ -47,7 +47,7 @@ namespace cli {
 
 // Command to create a container.
 Status CreateContainer(const vector<string> &argv, const ContainerApi *lmctfy,
-                       vector<OutputMap> *output) {
+                       OutputMap *output) {
   // Args: create <container name> [<container spec>]
   if (argv.size() < 2 || argv.size() > 3) {
     return Status(::util::error::INVALID_ARGUMENT,
@@ -94,7 +94,7 @@ Status CreateContainer(const vector<string> &argv, const ContainerApi *lmctfy,
 
   if (spec.has_virtual_host()) {
     const pid_t init_pid = RETURN_IF_ERROR(container->GetInitPid());
-    output->push_back(OutputMap("init_pid", SimpleItoa(init_pid)));
+    output->Add("init_pid", SimpleItoa(init_pid));
   }
 
   return Status::OK;

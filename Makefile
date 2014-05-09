@@ -15,7 +15,7 @@ CXX ?= g++
 AR ?= ar
 
 # Version number of lmctfy.
-VERSION = "\"0.4.5\""
+VERSION = "\"0.5.0\""
 
 # TODO(vmarmol): Ensure our dependencies are installed
 PROTOC = protoc
@@ -23,7 +23,8 @@ PROTOC = protoc
 # Function for getting a set of source files.
 get_srcs = $(shell find $(1) -name \*.cc -a ! -name \*_test.cc | tr "\n" " ")
 
-INCLUDE_PROTOS = include/virtual_host include/lmctfy include/namespaces
+INCLUDE_PROTOS = include/config include/virtual_host include/lmctfy \
+                 include/namespaces
 UTIL_PROTOS = util/task/codes
 BASE_SOURCES = $(call get_srcs,base/)
 FILE_SOURCES = $(call get_srcs,file/)
@@ -39,7 +40,8 @@ NSINIT_SOURCES = nscon/init.cc nscon/init_impl.cc
 NSCON_SOURCES = $(filter-out $(NSINIT_SOURCES),$(call get_srcs,nscon/))
 
 # The objects for the system API (both release and test versions).
-SYSTEM_API_OBJS = global_utils/mount_utils.o \
+SYSTEM_API_OBJS = global_utils/fs_utils.o \
+		  global_utils/mount_utils.o \
 		  global_utils/time_utils.o \
 		  system_api/kernel_api.o \
 		  system_api/kernel_api_singleton.o \
@@ -48,7 +50,8 @@ SYSTEM_API_OBJS = global_utils/mount_utils.o \
 		  system_api/libc_net_api.o \
 		  system_api/libc_process_api.o \
 		  system_api/libc_time_api.o
-SYSTEM_API_TEST_OBJS = global_utils/mount_utils_test_util.o \
+SYSTEM_API_TEST_OBJS = global_utils/fs_utils_test_util.o \
+		       global_utils/mount_utils_test_util.o \
 		       global_utils/time_utils_test_util.o \
 		       system_api/kernel_api.o \
 		       system_api/kernel_api_test_util.o \
@@ -61,6 +64,10 @@ SYSTEM_API_TEST_OBJS = global_utils/mount_utils_test_util.o \
 # Gets all *_test.cc files in lmtcfy/.
 TESTS = $(basename $(shell find lmctfy/ nscon/ -name \*_test.cc \
 	-a ! -name \*_integration_test.cc))
+
+# Gets all *_integration_test.cc files in lmtcfy/.
+INTEGRATION_TESTS = $(basename $(shell find lmctfy/ nscon/ testing/ -name \
+  \*_integration_test.cc))
 
 # Where to place the binary outputs.
 OUT_DIR = bin
@@ -90,7 +97,7 @@ CXXFLAGS += -DHASH_NAMESPACE=std -DHAVE_LONG_LONG -DGTEST_HAS_STRING_PIECE_ \
 	    -DLMCTFY_VERSION=$(VERSION)
 
 # Add libraries to link in.
-CXXFLAGS += -pthread -lrt -lre2 -lgflags
+CXXFLAGS += -pthread -lrt -lre2 -lgflags -lapparmor
 
 # Add include and library paths.
 CXXFLAGS += -I. -I./include -I./base -I./lmctfy -I$(GTEST_DIR)/include \
@@ -119,18 +126,29 @@ default: all
 
 all: $(LIBRARY) $(NSINIT) $(NSCON) $(CLI) $(CREAPER)
 
-install: all
-	cp ./bin/lmctfy/cli/$(CLI) /usr/local/bin
-	chmod +x /usr/local/bin/$(CLI)
-	cp ./bin/nscon/cli/$(NSCON) /usr/local/bin
-	chmod +x /usr/local/bin/$(NSCON)
-	cp ./bin/nscon/$(NSINIT) /usr/local/bin
-	chmod +x /usr/local/bin/$(NSINIT)
-	cp ./bin/$(CREAPER) /usr/local/bin
-	chmod +x /usr/local/bin/$(CREAPER)
+INSTALL = /usr/bin/install
+INSTALL_PROGRAM = $(INSTALL) -m 755
+DESTDIR = /usr/local/bin
 
-TEST_TMPDIR = "/tmp/lmctfy_test.$$"
+install: all
+	$(INSTALL_PROGRAM) $(OUT_DIR)/lmctfy/cli/$(CLI) $(DESTDIR)/$(CLI)
+	$(INSTALL_PROGRAM) $(OUT_DIR)/nscon/cli/$(NSCON) $(DESTDIR)/$(NSCON)
+	$(INSTALL_PROGRAM) $(OUT_DIR)/nscon/$(NSINIT) $(DESTDIR)/$(NSINIT)
+	$(INSTALL_PROGRAM) $(OUT_DIR)/$(CREAPER) $(DESTDIR)/$(CREAPER)
+
+TEST_TMPDIR = "/tmp/lmctfy_test.$$$$"
 check: $(TESTS)
+	for t in $(addprefix $(OUT_DIR)/,$^); \
+		do \
+			echo "***** Running $$t"; \
+			rm -rf $(TEST_TMPDIR); \
+			mkdir $(TEST_TMPDIR); \
+			./$$t --test_tmpdir=$(TEST_TMPDIR) || exit 1; \
+		done; \
+	rm -rf $(TEST_TMPDIR)
+	echo "All tests pass!"
+
+check_integration: $(INTEGRATION_TESTS)
 	for t in $(addprefix $(OUT_DIR)/,$^); \
 		do \
 			echo "***** Running $$t"; \
@@ -178,7 +196,8 @@ $(CLI): lmctfy_cli.a $(LIBRARY)
 	$(CXX) -o $(OUT_DIR)/lmctfy/cli/$@ $(addprefix $(OUT_DIR)/,$^) $(CXXFLAGS)
 
 # Objects of the nscon CLI.
-nscon_cli.a: $(call source_to_object,$(NSCON_SOURCES) $(COMMON_SOURCES)) $(SYSTEM_API_OBJS)
+nscon_cli.a: $(call source_to_object,$(NSCON_SOURCES) $(COMMON_SOURCES)) \
+             $(SYSTEM_API_OBJS)
 	$(create_bin)
 	$(archive_all)
 
@@ -199,7 +218,18 @@ $(CREAPER): lmctfy-creaper.go
 	$(create_bin)
 	go build -o $(OUT_DIR)/lmctfy-creaper lmctfy-creaper.go
 
-%_test: gtest_main.a $(SYSTEM_API_TEST_OBJS) nscon_cli.a lmctfy_cli.a lmctfy_no_system_api.a
+%_integration_test: gtest_main.a $(LIBRARY)
+	$(create_bin)
+	$(CXX) -o $(OUT_DIR)/$@ $*_integration_test.cc $(addprefix $(OUT_DIR)/,$^) \
+		$(CXXFLAGS)
+
+%_real_test: gtest_main.a $(LIBRARY)
+	$(create_bin)
+	$(CXX) -o $(OUT_DIR)/$@ $*.cc $*_real_test.cc $(addprefix $(OUT_DIR)/,$^) \
+		$(CXXFLAGS)
+
+%_test: gtest_main.a $(SYSTEM_API_TEST_OBJS) nscon_cli.a lmctfy_cli.a \
+        lmctfy_no_system_api.a
 	$(create_bin)
 	$(CXX) -o $(OUT_DIR)/$@ $*.cc $*_test.cc $(addprefix $(OUT_DIR)/,$^) \
 		$(CXXFLAGS)

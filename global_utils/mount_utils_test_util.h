@@ -17,7 +17,7 @@
 #ifndef GLOBAL_UTILS_MOUNT_UTILS_TEST_UTIL_H_
 #define GLOBAL_UTILS_MOUNT_UTILS_TEST_UTIL_H_
 
-
+#include <set>
 #include <string>
 #include <vector>
 
@@ -30,8 +30,10 @@ namespace util {
 
 class MockMountUtils : public MountUtils {
  public:
-  MOCK_CONST_METHOD2(BindMount, ::util::Status(const string &source,
-                                               const string & target));
+  MOCK_CONST_METHOD3(BindMount,
+                     ::util::Status(const string &source,
+                                    const string &target,
+                                    const ::std::set<BindMountOpts> &opts));
 
   MOCK_CONST_METHOD1(GetMountInfo, ::util::StatusOr<MountObject>(
       const string &mountpoint));

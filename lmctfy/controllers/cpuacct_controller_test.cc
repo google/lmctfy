@@ -46,6 +46,7 @@ namespace containers {
 namespace lmctfy {
 
 static const char kMountPoint[] = "/dev/cgroup/cpuacct/test";
+static const char kHierarchyPath[] = "/test";
 static const char kQueueBuckets[] = "1000 5000 10000 25000 75000 100000 500000";
 static const char kNonQueueBuckets[] =
     "1000 5000 10000 20000 50000 100000 250000";
@@ -56,7 +57,7 @@ class CpuAcctControllerTest : public ::testing::Test {
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
-    controller_.reset(new CpuAcctController(kMountPoint, true,
+    controller_.reset(new CpuAcctController(kHierarchyPath, kMountPoint, true,
                                             mock_kernel_.get(),
                                             mock_eventfd_notifications_.get()));
   }

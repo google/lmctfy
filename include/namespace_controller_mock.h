@@ -44,8 +44,9 @@ class MockNamespaceController : public NamespaceController {
  public:
   virtual ~MockNamespaceController() {}
 
-  MOCK_CONST_METHOD1(Run, ::util::StatusOr<pid_t>(
-      const ::std::vector<string> &command));
+  MOCK_CONST_METHOD2(Run, ::util::StatusOr<pid_t>(
+      const ::std::vector<string> &command,
+      const RunSpec &run_spec));
   MOCK_CONST_METHOD1(Exec,
                      ::util::Status(const ::std::vector<string> &command));
   MOCK_METHOD1(Update, ::util::Status(const NamespaceSpec &spec));
