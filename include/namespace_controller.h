@@ -122,7 +122,8 @@ class NamespaceController {
   //   StatusOr: Status of the operation. OK iff successful. On success, the
   //       PID of the command process is returned.
   virtual ::util::StatusOr<pid_t> Run(
-      const ::std::vector<string> &command) const = 0;
+      const ::std::vector<string> &command,
+      const RunSpec &run_spec) const = 0;
 
   // Execute the specified command inside the namespaces.  This replaces the
   // current process image with the specified command. The existing environment

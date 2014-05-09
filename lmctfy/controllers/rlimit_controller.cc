@@ -22,11 +22,12 @@ using ::util::StatusOr;
 namespace containers {
 namespace lmctfy {
 
-RLimitController::RLimitController(const string &cgroup_path, bool owns_cgroup,
+RLimitController::RLimitController(const string &hierarchy_path,
+                                   const string &cgroup_path, bool owns_cgroup,
                                    const KernelApi *kernel,
                                    EventFdNotifications *eventfd_notifications)
-    : CgroupController(CGROUP_RLIMIT, cgroup_path, owns_cgroup, kernel,
-                       eventfd_notifications) {}
+    : CgroupController(CGROUP_RLIMIT, hierarchy_path, cgroup_path, owns_cgroup,
+                       kernel, eventfd_notifications) {}
 
 Status RLimitController::SetFdLimit(int64 limit) {
   return SetParamInt(KernelFiles::RLimit::kFdLimit, limit);

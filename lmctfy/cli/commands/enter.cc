@@ -54,7 +54,7 @@ namespace cli {
 
 // Command to enter a TID into a container.
 Status EnterContainer(const vector<string> &argv, const ContainerApi *lmctfy,
-                      vector<OutputMap> *output) {
+                      OutputMap *output) {
   // Args: enter <container> [<TIDs in a space-separated list>]
   if (argv.size() < 2) {
     return Status(::util::error::INVALID_ARGUMENT,

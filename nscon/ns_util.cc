@@ -18,7 +18,7 @@
 
 #include "nscon/ns_util.h"
 
-#include <fcntl.h>  // for O_RDONLY
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -87,6 +87,7 @@ StatusOr<NsUtil *> NsUtil::New() {
 }
 
 struct ScopedFdListCloser : public ScopedCleanup {
+ public:
   explicit ScopedFdListCloser(vector<int>* fd_list)
       : ScopedCleanup(&ScopedFdListCloser::Close, fd_list) {}
 
@@ -141,7 +142,13 @@ Status NsUtil::AttachNamespaces(
                                filename, StrError(errno))};
     }
 
-    fd_list.push_back(fd);
+    // Store userns FD at the front as we must attach to it first before
+    // attaching to any other namespaces.
+    if (ns_flag == CLONE_NEWUSER) {
+      fd_list.insert(fd_list.begin(), fd);
+    } else {
+      fd_list.push_back(fd);
+    }
   }
 
   for (auto fd : fd_list) {
@@ -286,5 +293,95 @@ Status SavedNamespace::RestoreAndDelete() {
   delete this;
   return Status::OK;
 }
+
+Status NsUtil::DupToFd(int oldfd, int newfd) const {
+  if (GlobalLibcFsApi()->Dup2(oldfd, newfd) < 0) {
+    return {INTERNAL,
+          Substitute("Failed to dup fd $0 to fd $1. Error: $2",
+                     oldfd, newfd, StrError(errno))};
+  }
+  return Status::OK;
+}
+
+StatusOr<int> NsUtil::OpenSlavePtyDevice(const string &slave_pty) const {
+  const string &slave_pty_path = file::JoinPath("/dev/pts", slave_pty);
+  RETURN_IF_ERROR(CharacterDeviceFileExists(slave_pty_path));
+  int fd = GlobalLibcFsApi()->Open(slave_pty_path.c_str(), O_RDWR);
+  if (fd == -1) {
+    return Status(INTERNAL,
+                  Substitute("Failed to open slave pty $0. Error: $1",
+                             slave_pty_path, StrError(errno)));
+  }
+  return fd;
+}
+
+Status NsUtil::AttachToConsoleFd(const int console_fd) const {
+  RETURN_IF_ERROR(DupToFd(console_fd, 0));
+  RETURN_IF_ERROR(DupToFd(console_fd, 1));
+  RETURN_IF_ERROR(DupToFd(console_fd, 2));
+  // Acquire controlling tty on BSD.
+#ifdef TIOCSCTTY
+  if (GlobalLibcFsApi()->Ioctl(console_fd, TIOCSCTTY, 0) != 0) {
+    return {INTERNAL,
+          Substitute("Failed to attach to console fd $0. Error: $1",
+                     console_fd, StrError(errno))};
+  }
+#endif
+
+  if (console_fd > STDERR_FILENO) {
+    if (GlobalLibcFsApi()->Close(console_fd) < 0) {
+      return {INTERNAL,
+            Substitute("Failed to close slave pty fd: $0. Error: $1",
+                       console_fd, StrError(errno))};
+    }
+  }
+
+  return Status::OK;
+}
+
+struct ScopedDirCloser : public ScopedCleanup {
+ public:
+  explicit ScopedDirCloser(DIR *dir)
+      : ScopedCleanup(&ScopedDirCloser::CloseDir, dir) {}
+
+  static void CloseDir(DIR *dir) {
+    GlobalLibcFsApi()->CloseDir(dir);
+  }
+};
+
+StatusOr<vector<int>> NsUtil::GetOpenFDs() const {
+  vector<int> fd_list;
+  const string dirpath = "/proc/self/fd/";
+  DIR *dir = GlobalLibcFsApi()->OpenDir(dirpath.c_str());
+  if (dir == nullptr) {
+    return Status(INTERNAL,
+                  Substitute("opendir($0): $1", dirpath, StrError(errno)));
+  }
+
+  ScopedDirCloser dir_closer(dir);
+  struct dirent ent;
+  struct dirent *result;
+  do {
+    int ret = GlobalLibcFsApi()->ReadDirR(dir, &ent, &result);
+    if (ret != 0) {
+      // readdir_r() returns the error code as return value.
+      return Status(INTERNAL,
+                    Substitute("readdir_r() error: $0", StrError(ret)));
+    }
+    if (result == nullptr) {
+      // Reached the EOF for the directory.
+      break;
+    }
+
+    // Store the successfully parsed FD in fd_list.
+    int fd;
+    if (SimpleAtoi(ent.d_name, &fd) == true) {
+      fd_list.push_back(fd);
+    }
+  } while (true);
+
+  return fd_list;
+}
+
 }  // namespace nscon
 }  // namespace containers

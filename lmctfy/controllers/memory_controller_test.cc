@@ -48,13 +48,14 @@ namespace containers {
 namespace lmctfy {
 
 static const char kMountPoint[] = "/dev/cgroup/memory/test";
+static const char kHierarchyPath[] = "/test";
 
 class MemoryControllerTest : public ::testing::Test {
  public:
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
-    controller_.reset(new MemoryController(kMountPoint, true,
+    controller_.reset(new MemoryController(kHierarchyPath, kMountPoint, true,
                                            mock_kernel_.get(),
                                            mock_eventfd_notifications_.get()));
   }
@@ -1249,6 +1250,194 @@ TEST_F(MemoryControllerTest, GetMemoryStatsFileNotFound) {
   EXPECT_FALSE(controller_->GetMemoryStats(&stats).ok());
 }
 
+TEST_F(MemoryControllerTest, GetIdlePageStatsSuccess) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kIdlePageStats);
+  const string kStats =
+      "idle_clean 321986560\n"
+      "idle_dirty_file 49152\n"
+      "idle_dirty_swap 151015424\n"
+      "idle_2_clean 305352704\n"
+      "idle_2_dirty_file 24576\n"
+      "idle_2_dirty_swap 145420288\n"
+      "idle_240_clean 0\n"
+      "idle_240_dirty_file 0\n"
+      "idle_240_dirty_swap 93212672\n"
+      "scans 5781\n"
+      "stale 309960704\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_OK(controller_->GetIdlePageStats(stats.mutable_idle_page()));
+  EXPECT_EQ(5781, stats.idle_page().scans());
+  EXPECT_EQ(309960704, stats.idle_page().stale());
+  EXPECT_EQ(3, stats.idle_page().stats_size());
+  ASSERT_EQ(0, stats.idle_page().stats(0).age_in_secs());
+  EXPECT_EQ(321986560, stats.idle_page().stats(0).clean());
+  EXPECT_EQ(49152, stats.idle_page().stats(0).dirty_file());
+  EXPECT_EQ(151015424, stats.idle_page().stats(0).dirty_swap());
+  ASSERT_EQ(2, stats.idle_page().stats(1).age_in_secs());
+  EXPECT_EQ(305352704, stats.idle_page().stats(1).clean());
+  EXPECT_EQ(24576, stats.idle_page().stats(1).dirty_file());
+  EXPECT_EQ(145420288, stats.idle_page().stats(1).dirty_swap());
+  ASSERT_EQ(240, stats.idle_page().stats(2).age_in_secs());
+  EXPECT_EQ(0, stats.idle_page().stats(2).clean());
+  EXPECT_EQ(0, stats.idle_page().stats(2).dirty_file());
+  EXPECT_EQ(93212672, stats.idle_page().stats(2).dirty_swap());
+}
+
+TEST_F(MemoryControllerTest, GetIdlePageStatsFileNotFound) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kIdlePageStats);
+  const string kStats =
+      "idle_clean 321986560\n"
+      "idle_dirty_file 49152\n"
+      "idle_dirty_swap 151015424\n"
+      "idle_2_clean 305352704\n"
+      "idle_2_dirty_file 24576\n"
+      "idle_2_dirty_swap 145420288\n"
+      "idle_240_clean 0\n"
+      "idle_240_dirty_file 0\n"
+      "idle_240_dirty_swap 93212672\n"
+      "scans 5781\n"
+      "stale 309960704\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+  MemoryStats stats;
+  EXPECT_NOT_OK(controller_->GetIdlePageStats(stats.mutable_idle_page()));
+}
+
+TEST_F(MemoryControllerTest, GetIdlePageStatsBadScans) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kIdlePageStats);
+  const string kStats =
+      "scans abc\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_NOT_OK(controller_->GetIdlePageStats(stats.mutable_idle_page()));
+}
+
+TEST_F(MemoryControllerTest, GetIdlePageStatsBadStale) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kIdlePageStats);
+  const string kStats =
+      "stale abc\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_NOT_OK(controller_->GetIdlePageStats(stats.mutable_idle_page()));
+}
+
+TEST_F(MemoryControllerTest, GetIdlePageStatsUnknownKey) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kIdlePageStats);
+  const string kStats =
+      "key 123\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_NOT_OK(controller_->GetIdlePageStats(stats.mutable_idle_page()));
+}
+
+TEST_F(MemoryControllerTest, GetIdlePageStatsUnknownDirtyKey) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kIdlePageStats);
+  const string kStats =
+      "dirty_key 123\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_NOT_OK(controller_->GetIdlePageStats(stats.mutable_idle_page()));
+}
+
+TEST_F(MemoryControllerTest, GetCompressionSamplingStatsSuccess) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kCompressionSamplingStats);
+  const string kStats =
+      "raw_size 1234\n"
+      "compressed_size 2469\n"
+      "fifo_overflow 3000\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_OK(controller_->GetCompressionSamplingStats(
+      stats.mutable_compression_sampling()));
+  EXPECT_EQ(1234, stats.compression_sampling().raw_size());
+  EXPECT_EQ(2469, stats.compression_sampling().compressed_size());
+  EXPECT_EQ(3000, stats.compression_sampling().fifo_overflow());
+}
+
+TEST_F(MemoryControllerTest, GetCompressionSamplingStatsFileNotFound) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kCompressionSamplingStats);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+  MemoryStats stats;
+  EXPECT_NOT_OK(controller_->GetCompressionSamplingStats(
+      stats.mutable_compression_sampling()));
+}
+
+TEST_F(MemoryControllerTest, GetCompressionSamplingStatsBadEntry) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kCompressionSamplingStats);
+  const string kStats =
+      "raw_size 1234 567\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_NOT_OK(controller_->GetCompressionSamplingStats(
+      stats.mutable_compression_sampling()));
+}
+
+TEST_F(MemoryControllerTest, GetCompressionSamplingStatsUnknownKey) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kCompressionSamplingStats);
+  const string kStats =
+      "raw_size_entry 1234\n";
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>(kStats), Return(true)));
+
+  MemoryStats stats;
+  EXPECT_OK(controller_->GetCompressionSamplingStats(
+      stats.mutable_compression_sampling()));
+  // Unknown keys are ignored
+  EXPECT_FALSE(stats.compression_sampling().has_raw_size());
+}
+
 TEST_F(MemoryControllerTest, GetEffectiveLimitFailsToReadStats) {
   const string kResFile =
       JoinPath(kMountPoint, KernelFiles::Memory::kStat);
@@ -1328,6 +1517,42 @@ TEST_F(MemoryControllerTest, CallGetStatsFailsToReadStats) {
       .WillOnce(Return(false));
 
   EXPECT_FALSE(CallGetStats(KernelFiles::Memory::kStat).ok());
+}
+
+TEST_F(MemoryControllerTest, GetFailCount) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kFailCount);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(DoAll(SetArgPointee<1>("42"), Return(true)));
+
+  StatusOr<int64> statusor = controller_->GetFailCount();
+  ASSERT_TRUE(statusor.ok());
+  EXPECT_EQ(42, statusor.ValueOrDie());
+}
+
+TEST_F(MemoryControllerTest, GetFailCountNotFound) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kFailCount);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(1));
+
+  EXPECT_ERROR_CODE(NOT_FOUND, controller_->GetFailCount());
+}
+
+TEST_F(MemoryControllerTest, GetFailCountFails) {
+  const string kResFile =
+      JoinPath(kMountPoint, KernelFiles::Memory::kFailCount);
+
+  EXPECT_CALL(*mock_kernel_, Access(kResFile, F_OK))
+      .WillRepeatedly(Return(0));
+  EXPECT_CALL(*mock_kernel_, ReadFileToString(kResFile, NotNull()))
+      .WillOnce(Return(false));
+
+  EXPECT_FALSE(controller_->GetFailCount().ok());
 }
 
 // Dummy notification handler for use in testing.

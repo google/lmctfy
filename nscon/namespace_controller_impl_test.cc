@@ -25,6 +25,7 @@
 #include "nscon/ns_handle_mock.h"
 #include "nscon/ns_util_mock.h"
 #include "util/errors_test_util.h"
+#include "system_api/libc_fs_api_test_util.h"
 #include "system_api/libc_process_api_test_util.h"
 #include "strings/join.h"
 #include "strings/substitute.h"
@@ -39,9 +40,12 @@ DECLARE_uint64(nsinit_gid);
 
 using ::std::unique_ptr;
 using ::strings::Substitute;
+using ::testing::ContainerEq;
+using ::testing::Eq;
 using ::testing::NotNull;
 using ::testing::Return;
-using ::testing::SetArgumentPointee;
+using ::testing::SetArrayArgument;
+using ::testing::SetArgPointee;
 using ::testing::StrEq;
 using ::testing::StrictMock;
 using ::testing::_;
@@ -59,7 +63,7 @@ SubProcess *IdentitySubProcessFactory(MockSubProcess *subprocess) {
   return subprocess;
 }
 
-static const string SpecToStr(const NamespaceSpec &spec) {
+static const string SpecToStr(const google::protobuf::Message &spec) {
   string spec_str;
   google::protobuf::TextFormat::Printer printer;
   printer.SetSingleLineMode(true);
@@ -72,6 +76,9 @@ static const string SpecToStr(const NamespaceSpec &spec) {
 
 class NamespaceControllerFactoryImplTest : public ::testing::Test {
  public:
+  NamespaceControllerFactoryImplTest() : pipefd_{10, 11} {}
+  ~NamespaceControllerFactoryImplTest() {}
+
   void SetUp() {
     mock_nshandle_ = new StrictMock<MockNsHandle>();
     mock_nsh_factory_ = new StrictMock<MockNsHandleFactory>();
@@ -85,13 +92,48 @@ class NamespaceControllerFactoryImplTest : public ::testing::Test {
                                            mock_ns_util_));
   }
 
+  string GetOutputFdArg() {
+    return Substitute("--nscon_output_fd=$0", pipefd_[1]);
+  }
+
+  void ExpectDefaultSubprocessCalls(const vector<string> &argv,
+                                    int error_code) {
+    EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(3);
+    EXPECT_CALL(*mock_subprocess_, SetArgv(ContainerEq(argv)));
+    EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
+    EXPECT_CALL(*mock_subprocess_, Wait()).WillOnce(Return(true));
+    EXPECT_CALL(*mock_subprocess_, exit_code())
+        .WillRepeatedly(Return(error_code));
+  }
+
+  void ExpectPipeOpen() {
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Pipe(_))
+        .WillOnce(DoAll(SetArrayArgument<0>(pipefd_, &pipefd_[2]), Return(0)));
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Close(Eq(pipefd_[0])));
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Close(Eq(pipefd_[1])));
+  }
+
+  void ExpectPipeOutput(const char *data) {
+    char *tdata = const_cast<char *>(data);
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Read(Eq(pipefd_[0]), _, _))
+        .WillOnce(DoAll(SetArrayArgument<1>(tdata, tdata + strlen(tdata) + 1),
+                        Return(strlen(tdata))));
+  }
+
+  void ExpectNsHandlerFactoryGetCall(const string &handle) {
+    EXPECT_CALL(*mock_nsh_factory_, Get(handle))
+        .WillRepeatedly(Return(mock_nshandle_));
+  }
+
  protected:
   unique_ptr<NamespaceControllerFactoryImpl> nscon_factory_;
+  ::system_api::MockLibcFsApiOverride mock_libc_fs_api_;
   MockNsHandle *mock_nshandle_;
   MockNsHandleFactory *mock_nsh_factory_;
   MockSubProcess *mock_subprocess_;
   MockNsUtil *mock_ns_util_;
-  google::FlagSaver flag_saver_;
+  gflags::FlagSaver flag_saver_;
+  int pipefd_[2];
 };
 
 TEST_F(NamespaceControllerFactoryImplTest, GetWithPid) {
@@ -121,14 +163,12 @@ TEST_F(NamespaceControllerFactoryImplTest, Create) {
   const vector<string> kArgv = {
       FLAGS_nscon_path,                                  "create",
       Substitute("--nsinit_path=$0", FLAGS_nsinit_path), kInitUid,
-      kInitGid,                                          SpecToStr(spec)};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgumentPointee<0>(kHandleStr), Return(0)));
-  EXPECT_CALL(*mock_nsh_factory_, Get(kHandleStr))
-      .WillOnce(Return(mock_nshandle_));
+      kInitGid, GetOutputFdArg(), SpecToStr(spec) };
+
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput(kHandleStr);
+  ExpectNsHandlerFactoryGetCall(kHandleStr);
   StatusOr<NamespaceController *> statusor = nscon_factory_->Create(spec, {});
   ASSERT_OK(statusor);
   delete statusor.ValueOrDie();
@@ -146,16 +186,15 @@ TEST_F(NamespaceControllerFactoryImplTest, CreateCustomFlags) {
   FLAGS_nsinit_uid = 12345;
   FLAGS_nsinit_gid = 99999;
   const vector<string> kArgv = {
-      FLAGS_nscon_path,                          "create",
-      "--nsinit_path=/usr/local/bin/custominit", "--nsinit_uid=12345",
-      "--nsinit_gid=99999",                      SpecToStr(spec)};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgumentPointee<0>(kHandleStr), Return(0)));
-  EXPECT_CALL(*mock_nsh_factory_, Get(kHandleStr))
-      .WillOnce(Return(mock_nshandle_));
+    FLAGS_nscon_path, "create",
+    Substitute("--nsinit_path=$0", FLAGS_nsinit_path),
+    "--nsinit_uid=12345", "--nsinit_gid=99999", GetOutputFdArg(),
+    SpecToStr(spec) };
+
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput(kHandleStr);
+  ExpectNsHandlerFactoryGetCall(kHandleStr);
 
   StatusOr<NamespaceController *> statusor = nscon_factory_->Create(spec, {});
   ASSERT_OK(statusor);
@@ -170,19 +209,18 @@ TEST_F(NamespaceControllerFactoryImplTest, Create_NsconFailure) {
   spec.mutable_ipc();
 
   // Compose expected command with all default flags.
+  FLAGS_nsinit_path = "/usr/local/bin/custominit";
+  const string kCustomInitPath = Substitute("--nsinit_path=$0",
+                                            FLAGS_nsinit_path);
   const string kInitUid = Substitute("--nsinit_uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--nsinit_gid=$0", FLAGS_nsinit_gid);
   const vector<string> kArgv = {
-      FLAGS_nscon_path,                                  "create",
-      Substitute("--nsinit_path=$0", FLAGS_nsinit_path), kInitUid,
-      kInitGid,                                          SpecToStr(spec)};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  // Return non-zero exit status from nscon.
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(Return(1));
-  EXPECT_CALL(*mock_subprocess_, exit_code()).WillOnce(Return(1));
+    FLAGS_nscon_path, "create", kCustomInitPath,
+    kInitUid, kInitGid, GetOutputFdArg(), SpecToStr(spec) };
+
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 1);
+  ExpectPipeOutput("error");
 
   EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_factory_->Create(spec, {}));
 }
@@ -198,10 +236,11 @@ TEST_F(NamespaceControllerFactoryImplTest, Create_SubprocessFailure) {
   const string kInitUid = Substitute("--nsinit_uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--nsinit_gid=$0", FLAGS_nsinit_gid);
   const vector<string> kArgv = {
-      FLAGS_nscon_path,                                  "create",
+      FLAGS_nscon_path, "create",
       Substitute("--nsinit_path=$0", FLAGS_nsinit_path), kInitUid,
-      kInitGid,                                          SpecToStr(spec)};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
+      kInitGid, GetOutputFdArg(), SpecToStr(spec)};
+  ExpectPipeOpen();
+  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(3);
   EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
   EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(false));
   EXPECT_CALL(*mock_subprocess_, error_text()).WillOnce(Return("error"));
@@ -219,14 +258,12 @@ TEST_F(NamespaceControllerFactoryImplTest, Create_BadNsconOutput) {
   const string kInitUid = Substitute("--nsinit_uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--nsinit_gid=$0", FLAGS_nsinit_gid);
   const vector<string> kArgv = {
-      FLAGS_nscon_path,                                  "create",
+      FLAGS_nscon_path, "create",
       Substitute("--nsinit_path=$0", FLAGS_nsinit_path), kInitUid,
-      kInitGid,                                          SpecToStr(spec)};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgumentPointee<0>(kHandleStr), Return(0)));
+      kInitGid, GetOutputFdArg(), SpecToStr(spec)};
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput(kHandleStr);
   // nscon succeeds, but retuns junk or nshandle immediately becomes invalid.
   EXPECT_CALL(*mock_nsh_factory_, Get(kHandleStr))
       .WillOnce(Return(Status(::util::error::INTERNAL, "Invalid nshandle")));
@@ -244,19 +281,14 @@ TEST_F(NamespaceControllerFactoryImplTest, Create_CustomInit) {
   const string kInitUid = Substitute("--nsinit_uid=$0", FLAGS_nsinit_uid);
   const string kInitGid = Substitute("--nsinit_gid=$0", FLAGS_nsinit_gid);
   const vector<string> kArgv = {
-      FLAGS_nscon_path,                                  "create",
-      Substitute("--nsinit_path=$0", FLAGS_nsinit_path), kInitUid,
-      kInitGid,                                          SpecToStr(spec),
-      "--",                                              "/custom/init",
-      "arg1",                                            "arg2"};
+      FLAGS_nscon_path, "create",
+      Substitute("--nsinit_path=$0", FLAGS_nsinit_path), kInitUid, kInitGid,
+      GetOutputFdArg(), SpecToStr(spec), "--",  "/custom/init", "arg1", "arg2"};
   const vector<string> kCustomInitArgv = { "/custom/init", "arg1", "arg2" };
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgumentPointee<0>(kHandleStr), Return(0)));
-  EXPECT_CALL(*mock_nsh_factory_, Get(kHandleStr))
-      .WillOnce(Return(mock_nshandle_));
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput(kHandleStr);
+  ExpectNsHandlerFactoryGetCall(kHandleStr);
   StatusOr<NamespaceController *> statusor =
       nscon_factory_->Create(spec, kCustomInitArgv);
   ASSERT_OK(statusor);
@@ -289,6 +321,9 @@ TEST_F(NamespaceControllerFactoryImplTest, Detect_Fails) {
 
 class NamespaceControllerImplTest : public ::testing::Test {
  public:
+  NamespaceControllerImplTest() : pipefd_{10, 11} {}
+  ~NamespaceControllerImplTest() {}
+
   void SetUp() {
     mock_nshandle_ = new ::testing::StrictMock<MockNsHandle>();
     mock_subprocess_ = new ::testing::StrictMock<MockSubProcess>();
@@ -299,30 +334,80 @@ class NamespaceControllerImplTest : public ::testing::Test {
                                              mock_subprocess_factory_.get()));
   }
 
+  string GetOutputFdArg() {
+    return Substitute("--nscon_output_fd=$0", pipefd_[1]);
+  }
+
+  void ExpectDefaultSubprocessCalls(const vector<string> &argv,
+                                    int error_code) {
+    EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(3);
+    EXPECT_CALL(*mock_subprocess_, SetArgv(ContainerEq(argv)));
+    EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
+    EXPECT_CALL(*mock_subprocess_, Wait()).WillOnce(Return(true));
+    EXPECT_CALL(*mock_subprocess_, exit_code())
+        .WillRepeatedly(Return(error_code));
+  }
+
+  void ExpectPipeOpen() {
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Pipe(_))
+        .WillOnce(DoAll(SetArrayArgument<0>(pipefd_, &pipefd_[2]), Return(0)));
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Close(Eq(pipefd_[0])));
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Close(Eq(pipefd_[1])));
+  }
+
+  void ExpectPipeOutput(const char *data) {
+    char *tdata = const_cast<char *>(data);
+    EXPECT_CALL(mock_libc_fs_api_.Mock(), Read(Eq(pipefd_[0]), _, _))
+        .WillOnce(DoAll(SetArrayArgument<1>(tdata, tdata + strlen(tdata) + 1),
+                        Return(10)));
+  }
+
  protected:
   unique_ptr<NamespaceControllerImpl> nscon_;
   MockNsHandle *mock_nshandle_;
   MockSubProcess *mock_subprocess_;
   unique_ptr<SubProcessFactory> mock_subprocess_factory_;
   system_api::MockLibcProcessApiOverride libc_process_api_;
+  ::system_api::MockLibcFsApiOverride mock_libc_fs_api_;
+  int pipefd_[2];
 };
 
 TEST_F(NamespaceControllerImplTest, Run) {
   const vector<string> kCommand = {"/bin/ls", "-l"};
   const string kCommandPidStr = SimpleItoa(kPid);
+  RunSpec run_spec;
 
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
   // Compose expected command with all default flags.
-  vector<string> kArgv = {FLAGS_nscon_path, "run",     kHandleStr,
-                          "--",             "/bin/ls", "-l"};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgumentPointee<0>(kCommandPidStr), Return(0)));
+  vector<string> kArgv = {FLAGS_nscon_path, "run", GetOutputFdArg(), kHandleStr,
+                          SpecToStr(run_spec), "--", "/bin/ls", "-l"};
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput(kCommandPidStr.data());
 
-  StatusOr<pid_t> statusor = nscon_->Run(kCommand);
+  StatusOr<pid_t> statusor = nscon_->Run(kCommand, run_spec);
+  ASSERT_OK(statusor);
+  EXPECT_EQ(kPid, statusor.ValueOrDie());
+}
+
+TEST_F(NamespaceControllerImplTest, RunWithRunSpec) {
+  const vector<string> kCommand = {"/bin/ls", "-l"};
+  const string kCommandPidStr = SimpleItoa(kPid);
+  RunSpec run_spec;
+  run_spec.set_uid(99);
+  run_spec.set_gid(99);
+
+  EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
+  EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
+  // Compose expected command with all default flags.
+  vector<string> kArgv = {FLAGS_nscon_path, "run", GetOutputFdArg(), kHandleStr,
+                          SpecToStr(run_spec), "--", "/bin/ls", "-l"};
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput(kCommandPidStr.data());
+
+  StatusOr<pid_t> statusor = nscon_->Run(kCommand, run_spec);
   ASSERT_OK(statusor);
   EXPECT_EQ(kPid, statusor.ValueOrDie());
 }
@@ -330,62 +415,62 @@ TEST_F(NamespaceControllerImplTest, Run) {
 TEST_F(NamespaceControllerImplTest, Run_InvalidNshandle) {
   const vector<string> kCommand = {"/bin/ls", "-l"};
   const string kCommandPidStr = SimpleItoa(kPid);
+  RunSpec run_spec;
 
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(false));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand));
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand, run_spec));
 }
 
 TEST_F(NamespaceControllerImplTest, Run_SubprocessFailure) {
   const vector<string> kCommand = {"/bin/ls", "-l"};
+  RunSpec run_spec;
 
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
   // Compose expected command with all default flags.
-  vector<string> kArgv = {FLAGS_nscon_path, "run",     kHandleStr,
-                          "--",             "/bin/ls", "-l"};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
+  vector<string> kArgv = {FLAGS_nscon_path, "run", GetOutputFdArg(), kHandleStr,
+                          SpecToStr(run_spec), "--", "/bin/ls", "-l"};
+  ExpectPipeOpen();
+  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(3);
   EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
   EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(false));
   EXPECT_CALL(*mock_subprocess_, error_text()).WillOnce(Return("error"));
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand));
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand, run_spec));
 }
 
 TEST_F(NamespaceControllerImplTest, Run_NsconFailure) {
   const vector<string> kCommand = {"/bin/ls", "-l"};
+  RunSpec run_spec;
 
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
   // Compose expected command with all default flags.
-  vector<string> kArgv = {FLAGS_nscon_path, "run",     kHandleStr,
-                          "--",             "/bin/ls", "-l"};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(Return(1));
-  EXPECT_CALL(*mock_subprocess_, exit_code()).WillOnce(Return(1));
+  vector<string> kArgv = {FLAGS_nscon_path, "run", GetOutputFdArg(), kHandleStr,
+                          SpecToStr(run_spec), "--", "/bin/ls", "-l"};
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 1);
+  ExpectPipeOutput("Error");
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand));
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand, run_spec));
 }
 
 TEST_F(NamespaceControllerImplTest, Run_BadNsconOutput) {
   const vector<string> kCommand = {"/bin/ls", "-l"};
-  const string kBadPidStr = "bad 1234 pid";
+  const char *kBadPidStr = "bad 1234 pid";
+  RunSpec run_spec;
 
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
   // Compose expected command with all default flags.
-  vector<string> kArgv = {FLAGS_nscon_path, "run",     kHandleStr,
-                          "--",             "/bin/ls", "-l"};
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgumentPointee<0>(kBadPidStr), Return(0)));
+  vector<string> kArgv = {FLAGS_nscon_path, "run", GetOutputFdArg(), kHandleStr,
+                          SpecToStr(run_spec), "--", "/bin/ls", "-l"};
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput(kBadPidStr);
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand));
+  EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Run(kCommand, run_spec));
 }
 
 TEST_F(NamespaceControllerImplTest, Exec) {
@@ -430,14 +515,12 @@ TEST_F(NamespaceControllerImplTest, Update) {
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
   // Compose expected nscon command.
-  vector<string> kArgv = {FLAGS_nscon_path, "update", kHandleStr,
-                          SpecToStr(spec)};
+  vector<string> kArgv = {FLAGS_nscon_path, "update",  GetOutputFdArg(),
+                          kHandleStr, SpecToStr(spec)};
 
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(Return(0));
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 0);
+  ExpectPipeOutput("");
 
   ASSERT_OK(nscon_->Update(spec));
 }
@@ -463,10 +546,10 @@ TEST_F(NamespaceControllerImplTest, Update_SubprocessStartFailure) {
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
   // Compose expected nscon command.
-  vector<string> kArgv = {FLAGS_nscon_path, "update", kHandleStr,
-                          SpecToStr(spec)};
-
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
+  vector<string> kArgv = {FLAGS_nscon_path, "update", GetOutputFdArg(),
+                          kHandleStr, SpecToStr(spec)};
+  ExpectPipeOpen();
+  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(3);
   EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
   EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(false));
   EXPECT_CALL(*mock_subprocess_, error_text()).WillOnce(Return("error"));
@@ -483,17 +566,12 @@ TEST_F(NamespaceControllerImplTest, Update_NsconFailure) {
   EXPECT_CALL(*mock_nshandle_, IsValid()).WillOnce(Return(true));
   EXPECT_CALL(*mock_nshandle_, ToString()).WillOnce(Return(kHandleStr));
   // Compose expected nscon command.
-  vector<string> kArgv = {FLAGS_nscon_path, "update", kHandleStr,
-                          SpecToStr(spec)};
+  vector<string> kArgv = {FLAGS_nscon_path, "update", GetOutputFdArg(),
+                          kHandleStr, SpecToStr(spec)};
 
-  EXPECT_CALL(*mock_subprocess_, SetChannelAction(_, _)).Times(2);
-  EXPECT_CALL(*mock_subprocess_, SetArgv(kArgv));
-  EXPECT_CALL(*mock_subprocess_, Start()).WillOnce(Return(true));
-
-  const char *kNsconStderr = "nscon failed";
-  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(DoAll(SetArgumentPointee<1>(kNsconStderr), Return(1)));
-  EXPECT_CALL(*mock_subprocess_, exit_code()).WillOnce(Return(1));
+  ExpectPipeOpen();
+  ExpectDefaultSubprocessCalls(kArgv, 1);
+  ExpectPipeOutput("nscon failed");
 
   EXPECT_ERROR_CODE(::util::error::INTERNAL, nscon_->Update(spec));
 }

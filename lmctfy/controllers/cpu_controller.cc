@@ -50,11 +50,12 @@ static const int kPriorityLatency = 50;
 static const int kNormalLatency = 100;
 static const int kNoLatency = -1;  // No latency guarantees.
 
-CpuController::CpuController(const string &cgroup_path, bool owns_cgroup,
+CpuController::CpuController(const string &hierarchy_path,
+                             const string &cgroup_path, bool owns_cgroup,
                              const KernelApi *kernel,
                              EventFdNotifications *eventfd_notifications)
-    : CgroupController(CGROUP_CPU, cgroup_path, owns_cgroup, kernel,
-                       eventfd_notifications) {}
+    : CgroupController(CGROUP_CPU, hierarchy_path, cgroup_path, owns_cgroup,
+                       kernel, eventfd_notifications) {}
 
 int64 CpuController::MilliCpusToShares(int64 milli_cpus) const {
   return max(kMinShares, (milli_cpus * kPerCpuShares) / kCpusToMilliCpus);

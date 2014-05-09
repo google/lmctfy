@@ -31,7 +31,7 @@ class OutputMap;
 // Command to resume a container.
 ::util::Status ResumeContainer(const ::std::vector<string> &argv,
                                const ContainerApi *lmctfy,
-                               ::std::vector<OutputMap> *output);
+                               OutputMap *output);
 void RegisterResumeCommand();
 
 }  // namespace cli

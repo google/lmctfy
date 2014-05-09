@@ -14,6 +14,9 @@
 
 #include "lmctfy/controllers/cgroup_controller.h"
 
+#include <dirent.h>
+#include <sys/types.h>
+
 #include <memory>
 #include <vector>
 
@@ -23,10 +26,12 @@
 #include "lmctfy/controllers/cgroup_factory_mock.h"
 #include "lmctfy/controllers/eventfd_notifications_mock.h"
 #include "lmctfy/kernel_files.h"
+#include "global_utils/fs_utils_test_util.h"
 #include "util/safe_types/unix_gid.h"
 #include "util/safe_types/unix_uid.h"
 #include "util/errors_test_util.h"
 #include "util/file_lines_test_util.h"
+#include "system_api/libc_fs_api_test_util.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "util/task/codes.pb.h"
@@ -36,6 +41,8 @@ using ::system_api::KernelAPIMock;
 using ::file::JoinPath;
 using ::util::FileLines;
 using ::util::FileLinesTestUtil;
+using ::util::MockFsUtilsOverride;
+using ::system_api::MockLibcFsApiOverride;
 using ::util::UnixGid;
 using ::util::UnixGidValue;
 using ::util::UnixUid;
@@ -45,9 +52,12 @@ using ::std::vector;
 using ::testing::ContainerEq;
 using ::testing::Contains;
 using ::testing::DoAll;
+#include "util/testing/equals_initialized_proto.h"
+using ::testing::EqualsInitializedProto;
 using ::testing::NotNull;
 using ::testing::Return;
 using ::testing::SetArgPointee;
+using ::testing::StrEq;
 using ::testing::StrictMock;
 using ::testing::_;
 using ::util::Status;
@@ -62,11 +72,11 @@ namespace lmctfy {
 // Passthrough MemoryController for testing.
 class TestMemoryController : public CgroupController {
  public:
-  TestMemoryController(const string &cgroup_path, bool owns_cgroup,
-                       const KernelApi *kernel,
+  TestMemoryController(const string &hierarchy_path, const string &cgroup_path,
+                       bool owns_cgroup, const KernelApi *kernel,
                        EventFdNotifications *eventfd_notifications)
-      : CgroupController(CGROUP_MEMORY, cgroup_path, owns_cgroup, kernel,
-                         eventfd_notifications) {}
+      : CgroupController(CGROUP_MEMORY, hierarchy_path, cgroup_path,
+                         owns_cgroup, kernel, eventfd_notifications) {}
   virtual ~TestMemoryController() {}
 };
 
@@ -85,6 +95,7 @@ class TestMemoryControllerFactory
 static const CgroupHierarchy kType = CGROUP_MEMORY;
 static const char kContainerName[] = "/test";
 static const char kCgroupPath[] = "/dev/cgroup/memory/test";
+static const char kHierarchyPath[] = "/test";
 static const char kCgroupTasksPath[] = "/dev/cgroup/memory/test/tasks";
 static const char kCgroupClonePath[] =
     "/dev/cgroup/memory/test/cgroup.clone_children";
@@ -92,6 +103,7 @@ static const char kCgroupProcsPath[] = "/dev/cgroup/memory/test/cgroup.procs";
 static const char kMemoryLimit[] = "memory.limit_in_bytes";
 static const char kCgroupMemoryLimitPath[] =
     "/dev/cgroup/memory/test/memory.limit_in_bytes";
+const mode_t kMode = 0755;
 
 class CgroupControllerFactoryTest : public ::testing::Test {
  public:
@@ -254,23 +266,24 @@ class CgroupControllerTest : public ::testing::Test {
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
-    controller_.reset(NewCgroupController(kType, kCgroupPath, true,
-                                          mock_kernel_.get(),
+    controller_.reset(NewCgroupController(kType, kHierarchyPath, kCgroupPath,
+                                          true, mock_kernel_.get(),
                                           mock_eventfd_notifications_.get()));
   }
 
   void ReSetUpWithUnownedResource() {
-    controller_.reset(NewCgroupController(kType, kCgroupPath, false,
-                                          mock_kernel_.get(),
+    controller_.reset(NewCgroupController(kType, kHierarchyPath, kCgroupPath,
+                                          false, mock_kernel_.get(),
                                           mock_eventfd_notifications_.get()));
   }
 
   // Create a new CgroupController.
   CgroupController *NewCgroupController(
-      CgroupHierarchy type, const string &cgroup_path, bool owns_cgroup,
+      CgroupHierarchy type, const string &hierarchy_path,
+      const string &cgroup_path, bool owns_cgroup,
       const KernelApi *kernel, EventFdNotifications *eventfd_notifications) {
-    return new CgroupController(type, cgroup_path, owns_cgroup, kernel,
-                                eventfd_notifications);
+    return new CgroupController(type, hierarchy_path, cgroup_path, owns_cgroup,
+                                kernel, eventfd_notifications);
   }
 
   // Wrappers for protected methods.
@@ -314,9 +327,19 @@ class CgroupControllerTest : public ::testing::Test {
   unique_ptr<MockEventFdNotifications> mock_eventfd_notifications_;
   unique_ptr<KernelAPIMock> mock_kernel_;
   unique_ptr<CgroupController> controller_;
+  MockFsUtilsOverride mock_fs_utils_;
+  MockLibcFsApiOverride mock_libc_fs_api_;
 };
 
 TEST_F(CgroupControllerTest, DestroySuccess) {
+  // Need a DIR * just for mocking, this is not actually used.
+  DIR *dir = reinterpret_cast<DIR *>(3);
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), OpenDir(StrEq(kCgroupPath)))
+      .WillOnce(Return(dir));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), ReadDirR(dir, _, _))
+      .WillOnce(Return(0));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), CloseDir(dir));
+
   EXPECT_CALL(*mock_kernel_, RmDir(kCgroupPath)).WillRepeatedly(Return(0));
 
   EXPECT_TRUE(controller_.release()->Destroy().ok());
@@ -324,7 +347,8 @@ TEST_F(CgroupControllerTest, DestroySuccess) {
 
 TEST_F(CgroupControllerTest, DestroySuccessDoesNotOwnCgroup) {
   unique_ptr<CgroupController> controller(
-      NewCgroupController(kType, kCgroupPath, false, mock_kernel_.get(),
+      NewCgroupController(kType, kHierarchyPath, kCgroupPath, false,
+                          mock_kernel_.get(),
                           mock_eventfd_notifications_.get()));
 
   // Does not rmdir.
@@ -332,6 +356,15 @@ TEST_F(CgroupControllerTest, DestroySuccessDoesNotOwnCgroup) {
 }
 
 TEST_F(CgroupControllerTest, DestroyRmDirFails) {
+  // Need a DIR * just for mocking, this is not actually used.
+  DIR *dir = reinterpret_cast<DIR *>(3);
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), OpenDir(StrEq(kCgroupPath)))
+      .WillOnce(Return(dir));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), ReadDirR(dir, _, _))
+      .WillOnce(DoAll(SetArgPointee<2>(nullptr), Return(0)));
+  EXPECT_CALL(mock_libc_fs_api_.Mock(), CloseDir(dir))
+      .WillOnce(Return(0));
+
   EXPECT_CALL(*mock_kernel_, RmDir(kCgroupPath)).WillRepeatedly(Return(-1));
 
   EXPECT_EQ(::util::error::FAILED_PRECONDITION,
@@ -405,7 +438,8 @@ TEST_F(CgroupControllerTest, DelegateChownDirectoryFails) {
   EXPECT_CALL(*mock_kernel_, Chown(kCgroupTasksPath, kUid.value(),
                                    kGid.value())).WillRepeatedly(Return(-1));
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, controller_->Delegate(kUid, kGid));
+  EXPECT_ERROR_CODE(::util::error::FAILED_PRECONDITION,
+                    controller_->Delegate(kUid, kGid));
 }
 
 TEST_F(CgroupControllerTest, DelegateChownTasksFileFails) {
@@ -417,8 +451,26 @@ TEST_F(CgroupControllerTest, DelegateChownTasksFileFails) {
   EXPECT_CALL(*mock_kernel_, Chown(kCgroupTasksPath, kUid.value(),
                                    kGid.value())).WillRepeatedly(Return(0));
 
-  EXPECT_ERROR_CODE(::util::error::INTERNAL, controller_->Delegate(kUid, kGid));
+  EXPECT_ERROR_CODE(::util::error::FAILED_PRECONDITION,
+                    controller_->Delegate(kUid, kGid));
 }
+
+// Test for PopulateMachineSpec().
+
+TEST_F(CgroupControllerTest, PopulateMachineSpecSuccess) {
+  MachineSpec test_spec;
+  EXPECT_OK(controller_->PopulateMachineSpec(&test_spec));
+
+  // Create the expected machine spec.
+  MachineSpec expected_spec;
+  auto *virt_root =
+      expected_spec.mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root->set_root(kHierarchyPath);
+  virt_root->set_hierarchy(kType);
+
+  EXPECT_THAT(expected_spec, EqualsInitializedProto(test_spec));
+}
+
 
 // Tests for GetThreads().
 
@@ -715,55 +767,6 @@ TEST_F(CgroupControllerTest, GetParamIntConvertToIntFails) {
   EXPECT_EQ(::util::error::FAILED_PRECONDITION, statusor.status().error_code());
 }
 
-TEST_F(CgroupControllerTest, GetParamLinesSuccess) {
-  EXPECT_CALL(*mock_kernel_, Access(kCgroupMemoryLimitPath, F_OK))
-      .WillRepeatedly(Return(0));
-  mock_file_lines_.ExpectFileLines(kCgroupMemoryLimitPath, {"1", "2", "3"});
-
-  StatusOr<FileLines> statusor = CallGetParamLines(kMemoryLimit);
-  ASSERT_OK(statusor);
-  vector<string> lines;
-  for (const StringPiece &line : statusor.ValueOrDie()) {
-    lines.push_back(line.ToString());
-  }
-  ASSERT_EQ(3, lines.size());
-  EXPECT_EQ("1", lines[0]);
-  EXPECT_EQ("2", lines[1]);
-  EXPECT_EQ("3", lines[2]);
-}
-
-TEST_F(CgroupControllerTest, GetParamLinesEmptyFile) {
-  EXPECT_CALL(*mock_kernel_, Access(kCgroupMemoryLimitPath, F_OK))
-      .WillRepeatedly(Return(0));
-  mock_file_lines_.ExpectFileLines(kCgroupMemoryLimitPath, {});
-
-  StatusOr<FileLines> statusor = CallGetParamLines(kMemoryLimit);
-  ASSERT_OK(statusor);
-  bool has_lines = false;
-  for (const StringPiece &line : statusor.ValueOrDie()) {
-    LOG(INFO) << line.ToString();
-    has_lines = true;
-  }
-  ASSERT_FALSE(has_lines);
-}
-
-TEST_F(CgroupControllerTest, GetParamLinesFileDoesNotExist) {
-  EXPECT_CALL(*mock_kernel_, Access(kCgroupMemoryLimitPath, F_OK))
-      .WillRepeatedly(Return(1));
-
-  EXPECT_ERROR_CODE(NOT_FOUND, CallGetParamLines(kMemoryLimit));
-}
-
-// Tests for EnableCloneChildren().
-
-TEST_F(CgroupControllerTest, EnableCloneChildrenSuccess) {
-  EXPECT_CALL(*mock_kernel_,
-              SafeWriteResFile("1", kCgroupClonePath, NotNull(), NotNull()))
-      .WillRepeatedly(Return(true));
-
-  EXPECT_OK(controller_->EnableCloneChildren());
-}
-
 TEST_F(CgroupControllerTest, EnableCloneChildrenIgnoredWithUnownedCgroup) {
   ReSetUpWithUnownedResource();
 
@@ -877,7 +880,6 @@ TEST_F(CgroupControllerTest, UnownedSetChildrenLimitIgnored) {
   EXPECT_OK(controller_->SetChildrenLimit(42));
 }
 
-
 TEST_F(CgroupControllerTest, GetChildrenLimit) {
   const string kResFile =
       JoinPath(kCgroupPath, KernelFiles::CGroup::Children::kLimit);
@@ -914,82 +916,82 @@ TEST_F(CgroupControllerTest, GetChildrenLimitFails) {
   EXPECT_NOT_OK(controller_->GetChildrenLimit());
 }
 
-class GetSubdirectoriesTest : public ::testing::Test {
+class GetParamLinesTest : public ::testing::Test {
  public:
-  GetSubdirectoriesTest()
-      : basepath_(JoinPath(FLAGS_test_tmpdir, "subdirs_test")) {
-    // Create and ensure the existence of the test directory.
-    mkdir(basepath_.c_str(), 0777);
-    struct stat ignored;
-    CHECK_EQ(0, stat(basepath_.c_str(), &ignored));
-  }
-
   virtual void SetUp() {
     mock_kernel_.reset(new StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
-    controller_.reset(NewCgroupController(kType, basepath_, false,
-                                          mock_kernel_.get(),
+    controller_.reset(NewCgroupController(kType, kHierarchyPath, kCgroupPath,
+                                          true, mock_kernel_.get(),
                                           mock_eventfd_notifications_.get()));
   }
 
   // Create a new CgroupController.
   CgroupController *NewCgroupController(
-      CgroupHierarchy type, const string &cgroup_path, bool owns_cgroup,
+      CgroupHierarchy type, const string &hierarchy_path,
+      const string &cgroup_path, bool owns_cgroup,
       const KernelApi *kernel, EventFdNotifications *eventfd_notifications) {
-    return new CgroupController(type, cgroup_path, owns_cgroup, kernel,
-                                eventfd_notifications);
+    return new CgroupController(type, hierarchy_path, cgroup_path, owns_cgroup,
+                                kernel, eventfd_notifications);
   }
 
-  StatusOr<vector<string>> CallGetSubdirectories() {
-    return controller_->GetSubdirectories();
+  // Wrappers for protected methods.
+  StatusOr<FileLines> CallGetParamLines(const string &hierarchy_file) const {
+    return controller_->GetParamLines(hierarchy_file);
   }
 
  protected:
-  const string basepath_;
-
-  unique_ptr<KernelAPIMock> mock_kernel_;
+  FileLinesTestUtil mock_file_lines_;
   unique_ptr<MockEventFdNotifications> mock_eventfd_notifications_;
+  unique_ptr<KernelAPIMock> mock_kernel_;
   unique_ptr<CgroupController> controller_;
 };
 
-TEST_F(GetSubdirectoriesTest, ManySubdirectories) {
-  // Create 3 subcontainers we expect to exist.
-  const string kSubdir1 = JoinPath(basepath_, "sub1");
-  const string kSubdir2 = JoinPath(basepath_, "sub2");
-  const string kSubdir3 = JoinPath(basepath_, "sub3");
-  ASSERT_EQ(0, mkdir(kSubdir1.c_str(), 0777));
-  ASSERT_EQ(0, mkdir(kSubdir2.c_str(), 0777));
-  ASSERT_EQ(0, mkdir(kSubdir3.c_str(), 0777));
+TEST_F(GetParamLinesTest, GetParamLinesSuccess) {
+  EXPECT_CALL(*mock_kernel_, Access(kCgroupMemoryLimitPath, F_OK))
+      .WillRepeatedly(Return(0));
+  mock_file_lines_.ExpectFileLines(kCgroupMemoryLimitPath, {"1", "2", "3"});
 
-  StatusOr<vector<string>> statusor = CallGetSubdirectories();
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_EQ(3, statusor.ValueOrDie().size());
-
-  vector<string> subcontainers = statusor.ValueOrDie();
-  EXPECT_THAT(subcontainers, Contains("sub1"));
-  EXPECT_THAT(subcontainers, Contains("sub2"));
-  EXPECT_THAT(subcontainers, Contains("sub3"));
-
-  rmdir(kSubdir1.c_str());
-  rmdir(kSubdir2.c_str());
-  rmdir(kSubdir3.c_str());
+  StatusOr<FileLines> statusor = CallGetParamLines(kMemoryLimit);
+  ASSERT_OK(statusor);
+  vector<string> lines;
+  for (const StringPiece &line : statusor.ValueOrDie()) {
+    lines.push_back(line.ToString());
+  }
+  ASSERT_EQ(3, lines.size());
+  EXPECT_THAT(lines, ::testing::ElementsAreArray({"1", "2", "3"}));
 }
 
-TEST_F(GetSubdirectoriesTest, NoSubdirectories) {
-  StatusOr<vector<string>> statusor = CallGetSubdirectories();
-  ASSERT_TRUE(statusor.ok());
-  EXPECT_TRUE(statusor.ValueOrDie().empty());
+TEST_F(GetParamLinesTest, GetParamLinesEmptyFile) {
+  EXPECT_CALL(*mock_kernel_, Access(kCgroupMemoryLimitPath, F_OK))
+      .WillRepeatedly(Return(0));
+  mock_file_lines_.ExpectFileLines(kCgroupMemoryLimitPath, {});
+
+  StatusOr<FileLines> statusor = CallGetParamLines(kMemoryLimit);
+  ASSERT_OK(statusor);
+  bool has_lines = false;
+  for (const StringPiece &line : statusor.ValueOrDie()) {
+    LOG(INFO) << line.ToString();
+    has_lines = true;
+  }
+  ASSERT_FALSE(has_lines);
 }
 
-TEST_F(GetSubdirectoriesTest, Fails) {
-  // Delete the directory so there is nothing to list on.
-  rmdir(basepath_.c_str());
+TEST_F(GetParamLinesTest, GetParamLinesFileDoesNotExist) {
+  EXPECT_CALL(*mock_kernel_, Access(kCgroupMemoryLimitPath, F_OK))
+      .WillRepeatedly(Return(1));
 
-  StatusOr<vector<string>> statusor = CallGetSubdirectories();
-  EXPECT_FALSE(statusor.ok());
-  EXPECT_EQ(::util::error::FAILED_PRECONDITION, statusor.status().error_code());
+  EXPECT_ERROR_CODE(NOT_FOUND, CallGetParamLines(kMemoryLimit));
+}
 
-  ASSERT_EQ(0, mkdir(basepath_.c_str(), 0777));
+// Tests for EnableCloneChildren().
+
+TEST_F(GetParamLinesTest, EnableCloneChildrenSuccess) {
+  EXPECT_CALL(*mock_kernel_,
+              SafeWriteResFile("1", kCgroupClonePath, NotNull(), NotNull()))
+      .WillRepeatedly(Return(true));
+
+  EXPECT_OK(controller_->EnableCloneChildren());
 }
 
 }  // namespace lmctfy

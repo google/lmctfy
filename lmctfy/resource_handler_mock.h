@@ -52,6 +52,7 @@ class MockResourceHandler : public ResourceHandler {
   MOCK_METHOD0(Destroy, ::util::Status());
   MOCK_METHOD1(CreateResource, ::util::Status(const ContainerSpec &spec));
   MOCK_METHOD1(Enter, ::util::Status(const ::std::vector<pid_t> &tids));
+  MOCK_CONST_METHOD1(PopulateMachineSpec, ::util::Status(MachineSpec *spec));
   MOCK_METHOD2(Delegate, ::util::Status(::util::UnixUid uid,
                                         ::util::UnixGid gid));
   MOCK_CONST_METHOD2(Stats, ::util::Status(Container::StatsType type,

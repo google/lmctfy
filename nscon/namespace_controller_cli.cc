@@ -79,12 +79,24 @@ NamespaceControllerCli::GetNamespacesFromSpec(const NamespaceSpec &spec) const {
 StatusOr<const string>
 NamespaceControllerCli::Create(const NamespaceSpec &spec,
                                const vector<string> &init_argv) const {
-  vector<int> namespaces = GetNamespacesFromSpec(spec);
+  vector<NsConfigurator*> configs;
+  ElementDeleter d(&configs);
+
+  // Its invalid to provide FilesystemSpec without mount-namespace.
+  if (spec.has_fs() && !spec.has_mnt()) {
+    return Status(::util::error::INVALID_ARGUMENT,
+                  "FilesystemSpec needs Mount namespaces enabled.");
+  }
+
+  // Always get the FilesystemConfigurator first.
+  if (spec.has_mnt()) {
+    configs.push_back(
+        RETURN_IF_ERROR(config_factory_->GetFilesystemConfigurator()));
+  }
 
   // Get configurators for all the namespaces. Return error if kernel doesn't
   // support any of the namespaces.
-  vector<NsConfigurator*> configs;
-  ElementDeleter d(&configs);
+  vector<int> namespaces = GetNamespacesFromSpec(spec);
   for (auto ns : namespaces) {
     if (!ns_util_->IsNamespaceSupported(ns)) {
       const char *nsname = RETURN_IF_ERROR(ns_util_->NsCloneFlagToName(ns));
@@ -104,6 +116,9 @@ NamespaceControllerCli::Create(const NamespaceSpec &spec,
     }
   }
 
+  // Always add MachineConfigurator last.
+  configs.push_back(RETURN_IF_ERROR(config_factory_->GetMachineConfigurator()));
+
   vector<string> argv = init_argv;
   if (argv.empty()) {
     // Build nsinit command and use process launcher to start it.
@@ -112,8 +127,9 @@ NamespaceControllerCli::Create(const NamespaceSpec &spec,
              Substitute("--gid=$0", FLAGS_nsinit_gid) };
   }
 
-  pid_t init_pid = RETURN_IF_ERROR(pl_->LaunchWithConfiguration(
-          argv, namespaces, configs, spec));
+  pid_t init_pid =
+      RETURN_IF_ERROR(pl_->NewNsProcess(argv, namespaces, configs, spec,
+                                        spec.run_spec()));
 
   unique_ptr<const NsHandle> nshandle(
       RETURN_IF_ERROR(nshandle_factory_->Get(init_pid)));
@@ -123,7 +139,8 @@ NamespaceControllerCli::Create(const NamespaceSpec &spec,
 
 StatusOr<pid_t>
 NamespaceControllerCli::RunShellCommand(const string &nshandlestr,
-                                        const string &command) const {
+                                        const string &command,
+                                        const RunSpec &run_spec) const {
   unique_ptr<const NsHandle> nshandle(
       RETURN_IF_ERROR(nshandle_factory_->Get(nshandlestr)));
   pid_t ns_target = nshandle->ToPid();
@@ -138,12 +155,13 @@ NamespaceControllerCli::RunShellCommand(const string &nshandlestr,
       RETURN_IF_ERROR(ns_util_->GetUnsharedNamespaces(ns_target));
 
   // Launch with namespaces in the target identified by nshandle.
-  return pl_->Launch(argv, namespaces, ns_target);
+  return pl_->NewNsProcessInTarget(argv, namespaces, ns_target, run_spec);
 }
 
 StatusOr<pid_t>
 NamespaceControllerCli::Run(const string &nshandlestr,
-                            const vector<string> &command) const {
+                            const vector<string> &command,
+                            const RunSpec &run_spec) const {
   if (command.empty()) {
     return Status(::util::error::INVALID_ARGUMENT, "Empty command");
   }
@@ -156,7 +174,7 @@ NamespaceControllerCli::Run(const string &nshandlestr,
       RETURN_IF_ERROR(ns_util_->GetUnsharedNamespaces(ns_target));
 
   // Launch with namespaces in the target identified by nshandle.
-  return pl_->Launch(command, namespaces, ns_target);
+  return pl_->NewNsProcessInTarget(command, namespaces, ns_target, run_spec);
 }
 
 // TODO(adityakali): Re-use the code in ProcessLauncher::WaitForChildSuccess()

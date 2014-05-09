@@ -141,6 +141,16 @@ class CgroupResourceHandlerFactory : public ResourceHandlerFactory {
       return _statusor.status();                                              \
     }                                                                         \
   } while (0)
+#define SET_IF_PRESENT_SAVE_FAILURE(statusor, set_fn, failure_status)         \
+  do {                                                                        \
+    const auto &_statusor = statusor;                                         \
+    if (_statusor.ok()) {                                                     \
+      set_fn(_statusor.ValueOrDie());                                         \
+    } else if (_statusor.status().error_code() != ::util::error::NOT_FOUND) { \
+      failure_status = _statusor.status();                                    \
+    }                                                                         \
+  } while (0)
+
 #define SET_IF_PRESENT_VAL(statusor, set_fn)                                  \
   do {                                                                        \
     const auto &_statusor = statusor;                                         \
@@ -149,6 +159,22 @@ class CgroupResourceHandlerFactory : public ResourceHandlerFactory {
     } else if (_statusor.status().error_code() != ::util::error::NOT_FOUND) { \
       return _statusor.status();                                              \
     }                                                                         \
+  } while (0)
+#define SET_IF_PRESENT_VAL_SAVE_FAILURE(statusor, set_fn, failure_status)     \
+  do {                                                                        \
+    const auto &_statusor = statusor;                                         \
+    if (_statusor.ok()) {                                                     \
+      set_fn(_statusor.ValueOrDie().value());                                 \
+    } else if (_statusor.status().error_code() != ::util::error::NOT_FOUND) { \
+      failure_status = _statusor.status();                                    \
+    }                                                                         \
+  } while (0)
+
+#define SAVE_IF_ERROR(status, failure_status)  \
+  do {                                         \
+    if (!status.ok()) {                        \
+      failure_status = status;                 \
+    }                                          \
   } while (0)
 
 // Abstract class that provides some useful methods and members for handling
@@ -212,6 +238,8 @@ class CgroupResourceHandler : public ResourceHandler {
 
   ::util::Status Delegate(::util::UnixUid uid,
                           ::util::UnixGid gid) override;
+
+  ::util::Status PopulateMachineSpec(MachineSpec *spec) const override;
 
  protected:
   // Perform any setup that only occurs at container creation time. This setup

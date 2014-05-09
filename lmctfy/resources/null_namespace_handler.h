@@ -40,7 +40,8 @@ class NullNamespaceHandlerFactory : public NamespaceHandlerFactory {
       const string &container_name) const override;
   ::util::StatusOr<NamespaceHandler *> CreateNamespaceHandler(
       const string &container_name,
-      const ContainerSpec &spec) override;
+      const ContainerSpec &spec,
+      const MachineSpec &machine_spec) override;
   ::util::Status InitMachine(const InitSpec &spec) override;
 
  private:

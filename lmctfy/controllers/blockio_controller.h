@@ -51,8 +51,8 @@ class BlockIoControllerFactory
 // Class is thread-safe.
 class BlockIoController : public CgroupController {
  public:
-  BlockIoController(const string &cgroup_path, bool owns_cgroup,
-                    const KernelApi *kernel,
+  BlockIoController(const string &hierarchy_path, const string &cgroup_path,
+                    bool owns_cgroup, const KernelApi *kernel,
                     EventFdNotifications *eventfd_notifications);
   ~BlockIoController() override {}
 
@@ -79,6 +79,18 @@ class BlockIoController : public CgroupController {
   virtual ::util::StatusOr<BlockIoSpec::MaxLimitSet> GetMaxLimit() const;
 
  private:
+  ::util::StatusOr<string> FormatWeightString(
+      const BlockIoSpec::DeviceLimit &device, int64 multiplier) const;
+
+  ::util::Status FillLimitSpec(
+      google::protobuf::RepeatedPtrField<BlockIoSpec::DeviceLimit> *limits,
+      const string &spec_file) const;
+
+  ::util::Status FillThrottlingSpec(BlockIoSpec::MaxLimitSet *max_limit_set,
+                                    const string &spec_file) const;
+
+  ::util::Status IsValidLimit(uint64 limit);
+
   DISALLOW_COPY_AND_ASSIGN(BlockIoController);
 };
 

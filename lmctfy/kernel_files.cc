@@ -101,6 +101,8 @@ const char KernelFiles::Memory::kDirtyBackgroundLimitInBytes[] =
     "memory.dirty_background_limit_in_bytes";
 const char KernelFiles::Memory::kDirtyLimitInBytes[] =
     "memory.dirty_limit_in_bytes";
+const char KernelFiles::Memory::kFailCount[] =
+    "memory.failcnt";
 const char KernelFiles::Memory::kIdlePageStats[] =
     "memory.idle_page_stats";
 const char KernelFiles::Memory::kLimitInBytes[] = "memory.limit_in_bytes";

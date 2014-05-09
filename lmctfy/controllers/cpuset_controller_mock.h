@@ -46,8 +46,9 @@ class MockCpusetController : public CpusetController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockCpusetController()
-      : CpusetController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-                         reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
+      : CpusetController(
+          "", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+          reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
   }
 
   MOCK_METHOD1(SetCpuMask, ::util::Status(

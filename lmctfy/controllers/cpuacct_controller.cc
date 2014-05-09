@@ -64,10 +64,10 @@ const map<string, CpuHistogramType> CpuAcctController::kHistogramNames = {
   { "queue_other", QUEUE_OTHER }};
 
 CpuAcctController::CpuAcctController(
-    const string &cgroup_path, bool owns_cgroup, const KernelApi *kernel,
-    EventFdNotifications *eventfd_notifications)
-    : CgroupController(CGROUP_CPUACCT, cgroup_path, owns_cgroup, kernel,
-                       eventfd_notifications) {}
+    const string &hierarchy_path, const string &cgroup_path, bool owns_cgroup,
+    const KernelApi *kernel, EventFdNotifications *eventfd_notifications)
+    : CgroupController(CGROUP_CPUACCT, hierarchy_path, cgroup_path, owns_cgroup,
+                       kernel, eventfd_notifications) {}
 
 StatusOr<int64> CpuAcctController::GetCpuUsageInNs() const {
   return GetParamInt(KernelFiles::CPUAcct::kUsage);

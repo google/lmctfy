@@ -54,8 +54,16 @@ class MountUtilsImpl : public MountUtils {
  public:
   MountUtilsImpl() {}
 
-  Status BindMount(const string &source, const string &target) const override {
+  Status BindMount(const string &source, const string &target,
+                   const ::std::set<BindMountOpts> &opts) const override {
+    if (opts.find(PRIVATE) != opts.end() && opts.find(SLAVE) != opts.end()) {
+      return Status(INVALID_ARGUMENT,
+                    "Specify either PRIVATE or SLAVE as mount options");
+    }
     uint64 mount_flags = kMountFlags | MS_BIND;
+    if (opts.find(RECURSIVE) != opts.end()) {
+      mount_flags |= MS_REC;
+    }
     if (GlobalLibcFsApi()->Mount(source.c_str(), target.c_str(), "",
                                  mount_flags, nullptr) == -1) {
       return Status(INTERNAL,
@@ -63,7 +71,41 @@ class MountUtilsImpl : public MountUtils {
                                "$2. Error: $3", source, target, mount_flags,
                                strerror(errno)));
     }
-    // TODO(vishnuk): Add support for read-only bind mounts.
+    if (opts.find(READONLY) != opts.end()) {
+      mount_flags |= (MS_REMOUNT | MS_RDONLY);
+      if (GlobalLibcFsApi()->Mount(source.c_str(), target.c_str(), "",
+                                   mount_flags, nullptr) == -1) {
+        return Status(INTERNAL,
+                      Substitute("Could not remount as readonly the bind mount"
+                                 " at $0 with flags: $1. Error: $2", target,
+                                 mount_flags, strerror(errno)));
+      }
+    }
+    if (opts.find(PRIVATE) != opts.end()) {
+      mount_flags = MS_PRIVATE;
+      if (opts.find(RECURSIVE) != opts.end()) {
+        mount_flags |= MS_REC;
+      }
+      if (GlobalLibcFsApi()->Mount(source.c_str(), target.c_str(), "",
+                                   mount_flags, nullptr) == -1) {
+        return Status(INTERNAL,
+                      Substitute("Could not mark as private the bind mount"
+                                 " at $0 with flags: $1. Error: $2", target,
+                                 mount_flags, strerror(errno)));
+      }
+    } else if (opts.find(SLAVE) != opts.end()) {
+      mount_flags = MS_SLAVE;
+      if (opts.find(RECURSIVE) != opts.end()) {
+        mount_flags |= MS_REC;
+      }
+      if (GlobalLibcFsApi()->Mount(source.c_str(), target.c_str(), "",
+                                   mount_flags, nullptr) == -1) {
+        return Status(INTERNAL,
+                      Substitute("Could not mark as slave the bind mount"
+                                 " at $0 with flags: $1. Error: $2", target,
+                                 mount_flags, strerror(errno)));
+      }
+    }
     return Status::OK;
   }
 

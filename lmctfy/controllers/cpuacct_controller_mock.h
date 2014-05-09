@@ -44,7 +44,7 @@ class MockCpuAcctController : public CpuAcctController {
  public:
   MockCpuAcctController()
       : CpuAcctController(
-            "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+            "", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
             reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_CONST_METHOD0(GetCpuUsageInNs, ::util::StatusOr<int64>());

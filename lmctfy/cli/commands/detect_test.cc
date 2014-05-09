@@ -48,31 +48,31 @@ class DetectTest : public ::testing::Test {
 
 TEST_F(DetectTest, Success) {
   const vector<string> args = {"detect", "42"};
-  vector<OutputMap> output;
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Detect(42))
       .WillOnce(Return(string(kContainerName)));
 
   EXPECT_TRUE(DetectContainer(args, mock_lmctfy_.get(), &output).ok());
-  ASSERT_EQ(1, output.size());
-  EXPECT_EQ(kContainerName, output[0].GetValueByKey("name"));
+  ASSERT_EQ(1, output.NumPairs());
+  EXPECT_TRUE(output.ContainsPair("name", kContainerName));
 }
 
 TEST_F(DetectTest, SuccessSelf) {
   const vector<string> args = {"detect"};
-  vector<OutputMap> output;
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Detect(Ge(0)))
       .WillOnce(Return(string(kContainerName)));
 
   EXPECT_TRUE(DetectContainer(args, mock_lmctfy_.get(), &output).ok());
-  ASSERT_EQ(1, output.size());
-  EXPECT_EQ(kContainerName, output[0].GetValueByKey("name"));
+  ASSERT_EQ(1, output.NumPairs());
+  EXPECT_TRUE(output.ContainsPair("name", kContainerName));
 }
 
 TEST_F(DetectTest, BadPid) {
   const vector<string> args = {"detect", "not_a_pid"};
-  vector<OutputMap> output;
+  OutputMap output;
 
   Status status = DetectContainer(args, mock_lmctfy_.get(), &output);
   EXPECT_FALSE(status.ok());
@@ -81,7 +81,7 @@ TEST_F(DetectTest, BadPid) {
 
 TEST_F(DetectTest, DetectFails) {
   const vector<string> args = {"detect", "42"};
-  vector<OutputMap> output;
+  OutputMap output;
 
   EXPECT_CALL(*mock_lmctfy_, Detect(42))
       .WillOnce(Return(Status::CANCELLED));

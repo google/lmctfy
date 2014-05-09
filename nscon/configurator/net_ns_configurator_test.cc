@@ -31,12 +31,15 @@ using ::std::unique_ptr;
 using ::strings::Join;
 using ::testing::_;
 using ::testing::AtLeast;
+using ::testing::Sequence;
 using ::testing::NotNull;
 using ::testing::Return;
 using ::testing::SetArgPointee;
 using ::testing::StrEq;
 using ::util::Status;
 using ::util::StatusOr;
+
+DECLARE_string(nscon_ovs_bin);
 
 namespace containers {
 namespace nscon {
@@ -70,6 +73,21 @@ class NetNsConfiguratorTest : public ::testing::Test {
 
   Status CallSanityCheckNetSpec(const Network &net_spec) {
     return net_ns_config_->SanityCheckNetSpec(net_spec);
+  }
+
+  vector<string> CallGetEthBridgeAddInterfaceCommand(
+      const string &outside, const string &bridge) const {
+    return net_ns_config_->GetEthBridgeAddInterfaceCommand(outside, bridge);
+  }
+
+  vector<string> CallGetOvsBridgeAddInterfaceCommand(
+      const string &outside, const string &bridge) const {
+    return net_ns_config_->GetOvsBridgeAddInterfaceCommand(outside, bridge);
+  }
+
+  vector<string> CallGetBridgeAddInterfaceCommand(
+      const string &outside, const Network_Bridge &bridge) {
+    return net_ns_config_->GetBridgeAddInterfaceCommand(outside, bridge);
   }
 
   vector<string> CallCreateVethPairCommand(const string &outside,
@@ -142,6 +160,33 @@ TEST_F(NetNsConfiguratorTest, RunCommand_Success) {
 
   ASSERT_OK(CallRunCommand(argv, mock_subprocess_));
   delete mock_subprocess_;
+}
+
+TEST_F(NetNsConfiguratorTest, GetBridgeAddInterfaceCommand_Default) {
+  Network_Bridge bridge;
+  bridge.set_name("my_bridge");
+  const vector<string> command =
+      CallGetBridgeAddInterfaceCommand("foo_veth", bridge);
+  EXPECT_EQ("/sbin/brctl addif my_bridge foo_veth", Join(command, " "));
+}
+
+TEST_F(NetNsConfiguratorTest, GetBridgeAddInterfaceCommand_EthType) {
+  Network_Bridge bridge;
+  bridge.set_name("my_bridge");
+  bridge.set_type(Network::Bridge::ETH);
+  const vector<string> command =
+      CallGetBridgeAddInterfaceCommand("foo_veth", bridge);
+  EXPECT_EQ("/sbin/brctl addif my_bridge foo_veth", Join(command, " "));
+}
+
+TEST_F(NetNsConfiguratorTest, GetBridgeAddInterfaceCommand_OvsType) {
+  Network_Bridge bridge;
+  bridge.set_name("my_bridge");
+  bridge.set_type(Network::Bridge::OVS);
+  FLAGS_nscon_ovs_bin = "ovs-vsctl";
+  const vector<string> command =
+      CallGetBridgeAddInterfaceCommand("foo_veth", bridge);
+  EXPECT_EQ("ovs-vsctl add-port my_bridge foo_veth", Join(command, " "));
 }
 
 TEST_F(NetNsConfiguratorTest, GetCreateVethPairCommand) {
@@ -226,10 +271,19 @@ TEST_F(NetNsConfiguratorTest,
   }
 }
 
-TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_InterfaceAndVeth) {
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_InterfaceAndConnection) {
   Network net_spec;
   net_spec.mutable_interface();
-  net_spec.mutable_veth_pair();
+  net_spec.mutable_connection();
+
+  EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    CallSanityCheckNetSpec(net_spec));
+}
+
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_InterfaceAndVethPair) {
+  Network net_spec;
+  net_spec.mutable_interface();
+  net_spec.mutable_connection()->mutable_veth_pair();
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     CallSanityCheckNetSpec(net_spec));
@@ -252,7 +306,7 @@ TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_InterfaceSuccess) {
 
 TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_NoVethOut) {
   Network net_spec;
-  net_spec.mutable_veth_pair();
+  net_spec.mutable_connection()->mutable_veth_pair()->mutable_inside();
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     CallSanityCheckNetSpec(net_spec));
@@ -260,7 +314,7 @@ TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_NoVethOut) {
 
 TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_EmptyVethOut) {
   Network net_spec;
-  net_spec.mutable_veth_pair()->mutable_outside();
+  net_spec.mutable_connection()->mutable_veth_pair()->mutable_outside();
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     CallSanityCheckNetSpec(net_spec));
@@ -268,7 +322,7 @@ TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_EmptyVethOut) {
 
 TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_NoVethIn) {
   Network net_spec;
-  net_spec.mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     CallSanityCheckNetSpec(net_spec));
@@ -276,8 +330,8 @@ TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_NoVethIn) {
 
 TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_EmptyVethIn) {
   Network net_spec;
-  net_spec.mutable_veth_pair()->set_outside(kInterface);
-  net_spec.mutable_veth_pair()->mutable_inside();
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->mutable_inside();
 
   EXPECT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
                     CallSanityCheckNetSpec(net_spec));
@@ -285,8 +339,73 @@ TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_EmptyVethIn) {
 
 TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_VethSuccess) {
   Network net_spec;
-  net_spec.mutable_veth_pair()->set_outside(kInterface);
-  net_spec.mutable_veth_pair()->set_inside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_inside(kInterface);
+
+  ASSERT_OK(CallSanityCheckNetSpec(net_spec));
+}
+
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_NoBridgeName) {
+  Network net_spec;
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_inside(kInterface);
+  net_spec.mutable_connection()->mutable_bridge();
+
+  ASSERT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    CallSanityCheckNetSpec(net_spec));
+}
+
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_EmptyBridgeName) {
+  Network net_spec;
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_inside(kInterface);
+  net_spec.mutable_connection()->mutable_bridge()->set_name("");
+
+  ASSERT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    CallSanityCheckNetSpec(net_spec));
+}
+
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_NoBridgeType) {
+  Network net_spec;
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_inside(kInterface);
+  net_spec.mutable_connection()->mutable_bridge()->set_name("foo");
+
+  ASSERT_OK(CallSanityCheckNetSpec(net_spec));
+}
+
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_EthBridgeSuccess) {
+  Network net_spec;
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_inside(kInterface);
+  net_spec.mutable_connection()->mutable_bridge()->set_name("foo");
+  net_spec.mutable_connection()->mutable_bridge()->set_type(
+      Network::Bridge::ETH);
+
+  ASSERT_OK(CallSanityCheckNetSpec(net_spec));
+}
+
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_OvsBridgeError) {
+  Network net_spec;
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_inside(kInterface);
+  net_spec.mutable_connection()->mutable_bridge()->set_name("foo");
+  net_spec.mutable_connection()->mutable_bridge()->set_type(
+      Network::Bridge::OVS);
+  FLAGS_nscon_ovs_bin = "";
+
+  ASSERT_ERROR_CODE(::util::error::INVALID_ARGUMENT,
+                    CallSanityCheckNetSpec(net_spec));
+}
+
+TEST_F(NetNsConfiguratorTest, SanityCheckNetSpec_OvsBridgeSuccess) {
+  Network net_spec;
+  net_spec.mutable_connection()->mutable_veth_pair()->set_outside(kInterface);
+  net_spec.mutable_connection()->mutable_veth_pair()->set_inside(kInterface);
+  net_spec.mutable_connection()->mutable_bridge()->set_name("foo");
+  net_spec.mutable_connection()->mutable_bridge()->set_type(
+      Network::Bridge::OVS);
+  FLAGS_nscon_ovs_bin = "ovs-vsctl";
 
   ASSERT_OK(CallSanityCheckNetSpec(net_spec));
 }
@@ -336,8 +455,9 @@ TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_SanityCheckFailure) {
 
 TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_CreateVethFails) {
   NamespaceSpec spec;
-  spec.mutable_net()->mutable_veth_pair()->set_outside("vethXYZ123");
-  spec.mutable_net()->mutable_veth_pair()->set_inside(kInterface);
+  auto *connection = spec.mutable_net()->mutable_connection();
+  connection->mutable_veth_pair()->set_outside("vethXYZ123");
+  connection->mutable_veth_pair()->set_inside(kInterface);
 
   const vector<string> command =
       CallCreateVethPairCommand("vethXYZ123", kInterface, kPid);
@@ -352,17 +472,54 @@ TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_CreateVethFails) {
                     net_ns_config_->SetupOutsideNamespace(spec, kPid));
 }
 
+TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_ActivateVethFails) {
+  NamespaceSpec spec;
+  auto *connection = spec.mutable_net()->mutable_connection();
+  connection->mutable_veth_pair()->set_outside("vethXYZ123");
+  connection->mutable_veth_pair()->set_inside(kInterface);
+
+  const vector<string> command =
+      CallCreateVethPairCommand("vethXYZ123", kInterface, kPid);
+  CommonMockSubProcessSetup();
+  Sequence s;
+  EXPECT_CALL(*mock_subprocess_, SetArgv(command)).InSequence(s);
+  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
+      .InSequence(s)
+      .WillOnce(Return(0))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*mock_subprocess_,
+              SetArgv(CallActivateInterfaceCommand("vethXYZ123")))
+      .InSequence(s);
+  ::testing::Expectation expectation_communicate =
+      EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
+      .InSequence(s)
+      .WillOnce(Return(-1))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*mock_subprocess_, exit_code())
+      .After(expectation_communicate)
+      .WillOnce(Return(-1));
+  EXPECT_CALL(*mock_subprocess_, error_text())
+      .After(expectation_communicate)
+      .WillOnce(Return(""));
+
+  EXPECT_ERROR_CODE(::util::error::INTERNAL,
+                    net_ns_config_->SetupOutsideNamespace(spec, kPid));
+}
+
 TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_CreateVethSuccess) {
   NamespaceSpec spec;
-  spec.mutable_net()->mutable_veth_pair()->set_outside("vethXYZ123");
-  spec.mutable_net()->mutable_veth_pair()->set_inside(kInterface);
+  auto *connection = spec.mutable_net()->mutable_connection();
+  connection->mutable_veth_pair()->set_outside("vethXYZ123");
+  connection->mutable_veth_pair()->set_inside(kInterface);
 
   const vector<string> command =
       CallCreateVethPairCommand("vethXYZ123", kInterface, kPid);
   CommonMockSubProcessSetup();
   EXPECT_CALL(*mock_subprocess_, SetArgv(command));
+  EXPECT_CALL(*mock_subprocess_,
+              SetArgv(CallActivateInterfaceCommand("vethXYZ123")));
   EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
-      .WillOnce(Return(0));
+      .WillRepeatedly(Return(0));
 
   ASSERT_OK(net_ns_config_->SetupOutsideNamespace(spec, kPid));
 }
@@ -382,6 +539,79 @@ TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_MoveDevToNsFails) {
 
   EXPECT_ERROR_CODE(::util::error::INTERNAL,
                     net_ns_config_->SetupOutsideNamespace(spec, kPid));
+}
+
+TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_BridgeSetupFails) {
+  NamespaceSpec spec;
+  auto *connection = spec.mutable_net()->mutable_connection();
+  connection->mutable_veth_pair()->set_outside("vethXYZ123");
+  connection->mutable_veth_pair()->set_inside(kInterface);
+  connection->mutable_bridge()->set_name("my_bridge");
+
+  const vector<string> command =
+      CallCreateVethPairCommand("vethXYZ123", kInterface, kPid);
+  CommonMockSubProcessSetup();
+  EXPECT_CALL(*mock_subprocess_, SetArgv(command));
+  EXPECT_CALL(*mock_subprocess_,
+              SetArgv(CallGetEthBridgeAddInterfaceCommand("vethXYZ123",
+                                                          "my_bridge")));
+  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
+      .WillOnce(Return(-1))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
+      .WillOnce(Return(0))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*mock_subprocess_, exit_code()).WillOnce(Return(-1));
+  EXPECT_CALL(*mock_subprocess_, error_text()).WillOnce(Return(""));
+
+  EXPECT_ERROR_CODE(::util::error::INTERNAL,
+                    net_ns_config_->SetupOutsideNamespace(spec, kPid));
+}
+
+TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_BridgeSetupSucceeds) {
+  NamespaceSpec spec;
+  auto *connection = spec.mutable_net()->mutable_connection();
+  connection->mutable_veth_pair()->set_outside("vethXYZ123");
+  connection->mutable_veth_pair()->set_inside(kInterface);
+  connection->mutable_bridge()->set_name("my_bridge");
+
+  const vector<string> command =
+      CallCreateVethPairCommand("vethXYZ123", kInterface, kPid);
+  CommonMockSubProcessSetup();
+  EXPECT_CALL(*mock_subprocess_, SetArgv(command));
+  EXPECT_CALL(*mock_subprocess_,
+              SetArgv(CallGetEthBridgeAddInterfaceCommand("vethXYZ123",
+                                                          "my_bridge")));
+  EXPECT_CALL(*mock_subprocess_,
+              SetArgv(CallActivateInterfaceCommand("vethXYZ123")));
+  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
+      .WillRepeatedly(Return(0));
+
+  ASSERT_OK(net_ns_config_->SetupOutsideNamespace(spec, kPid));
+}
+
+TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_OvsBridgeSetupSucceeds) {
+  NamespaceSpec spec;
+  auto *connection = spec.mutable_net()->mutable_connection();
+  connection->mutable_veth_pair()->set_outside("vethXYZ123");
+  connection->mutable_veth_pair()->set_inside(kInterface);
+  connection->mutable_bridge()->set_name("my_bridge");
+  connection->mutable_bridge()->set_type(Network::Bridge::OVS);
+  FLAGS_nscon_ovs_bin = "ovs-vsctl";
+
+  const vector<string> command =
+      CallCreateVethPairCommand("vethXYZ123", kInterface, kPid);
+  CommonMockSubProcessSetup();
+  EXPECT_CALL(*mock_subprocess_, SetArgv(command));
+  EXPECT_CALL(*mock_subprocess_,
+              SetArgv(CallGetOvsBridgeAddInterfaceCommand("vethXYZ123",
+                                                          "my_bridge")));
+  EXPECT_CALL(*mock_subprocess_,
+              SetArgv(CallActivateInterfaceCommand("vethXYZ123")));
+  EXPECT_CALL(*mock_subprocess_, Communicate(NotNull(), NotNull()))
+      .WillRepeatedly(Return(0));
+
+  ASSERT_OK(net_ns_config_->SetupOutsideNamespace(spec, kPid));
 }
 
 TEST_F(NetNsConfiguratorTest, SetupOutsideNamespace_MoveDevToNsSuccess) {

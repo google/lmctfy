@@ -24,6 +24,7 @@ namespace containers {
 namespace nscon {
 class NamespaceControllerCli;
 class NamespaceSpec;
+class RunSpec;
 
 namespace cli {
 
@@ -45,46 +46,56 @@ class NsconCli {
   //  argv: List of arguments to nscon after all flags are parsed.
   //  user_command: user provided command.
   // Returns:
+  //  On success, a string that needs to be output.
   //  INVALID_ARGUMENT: If the input is invalid.
   //  Any error encountered while running user requested operation.
-  ::util::Status HandleUserInput(const ::std::vector<string> &argv,
-                                 const ::std::vector<string> &user_command);
+  ::util::StatusOr<string> HandleUserInput(
+       const ::std::vector<string> &argv,
+       const ::std::vector<string> &user_command);
 
  private:
   // Creates a new namespace based on 'namespace_spec'.
   // Returns error upon failure.
-  ::util::Status HandleCreate(const NamespaceSpec &namespace_spec,
-                              const ::std::vector<string> &init_argv) const;
+  ::util::StatusOr<string> HandleCreate(
+       const NamespaceSpec &namespace_spec,
+       const ::std::vector<string> &init_argv) const;
 
   // Runs 'command' under namespace referred to by 'namespace_handle'. The
   // started process is reparented under nsinit automatically if PID namespaces
   // are used.
   // Returns error upon failure.
-  ::util::Status HandleRun(const string &namespace_handle,
-                           const ::std::vector<string> &command) const;
+  ::util::StatusOr<string> HandleRun(
+       const string &namespace_handle,
+       const ::std::vector<string> &command,
+       const RunSpec &run_spec) const;
 
   // Similar to above, but runs the given command under "bash -c" wrapper. This
   // is a convenience method which can be used to run commands with pipe (|) and
   // input/output redirection.
-  ::util::Status HandleRunShell(const string &namespace_handle,
-                                const string &command) const;
+  ::util::StatusOr<string> HandleRunShell(const string &namespace_handle,
+                                          const string &command,
+                                          const RunSpec &run_spec) const;
 
   // Enters namespaces and execs the given command. The exec'd command may not
   // be reparented to nsinit.
-  ::util::Status HandleExec(const string &namespace_handle,
-                            const ::std::vector<string> &command) const;
+  ::util::StatusOr<string> HandleExec(
+       const string &namespace_handle,
+       const ::std::vector<string> &command) const;
 
   // Updates namespace referred to by 'namespace_handle' based on
   // 'namespace_spec'. Returns error upon failure.
-  ::util::Status HandleUpdate(const string &namespace_handle,
-                              const NamespaceSpec &namespace_spec) const;
+  ::util::StatusOr<string> HandleUpdate(
+       const string &namespace_handle,
+       const NamespaceSpec &namespace_spec) const;
 
-  // Returns a NamespaceSpec based on flags or 'cmd_line_config'. Priority is
-  // given to flag input over 'cmd_line_config'.
+  // Returns a NamespaceSpec based on flags or 'cmd_line_config'. Its an error
+  // if both are specified.
   // Returns INVALID_ARGUMENT is the input is invalid or if parsing namespace
   // config fails.
   ::util::StatusOr<NamespaceSpec> GetNamespaceSpec(
        const string &cmd_line_config) const;
+  // Similar to above, parses and returns the RunSpec from command-line or file.
+  ::util::StatusOr<RunSpec> GetRunSpec(const string &cmd_line_config) const;
 
   ::std::unique_ptr<NamespaceControllerCli> nscon_;
 

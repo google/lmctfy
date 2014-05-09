@@ -22,6 +22,7 @@ using ::std::string;
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "include/config.pb.h"
 #include "include/lmctfy.pb.h"
 #include "strings/stringpiece.h"
 #include "util/task/statusor.h"
@@ -84,17 +85,17 @@ class Container;
 // operations on all Container objects that reference it will fail with
 // NOT_FOUND.
 //
-// Visitor Threads:
+// Tourist Threads:
 // There may exist threads that are inside a container, but their thread-group
 // leader (the thread whose TID is the same as the PID) is not inside the
-// container. These threads shall be referred to as "visitor threads." This use
+// container. These threads shall be referred to as "tourist threads." This use
 // is in general discouraged as it can lead to hard to manage edge cases. Some
 // of these edge cases are described in the documentation below.
 //
 // Class is thread-safe.
 class ContainerApi {
  public:
-    // TODO(vishnuk): Empty Spec should trigger default initialization.
+  // TODO(vishnuk): Empty Spec should trigger default initialization.
   // Initializes the machine to start being able to create containers. All
   // creations of ContainerApi objects will fail before this initialization is
   // complete. This should be called once during machine boot.
@@ -401,7 +402,7 @@ class Container {
   // Kills all processes running in the container. This operation is atomic and
   // is synchronized with any mutable operations on this container.
   //
-  // The operation sends a SIGKILL to all processes in the containers. Visitor
+  // The operation sends a SIGKILL to all processes in the containers. Tourist
   // threads are killed via SIGKILL after all processes have exited.
   //
   // Note that this operation can potentially take a long time (O(seconds)) if

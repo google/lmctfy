@@ -30,8 +30,13 @@
 // Author: wan@google.com (Zhanyong Wan)
 
 #include <iostream>
+#include "gflags/gflags.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+
+DEFINE_string(test_tmpdir,
+              "/tmp/",
+              "Location of the temporary directory for test files");
 
 // MS C++ compiler/linker has a bug on Windows (not on Windows CE), which
 // causes a link error when _tmain is defined in a static library and UNICODE
@@ -49,6 +54,8 @@ GTEST_API_ int main(int argc, char** argv) {
   // Since Google Mock depends on Google Test, InitGoogleMock() is
   // also responsible for initializing Google Test.  Therefore there's
   // no need for calling testing::InitGoogleTest() separately.
+  ::gflags::AllowCommandLineReparsing();
+  ::gflags::ParseCommandLineFlags(&argc, &argv, false);
   testing::InitGoogleMock(&argc, argv);
   return RUN_ALL_TESTS();
 }

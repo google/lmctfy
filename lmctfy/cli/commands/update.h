@@ -32,7 +32,7 @@ class OutputMap;
 ::util::Status UpdateContainer(Container::UpdatePolicy policy,
                                const ::std::vector<string> &argv,
                                const ContainerApi *lmctfy,
-                               ::std::vector<OutputMap> *output);
+                               OutputMap *output);
 void RegisterUpdateCommand();
 
 }  // namespace cli

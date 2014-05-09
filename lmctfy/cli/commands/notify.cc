@@ -56,7 +56,7 @@ static void NotificationHandler(Notification *notification, Status *out_status,
 static Status RegisterNotification(const EventSpec &spec,
                                    const string &container_name,
                                    const ContainerApi *lmctfy,
-                                   vector<OutputMap> *output) {
+                                   OutputMap *output) {
   // Ensure the container exists.
   unique_ptr<Container> container(
       RETURN_IF_ERROR(lmctfy->Get(container_name)));
@@ -70,14 +70,13 @@ static Status RegisterNotification(const EventSpec &spec,
                                       &notification, &status)));
   notification.WaitForNotification();
 
-  output->push_back(
-      OutputMap("notification_status", Substitute("$0", status.error_code())));
+  output->Add("notification_status", Substitute("$0", status.error_code()));
   return status;
 }
 
 // Register and wait for an out of memory notification.
 Status MemoryOomHandler(const vector<string> &argv, const ContainerApi *lmctfy,
-                        vector<OutputMap> *output) {
+                        OutputMap *output) {
   // Args: oom <container name>
   if (argv.size() != 2) {
     return Status(::util::error::INVALID_ARGUMENT,
@@ -93,7 +92,7 @@ Status MemoryOomHandler(const vector<string> &argv, const ContainerApi *lmctfy,
 // Register and wait for a memory usage threshold notification.
 Status MemoryThresholdHandler(const vector<string> &argv,
                               const ContainerApi *lmctfy,
-                              vector<OutputMap> *output) {
+                              OutputMap *output) {
   // Args: threshold <container name> <threshold in bytes>
   if (argv.size() != 3) {
     return Status(::util::error::INVALID_ARGUMENT,

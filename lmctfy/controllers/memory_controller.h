@@ -56,8 +56,8 @@ class MemoryControllerFactory
 class MemoryController : public CgroupController {
  public:
   // Does not take ownership of kernel.
-  MemoryController(const string &cgroup_path, bool owns_cgroup,
-                   const KernelApi *kernel,
+  MemoryController(const string &hierarchy_path, const string &cgroup_path,
+                   bool owns_cgroup, const KernelApi *kernel,
                    EventFdNotifications *eventfd_notifications);
   virtual ~MemoryController() {}
 
@@ -158,6 +158,15 @@ class MemoryController : public CgroupController {
 
   // Get all stats from the memory.numa_stat file
   virtual ::util::Status GetNumaStats(MemoryStats_NumaStats *numa_stats) const;
+
+  // Get all stats from the memory.idle_page_stats file
+  virtual ::util::Status GetIdlePageStats(
+      MemoryStats_IdlePageStats *idle_page_stats) const;
+
+  virtual ::util::Status GetCompressionSamplingStats(
+      MemoryStats_CompressionSamplingStats *compression_sampling_stats) const;
+
+  virtual ::util::StatusOr<int64> GetFailCount() const;
 
  private:
   // Gets a mapping of field_name to integer value of the specified stats file.

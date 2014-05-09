@@ -15,8 +15,7 @@
 //
 // process_launcher.h
 // ProcessLauncher takes care of launching processes started by nscon. This
-// serves nscon as the namespace-aware process launcher (in place of the
-// SubProcess API in google3 or Taskd's SubProcessLauncher class).
+// serves nscon as the namespace-aware process launcher.
 //
 
 #ifndef PRODUCTION_CONTAINERS_NSCON_PROCESS_LAUNCHER_H__
@@ -28,7 +27,6 @@
 #include "base/callback.h"
 #include "nscon/ipc_agent.h"
 #include "nscon/ns_util.h"
-#include "util/process/subprocess.h"
 #include "util/task/status.h"
 #include "util/task/statusor.h"
 
@@ -37,7 +35,26 @@ namespace nscon {
 
 class NamespaceSpec;
 class NsConfigurator;
-typedef ResultCallback1<SubProcess *, IpcAgent *> SubProcessFactory;
+class RunSpec;
+class RunSpec_Console;
+
+class RunSpecConfigurator {
+ public:
+  explicit RunSpecConfigurator(const NsUtil *ns_util) : ns_util_(ns_util) {}
+  virtual ~RunSpecConfigurator() {}
+
+  virtual ::util::Status Configure(
+      const RunSpec &run_spec,
+      const ::std::vector<int> &fd_whitelist) const;
+
+ private:
+  ::util::Status SetGroups(const RunSpec &run_spec) const;
+  const ::util::StatusOr<::std::vector<int>> GetOpenFDs(pid_t pid) const;
+
+  const NsUtil *ns_util_;
+
+  DISALLOW_COPY_AND_ASSIGN(RunSpecConfigurator);
+};
 
 // Launches processes in the specified set of namespaces.
 class ProcessLauncher {
@@ -46,69 +63,97 @@ class ProcessLauncher {
   static ::util::StatusOr<ProcessLauncher *> New(NsUtil *ns_util);
 
   // This function is ran under the context of a cloned child process. It
-  // synchronizes with the parent using ipc_agent and runs specified namespace
-  // configurators. It finally execs the given command (argv).
+  // synchronizes with the parent using sync_agent and runs specified namespace
+  // configurators. If pid_notification_agent is given, CloneFn will use it to
+  // send its PID to the remote process. After configuring RunSpec, it finally
+  // execs the given command (argv).
   static ::util::Status CloneFn(
-      char **argv, bool remount_proc_sys_fs, IpcAgent *ipc_agent,
+      char **argv,
+      int clone_flags,
+      int console_fd,
+      IpcAgent *sync_agent,
+      const NsUtil *ns_util,
+      const RunSpecConfigurator *runconfig,
+      const RunSpec *run_spec,
       const ::std::vector<NsConfigurator *> *configurators,
-      const NamespaceSpec *spec);
+      const NamespaceSpec *spec,
+      IpcAgent *pid_notification_agent);
 
   virtual ~ProcessLauncher() {}
 
-  // Launches a given command and arguments (specified as argv vector, similar
-  // to that of the //util/process:subprocess class). The launched command
-  // will be in a different namespace if namespaces were specified.
+  // Launches a given command in a new set of specified namespaces (if any).
   // NOTE: This MUST be called from a single-threaded process. Otherwise the
   // calls to unshare()/setns() will fail.
-  //
-  // TODO(adityakali): With introduction of LaunchWithConfiguration(), we never
-  // call Launch() to start a process in new namespaces. So, we should just
-  // disallow passing ns_target as 0.
   //
   // Arguments:
   //   argv: Vector of command and its arguments to be executed.
   //   namespaces: List of namespaces (specified using clone-flags like
   //      CLONE_NEWIPC, CLONE_NEWPID, etc.) to unshare/setns.
   //   ns_target: PID of the process (typically INIT process) whose namespaces
-  //      we want to attach to. PID 0 implies new namespaces will be created.
+  //      we want to attach to.
+  //   run_spec: RunSpec for the process to be started.
   // Return:
   //   StatusOr: Status of the operation. OK iff successful. On success, the PID
   //      of the launched command is returned.
-  virtual ::util::StatusOr<pid_t> Launch(const ::std::vector<string> &argv,
-                                         const ::std::vector<int> &namespaces,
-                                         pid_t ns_target) const;
-
-  virtual ::util::StatusOr<pid_t> LaunchWithConfiguration(
+  virtual ::util::StatusOr<pid_t> NewNsProcessInTarget(
       const ::std::vector<string> &argv,
       const ::std::vector<int> &namespaces,
-      const ::std::vector<NsConfigurator *> configurators,
-      const NamespaceSpec &spec) const;
+      pid_t ns_target,
+      const RunSpec &run_spec) const;
+
+  // Launches given command with new set of specified namespaces. The newly
+  // created namespaces can be configured with specified configurators.
+  //
+  // Arguments:
+  //   argv: Vector of command and its arguments to be executed.
+  //   namespaces: List of namespaces (specified using clone-flags like
+  //      CLONE_NEWIPC, CLONE_NEWPID, etc.) to unshare/setns.
+  //   configurators: List of configurators that will be run before exec-ing the
+  //      given command.
+  //   ns_spec: NamespaceSpec specifying configuration settings for the new
+  //      namespaces.
+  //   run_spec: RunSpec for the process to be started.
+  // Return:
+  //   StatusOr: Status of the operation. OK iff successful. On success, the PID
+  //      of the launched command is returned.
+  virtual ::util::StatusOr<pid_t> NewNsProcess(
+      const ::std::vector<string> &argv,
+      const ::std::vector<int> &namespaces,
+      const ::std::vector<NsConfigurator *> &configurators,
+      const NamespaceSpec &spec,
+      const RunSpec &run_spec) const;
 
  protected:
-  // Takes ownership of |subprocess_factory| and |ipc_agent_factory|.
-  ProcessLauncher(SubProcessFactory *subprocess_factory, NsUtil *ns_util,
-                  IpcAgentFactory *ipc_agent_factory)
-      : subprocess_factory_(subprocess_factory), ns_util_(ns_util),
-        ipc_agent_factory_(ipc_agent_factory) {}
+  // Takes ownership of |ipc_agent_factory| and |run_spec_configurator|.
+  ProcessLauncher(NsUtil *ns_util,
+                  IpcAgentFactory *ipc_agent_factory,
+                  RunSpecConfigurator *run_spec_configurator)
+      : ns_util_(ns_util),
+        ipc_agent_factory_(ipc_agent_factory),
+        run_spec_configurator_(run_spec_configurator) {}
 
  private:
-  // Returns true if child exited successfully (exit code of 0). Returns false
-  // if it terminated for any other reason.
-  ::util::StatusOr<bool> WaitForChildSuccess(pid_t child_pid) const;
-  // Internal function to launch user jobs correctly when PID-ns is switched.
-  ::util::StatusOr<pid_t> ForkAndLaunch(const ::std::vector<string> &argv)
-      const;
+  // Implements the run_spec for the process.
+  static ::util::Status ConfigureRunSpec(const RunSpec *run_spec,
+                                         const NsUtil *ns_util);
 
-  // Uses clone(2) to start a new process in new set of specified namespaces.
-  ::util::StatusOr<pid_t>
-  CloneAndLaunch(const ::std::vector<string> &argv,
-                 const ::std::vector<int> &namespaces,
-                 const ::std::vector<NsConfigurator *> &configurators,
-                 const NamespaceSpec &spec) const;
+  // Opens the console device and returns its FD. Returns error if Console
+  // specification is invalid or if error is encountered while opening the
+  // console device.
+  ::util::StatusOr<int> GetConsoleFd(const RunSpec_Console &console) const;
 
-  ::std::unique_ptr<SubProcessFactory> subprocess_factory_;
+  // Internal function that does actual Clone() and runs configurators.
+  ::util::StatusOr<pid_t> CloneAndLaunch(
+      const ::std::vector<string> &argv,
+      const ::std::vector<int> &namespaces,
+      const ::std::vector<NsConfigurator *> &configurators,
+      const NamespaceSpec &spec,
+      const RunSpec &run_spec,
+      IpcAgent *pid_notification_agent) const;
+
   NsUtil *ns_util_;
   ::std::unique_ptr<IpcAgentFactory> ipc_agent_factory_;
+  ::std::unique_ptr<RunSpecConfigurator> run_spec_configurator_;
 
   friend class ProcessLauncherTest;
 

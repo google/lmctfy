@@ -44,7 +44,11 @@ class NsConfiguratorFactory {
   // Based on the namespace indicated by |ns|, it instantiates the appropriate
   // implementation of NsConfigurator interface. Caller takes ownership of the
   // returned value.
-  virtual ::util::StatusOr<NsConfigurator *> Get(int ns);
+  virtual ::util::StatusOr<NsConfigurator *> Get(int ns) const;
+
+  virtual ::util::StatusOr<NsConfigurator *> GetFilesystemConfigurator() const;
+
+  virtual ::util::StatusOr<NsConfigurator *> GetMachineConfigurator() const;
 
  protected:
   // Constructor

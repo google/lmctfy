@@ -48,7 +48,6 @@ static const char kContainerName[] = "/test";
 class NotifyTest : public ::testing::Test {
  public:
   virtual void SetUp() {
-    output_.clear();
     mock_lmctfy_.reset(new StrictMockContainerApi());
     mock_container_ = new StrictMockContainer(kContainerName);
   }
@@ -56,7 +55,7 @@ class NotifyTest : public ::testing::Test {
  protected:
   unique_ptr<MockContainerApi> mock_lmctfy_;
   MockContainer *mock_container_;
-  vector<OutputMap> output_;
+  OutputMap output_;
 };
 
 // Run the callback on a nullptr container with Status::OK.

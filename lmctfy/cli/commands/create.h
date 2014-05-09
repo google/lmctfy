@@ -33,7 +33,7 @@ class OutputMap;
 // Command to create a container.
 ::util::Status CreateContainer(const ::std::vector<string> &argv,
                                const ContainerApi *lmctfy,
-                               ::std::vector<OutputMap> *output);
+                               OutputMap *output);
 void RegisterCreateCommand();
 
 }  // namespace cli

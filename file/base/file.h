@@ -19,7 +19,6 @@
 using ::std::string;
 
 namespace file {
-
 bool IsAbsolutePath(const string &path);
 
 }  // namespace file
@@ -31,6 +30,10 @@ class File {
   static string Basename(const string& fname);
 
   static string StripBasename(const string &fname);
+
+  static bool Exists(const string &path);
+
+  static bool Delete(const string &path);
 };
 
 #endif  // FILE_BASE_FILE_H__

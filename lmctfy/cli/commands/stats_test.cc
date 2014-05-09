@@ -49,6 +49,7 @@ class StatsTest : public ::testing::Test {
  protected:
   unique_ptr<MockContainerApi> mock_lmctfy_;
   MockContainer *mock_container_;
+  OutputMap output_maps_;
 };
 
 TEST_F(StatsTest, SummarySuccess) {
@@ -61,7 +62,7 @@ TEST_F(StatsTest, SummarySuccess) {
       .WillRepeatedly(Return(stats));
 
   FLAGS_lmctfy_binary = false;
-  EXPECT_TRUE(StatsSummary(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(StatsSummary(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(StatsTest, SummarySuccessBinary) {
@@ -74,7 +75,7 @@ TEST_F(StatsTest, SummarySuccessBinary) {
       .WillRepeatedly(Return(stats));
 
   FLAGS_lmctfy_binary = true;
-  EXPECT_TRUE(StatsSummary(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(StatsSummary(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(StatsTest, SummarySuccessSelf) {
@@ -89,7 +90,7 @@ TEST_F(StatsTest, SummarySuccessSelf) {
       .WillRepeatedly(Return(stats));
 
   FLAGS_lmctfy_binary = false;
-  EXPECT_TRUE(StatsSummary(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(StatsSummary(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(StatsTest, SummarySelfDetectFails) {
@@ -100,7 +101,7 @@ TEST_F(StatsTest, SummarySelfDetectFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            StatsSummary(args, mock_lmctfy_.get(), nullptr));
+            StatsSummary(args, mock_lmctfy_.get(), &output_maps_));
 }
 
 TEST_F(StatsTest, SummaryGetFails) {
@@ -111,7 +112,7 @@ TEST_F(StatsTest, SummaryGetFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            StatsSummary(args, mock_lmctfy_.get(), nullptr));
+            StatsSummary(args, mock_lmctfy_.get(), &output_maps_));
 
   // Delete the container since it is never returned.
   delete mock_container_;
@@ -127,7 +128,7 @@ TEST_F(StatsTest, SummaryStatsFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            StatsSummary(args, mock_lmctfy_.get(), nullptr));
+            StatsSummary(args, mock_lmctfy_.get(), &output_maps_));
 }
 
 TEST_F(StatsTest, FullSuccess) {
@@ -140,7 +141,7 @@ TEST_F(StatsTest, FullSuccess) {
       .WillRepeatedly(Return(stats));
 
   FLAGS_lmctfy_binary = false;
-  EXPECT_TRUE(StatsFull(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(StatsFull(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(StatsTest, FullSuccessBinary) {
@@ -153,7 +154,7 @@ TEST_F(StatsTest, FullSuccessBinary) {
       .WillRepeatedly(Return(stats));
 
   FLAGS_lmctfy_binary = true;
-  EXPECT_TRUE(StatsFull(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(StatsFull(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(StatsTest, FullSuccessSelf) {
@@ -168,7 +169,7 @@ TEST_F(StatsTest, FullSuccessSelf) {
       .WillRepeatedly(Return(stats));
 
   FLAGS_lmctfy_binary = false;
-  EXPECT_TRUE(StatsFull(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(StatsFull(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(StatsTest, FullSelfDetectFails) {
@@ -179,7 +180,7 @@ TEST_F(StatsTest, FullSelfDetectFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            StatsFull(args, mock_lmctfy_.get(), nullptr));
+            StatsFull(args, mock_lmctfy_.get(), &output_maps_));
 }
 
 TEST_F(StatsTest, FullGetFails) {
@@ -190,7 +191,7 @@ TEST_F(StatsTest, FullGetFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            StatsFull(args, mock_lmctfy_.get(), nullptr));
+            StatsFull(args, mock_lmctfy_.get(), &output_maps_));
 
   // Delete the container since it is never returned.
   delete mock_container_;
@@ -206,7 +207,7 @@ TEST_F(StatsTest, FullStatsFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            StatsFull(args, mock_lmctfy_.get(), nullptr));
+            StatsFull(args, mock_lmctfy_.get(), &output_maps_));
 }
 
 }  // namespace

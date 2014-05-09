@@ -122,7 +122,7 @@ class LibcFsApi {
   virtual int FError(FILE *stream) const = 0;
 
   // Read/Write at most nbytes bytes. Returns bytes read.
-  virtual ssize_t Read(int file_descriptor, void *buf, size_t nbytes) const = 0;
+  virtual ssize_t Read(int file_descriptor, char *buf, size_t nbytes) const = 0;
 
   virtual ssize_t Write(int file_descriptor, const void *buf,
                         size_t nbytes) const = 0;
@@ -150,6 +150,20 @@ class LibcFsApi {
                       int flags) const = 0;
 
   virtual int Ioctl(int fd, int request, void *argp) const = 0;
+
+  virtual int Pipe(int pipefd[2]) const = 0;
+
+  virtual int Pipe2(int pipefd[2], int flags) const = 0;
+
+  virtual int ChRoot(const char *path) const = 0;
+
+  virtual int PivotRoot(const char *new_root, const char *put_old) const = 0;
+
+  virtual int Dup2(int olfd, int newfd) const = 0;
+
+  // fcntl() is a variable argument function. Its not possible to mock such
+  // function. So we add overloads for this method as we need.
+  virtual int FCntl(int fd, int cmd, int arg1) const = 0;
 
   // The following functions could be added here if needed:
   // - fseek

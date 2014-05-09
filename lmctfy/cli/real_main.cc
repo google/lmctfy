@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <string>
 using ::std::string;
 #include <memory>
@@ -73,6 +74,8 @@ DEFINE_bool(lmctfy_print_cmd_tree_long, false,
 DEFINE_bool(lmctfy_print_help, false, "Print lmctfy help");
 DEFINE_bool(lmctfy_version, false, "Print lmctfy version");
 DEFINE_bool(lmctfy_version_long, false, "Print lmctfy version (long)");
+DEFINE_int64(lmctfy_output_fd, STDOUT_FILENO,
+             "File descriptor to which lmctfy will write its output.");
 
 namespace containers {
 namespace lmctfy {
@@ -80,12 +83,12 @@ namespace cli {
 
 // Gets the lmctfy version.
 static const char *GetVersion() {
-    return LMCTFY_VERSION;
+  return LMCTFY_VERSION;
 }
 
 // Gets information about when/how lmctfy was built.
 static string GetBuildInfo() {
-    return Substitute("built on $0 $1", __DATE__, __TIME__);
+  return Substitute("built on $0 $1", __DATE__, __TIME__);
 }
 
 // Registers all supported commands.
@@ -177,6 +180,16 @@ static bool ParseShortFlags(int *argc, char ***argv) {
 static int HandleCommand(const vector<string> &args_vector) {
   RegisterCommands();
 
+  FILE *out = stdout;
+  if (FLAGS_lmctfy_output_fd != STDOUT_FILENO) {
+    out = fdopen(FLAGS_lmctfy_output_fd, "w");
+    if (out == NULL) {
+      fprintf(stderr, "fdopen on lmctfy_output_fd failed with an error: %s\n",
+              StrError(errno).c_str());
+      return EXIT_FAILURE;
+    }
+  }
+
   // Set the global OutputMap output style.
   OutputMap::Style output_style;
   if (FLAGS_lmctfy_output_style == "values") {
@@ -193,7 +206,7 @@ static int HandleCommand(const vector<string> &args_vector) {
 
   // Did the user ask for help?
   if (FLAGS_lmctfy_print_help) {
-    PrintUsage(stdout, NULL);
+    PrintUsage(out, NULL);
     return EXIT_SUCCESS;
   }
 
@@ -201,9 +214,9 @@ static int HandleCommand(const vector<string> &args_vector) {
   if (FLAGS_lmctfy_print_cmd_tree_long || FLAGS_lmctfy_print_cmd_tree) {
     // Print out the tree in requested format.
     if (FLAGS_lmctfy_print_cmd_tree) {
-      PrintCommandTree(stdout, NULL);
+      PrintCommandTree(out, NULL);
     } else if (FLAGS_lmctfy_print_cmd_tree_long) {
-      PrintCommandTreeLong(stdout, NULL);
+      PrintCommandTreeLong(out, NULL);
     }
 
     return EXIT_SUCCESS;
@@ -211,10 +224,10 @@ static int HandleCommand(const vector<string> &args_vector) {
 
   // Did the user ask for version info?
   if (FLAGS_lmctfy_version) {
-    fprintf(stdout, "lmctfy version %s\n", GetVersion());
+    fprintf(out, "lmctfy version %s\n", GetVersion());
     return EXIT_SUCCESS;
   } else if (FLAGS_lmctfy_version_long) {
-    fprintf(stdout, "lmctfy version %s %s\n", GetVersion(),
+    fprintf(out, "lmctfy version %s %s\n", GetVersion(),
             GetBuildInfo().c_str());
     return EXIT_SUCCESS;
   }
@@ -222,7 +235,7 @@ static int HandleCommand(const vector<string> &args_vector) {
   // Run the command.
   unique_ptr<ContainerApiFactory> lmctfy_factory(
       NewPermanentCallback(&ContainerApi::New));
-  return RunCommand(args_vector, output_style, lmctfy_factory.get())
+  return RunCommand(args_vector, output_style, lmctfy_factory.get(), out)
       .error_code();
 }
 
@@ -237,7 +250,7 @@ int Main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-    ::google::ParseCommandLineFlags(&argc, &argv, true);
+  ::gflags::ParseCommandLineFlags(&argc, &argv, true);
 
   // Execute command handling logic.
   vector<string> args_vector(argv, argv + argc);

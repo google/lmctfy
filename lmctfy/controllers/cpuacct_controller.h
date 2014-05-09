@@ -68,8 +68,8 @@ struct CpuTime {
 // Class is thread-safe.
 class CpuAcctController : public CgroupController {
  public:
-  CpuAcctController(const string &cgroup_path, bool owns_cgroup,
-                    const KernelApi *kernel,
+  CpuAcctController(const string &hierarchy_path, const string &cgroup_path,
+                    bool owns_cgroup, const KernelApi *kernel,
                     EventFdNotifications *eventfd_notifications);
   virtual ~CpuAcctController() {}
 

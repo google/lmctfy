@@ -42,13 +42,13 @@ namespace cli {
 
 // Some generic command functions, used in several tests
 static Status CommandFunc1(const vector<string> &argv, const ContainerApi *lmctfy,
-                           vector<OutputMap> *output) {
+                           OutputMap *output) {
   return Status::OK;
 }
 static int cmd_func_magic;
 static Status cmd_func_retval;
 static Status CommandFunc2(const vector<string> &argv, const ContainerApi *lmctfy,
-                           vector<OutputMap> *output) {
+                           OutputMap *output) {
   cmd_func_magic = 76;
   return cmd_func_retval;
 }
@@ -221,13 +221,13 @@ TEST_F(SampleTreeCommandTest, RunCommand) {
 
   cmd_func_retval = Status::OK;
   cmd_func_magic = 0;
-  ret = RunCommand(args, OutputMap::STYLE_VALUES, mock_factory.get());
+  ret = RunCommand(args, OutputMap::STYLE_VALUES, mock_factory.get(), stdout);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(76, cmd_func_magic);
 
   cmd_func_retval = Status::CANCELLED;
   cmd_func_magic = 0;
-  ret = RunCommand(args, OutputMap::STYLE_VALUES, mock_factory.get());
+  ret = RunCommand(args, OutputMap::STYLE_VALUES, mock_factory.get(), stdout);
   EXPECT_EQ(Status::CANCELLED, ret);
   EXPECT_EQ(76, cmd_func_magic);
 
@@ -236,7 +236,8 @@ TEST_F(SampleTreeCommandTest, RunCommand) {
 
   cmd_func_retval = Status::OK;
   cmd_func_magic = 0;
-  ret = RunCommand(bad_args, OutputMap::STYLE_VALUES, mock_factory.get());
+  ret = RunCommand(bad_args, OutputMap::STYLE_VALUES, mock_factory.get(),
+                   stdout);
   EXPECT_FALSE(ret.ok());
   EXPECT_EQ(::util::error::NOT_FOUND, ret.error_code());
 
@@ -245,7 +246,8 @@ TEST_F(SampleTreeCommandTest, RunCommand) {
 
   cmd_func_retval = Status::CANCELLED;
   cmd_func_magic = 0;
-  ret = RunCommand(help_args, OutputMap::STYLE_VALUES, mock_factory.get());
+  ret = RunCommand(help_args, OutputMap::STYLE_VALUES, mock_factory.get(),
+                   stdout);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(0, cmd_func_magic);
 
@@ -253,7 +255,8 @@ TEST_F(SampleTreeCommandTest, RunCommand) {
 
   cmd_func_retval = Status::CANCELLED;
   cmd_func_magic = 0;
-  ret = RunCommand(help_args, OutputMap::STYLE_VALUES, mock_factory.get());
+  ret = RunCommand(help_args, OutputMap::STYLE_VALUES, mock_factory.get(),
+                   stdout);
   EXPECT_TRUE(ret.ok());
   EXPECT_EQ(0, cmd_func_magic);
 }

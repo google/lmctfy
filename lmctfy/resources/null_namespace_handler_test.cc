@@ -49,6 +49,31 @@ SubProcess *ReleaseSubProcess(unique_ptr<MockSubProcess> *subprocess) {
   return subprocess->release();
 }
 
+class NullNamespaceHandlerFactoryTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    null_namespace_handler_factory_.reset(
+        new NullNamespaceHandlerFactory(&mock_kernel_));
+  }
+
+  unique_ptr<NullNamespaceHandlerFactory> null_namespace_handler_factory_;
+
+ private:
+  StrictMock<MockKernelApi> mock_kernel_;
+};
+
+TEST_F(NullNamespaceHandlerFactoryTest, GetNamespaceHandlerNonRootNotFound) {
+  EXPECT_ERROR_CODE(
+      ::util::error::NOT_FOUND,
+      null_namespace_handler_factory_->GetNamespaceHandler("/some_container"));
+}
+
+TEST_F(NullNamespaceHandlerFactoryTest, GetNamespaceHandlerRootFound) {
+  auto statusor = null_namespace_handler_factory_->GetNamespaceHandler("/");
+  ASSERT_OK(statusor);
+  delete statusor.ValueOrDie();
+}
+
 class NullNamespaceHandlerTest : public ::testing::Test {
  protected:
   void SetUp() override {

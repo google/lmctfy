@@ -155,7 +155,7 @@ void PrintUsage(FILE *out, const CommandVector *commands) {
     commands = root_commands.get();
   }
 
-  string progname = ::google::ProgramInvocationShortName();
+  string progname = ::gflags::ProgramInvocationShortName();
 
   fprintf(out, "Usage: %s [command]\n", progname.c_str());
   fprintf(
@@ -203,10 +203,10 @@ const Command *internal::FindCommand(const CommandVector *commands,
 
 // Finds and runs a command.
 Status RunCommand(const vector<string> &args, OutputMap::Style output_style,
-                  ContainerApiFactory *lmctfy_factory) {
+                  ContainerApiFactory *lmctfy_factory, FILE *out) {
   CHECK_GT(args.size(), 0);
 
-  string command_path = ::google::ProgramInvocationShortName();
+  string command_path = ::gflags::ProgramInvocationShortName();
 
   const CommandVector *commands = root_commands.get();
 
@@ -227,7 +227,7 @@ Status RunCommand(const vector<string> &args, OutputMap::Style output_style,
         command->type == CMD_TYPE_INIT) {
       // All commands have a "help" argument.
       if (argc >= 2 && *(argv+1) == "help") {
-        internal::PrintCommandHelp(stdout, command, command_path);
+        internal::PrintCommandHelp(out, command, command_path);
         return Status::OK;
       }
 
@@ -265,7 +265,7 @@ Status RunCommand(const vector<string> &args, OutputMap::Style output_style,
 
       // Run the command.
       LOG(INFO) << "Running command: " << command_path;
-      vector<OutputMap> output;
+      OutputMap output;
       status = command->function(vector<string>(argv, args.end()),
                                  lmctfy.get(), &output);
       if (!status.ok()) {
@@ -278,10 +278,8 @@ Status RunCommand(const vector<string> &args, OutputMap::Style output_style,
         return status;
       }
 
-      // Produce the command's output to stdout.
-      for (const OutputMap &output_map : output) {
-        output_map.Print(stdout, output_style);
-      }
+      // Print command's output.
+      output.Print(out, output_style);
 
       return Status::OK;
     }

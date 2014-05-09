@@ -52,11 +52,11 @@ class JobControllerFactory
 class JobController : public CgroupController {
  public:
   // Does not take ownership of kernel.
-  JobController(const string &cgroup_path, bool owns_cgroup,
-                const KernelApi *kernel,
+  JobController(const string &hierarchy_path, const string &cgroup_path,
+                bool owns_cgroup, const KernelApi *kernel,
                 EventFdNotifications *eventfd_notifications)
-      : CgroupController(CGROUP_JOB, cgroup_path, owns_cgroup, kernel,
-                         eventfd_notifications) {}
+      : CgroupController(CGROUP_JOB, hierarchy_path, cgroup_path, owns_cgroup,
+                         kernel, eventfd_notifications) {}
   virtual ~JobController() {}
 
  private:

@@ -33,7 +33,7 @@ class OutputMap;
 // Command to destroy a container.
 ::util::Status DestroyContainer(const ::std::vector<string> &argv,
                                 const ContainerApi *lmctfy,
-                                ::std::vector<OutputMap> *output);
+                                OutputMap *output);
 void RegisterDestroyCommand();
 
 }  // namespace cli

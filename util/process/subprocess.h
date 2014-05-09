@@ -73,6 +73,9 @@ class SubProcess {
   // Starts process.
   virtual bool Start();
 
+  // Waits for the subprocess to exit and reaps it.
+  virtual bool Wait();
+
   // This is similar to Python's subprocess.Popen.communicate(). This
   // asynchronously reads from stdout and stderr until all output pipes have
   // closed, then waits for the process to exit. 'stdout_output' and
@@ -103,7 +106,6 @@ class SubProcess {
   void CloseChildPipeFds();
   static int NumOfChannels();
   bool SetupPipesForChannels();
-  bool Wait();
   void MaybeAddFD(Channel channel, ::std::string* output,
                   ::std::string** io_strings, Channel* channels,
                   struct pollfd* fds, int* descriptors_to_poll,

@@ -21,6 +21,7 @@
 
 #include "system_api/libc_process_api.h"
 
+#include <grp.h>
 #include <sched.h>
 #include <signal.h>
 #include <sys/resource.h>
@@ -74,6 +75,10 @@ class LibcProcessApiImpl : public LibcProcessApi {
     return ::setns(fd, nstype);
   }
 
+  pid_t SetSid() const override {
+    return ::setsid();
+  }
+
   pid_t Wait(int *status) const override {
     return ::wait(status);
   }
@@ -98,6 +103,18 @@ class LibcProcessApiImpl : public LibcProcessApi {
 
   pid_t GetPGid(pid_t pid) const override {
     return ::getpgid(pid);
+  }
+
+  int SetResUid(uid_t ruid, uid_t euid, uid_t suid) const override {
+    return ::setresuid(ruid, euid, suid);
+  }
+
+  int SetResGid(gid_t rgid, gid_t egid, gid_t sgid) const override {
+    return ::setresgid(rgid, egid, sgid);
+  }
+
+  int SetGroups(size_t size, const gid_t *list) const override {
+    return ::setgroups(size, list);
   }
 };
 

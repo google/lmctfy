@@ -30,13 +30,15 @@ using ::std::string;
 
 
 namespace containers {
+
+class InitSpec;
+
 namespace lmctfy {
 
 class ContainerSpec;
 class CgroupFactory;
 class ContainerStats;
 class EventFdNotifications;
-class InitSpec;
 class ResourceHandler;
 
 typedef ::system_api::KernelAPI KernelApi;

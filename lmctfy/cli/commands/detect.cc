@@ -41,7 +41,7 @@ namespace cli {
 
 // Command to detect container of a TID.
 Status DetectContainer(const vector<string> &argv, const ContainerApi *lmctfy,
-                       vector<OutputMap> *output) {
+                       OutputMap *output) {
   // Args: detect [<PID/TID>]
   if (argv.size() < 1 || argv.size() > 2) {
     return Status(::util::error::INVALID_ARGUMENT,
@@ -62,7 +62,7 @@ Status DetectContainer(const vector<string> &argv, const ContainerApi *lmctfy,
   // Detect the container and output the result on success.
   string container_name = RETURN_IF_ERROR(lmctfy->Detect(pid));
 
-  output->push_back(OutputMap("name", container_name));
+  output->Add("name", container_name);
   return Status::OK;
 }
 

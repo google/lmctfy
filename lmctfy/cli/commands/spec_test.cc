@@ -49,6 +49,7 @@ class SpecTest : public ::testing::Test {
  protected:
   unique_ptr<MockContainerApi> mock_lmctfy_;
   MockContainer *mock_container_;
+  OutputMap output_maps_;
 };
 
 TEST_F(SpecTest, Success) {
@@ -62,7 +63,7 @@ TEST_F(SpecTest, Success) {
       .WillRepeatedly(Return(spec));
 
   FLAGS_lmctfy_binary = false;
-  EXPECT_TRUE(SpecContainer(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(SpecContainer(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(SpecTest, SuccessBinary) {
@@ -76,7 +77,7 @@ TEST_F(SpecTest, SuccessBinary) {
       .WillRepeatedly(Return(spec));
 
   FLAGS_lmctfy_binary = true;
-  EXPECT_TRUE(SpecContainer(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(SpecContainer(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(SpecTest, SuccessSelf) {
@@ -92,7 +93,7 @@ TEST_F(SpecTest, SuccessSelf) {
       .WillRepeatedly(Return(spec));
 
   FLAGS_lmctfy_binary = false;
-  EXPECT_TRUE(SpecContainer(args, mock_lmctfy_.get(), nullptr).ok());
+  EXPECT_TRUE(SpecContainer(args, mock_lmctfy_.get(), &output_maps_).ok());
 }
 
 TEST_F(SpecTest, SummarySelfDetectFails) {
@@ -103,7 +104,7 @@ TEST_F(SpecTest, SummarySelfDetectFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            SpecContainer(args, mock_lmctfy_.get(), nullptr));
+            SpecContainer(args, mock_lmctfy_.get(), &output_maps_));
 }
 
 TEST_F(SpecTest, GetFails) {
@@ -114,7 +115,7 @@ TEST_F(SpecTest, GetFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            SpecContainer(args, mock_lmctfy_.get(), nullptr));
+            SpecContainer(args, mock_lmctfy_.get(), &output_maps_));
 
   // Delete the container since it is never returned.
   delete mock_container_;
@@ -130,7 +131,7 @@ TEST_F(SpecTest, SpecFails) {
 
   FLAGS_lmctfy_binary = false;
   EXPECT_EQ(Status::CANCELLED,
-            SpecContainer(args, mock_lmctfy_.get(), nullptr));
+            SpecContainer(args, mock_lmctfy_.get(), &output_maps_));
 }
 
 }  // namespace

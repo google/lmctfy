@@ -24,6 +24,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include <functional>
 #include <string>
 using ::std::string;
 #include <utility>
@@ -78,9 +79,11 @@ class OutputMap {
   //   output_map.AddBool("k1", "v1").AddBool("k2", "v2").AddBool("k3", "v3");
   OutputMap &AddBool(const string &key, bool value);
 
-  // Gets the value for a key. Return "" if not found. If duplicate keys are
-  // present, return the value for the first match.
-  const string &GetValueByKey(const string &key) const;
+  // Adds a raw value. It is always printed directly as passed.
+  OutputMap &AddRaw(const string &value);
+
+  // Returns if OutputMap contains |key|, |value| pair.
+  bool ContainsPair(const string &key, const string &value) const;
 
   // Prints all the pairs in this set in the order they were added.
   void Print(FILE *out, Style style) const;
@@ -90,9 +93,12 @@ class OutputMap {
   PairVector pairs_;
 
   // Prints the data in specific styles.
-  void PrintPairs(FILE *out) const;
-  void PrintValues(FILE *out) const;
-  void PrintLong(FILE *out) const;
+  void PrintAll(
+      FILE *out,
+      ::std::function<void(FILE *, PairVector::const_reference)> printer) const;
+  static void PrintPair(FILE *out, PairVector::const_reference pair);
+  static void PrintValue(FILE *out, PairVector::const_reference pair);
+  static void PrintLong(FILE *out, PairVector::const_reference pair);
 };
 
 }  // namespace cli

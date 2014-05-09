@@ -190,5 +190,12 @@ Status CgroupResourceHandler::VerifyFullSpec(const ContainerSpec &spec) const {
   return Status(util::error::UNIMPLEMENTED, __func__);
 }
 
+Status CgroupResourceHandler::PopulateMachineSpec(MachineSpec *spec) const {
+  for (const auto controller : controllers_) {
+    RETURN_IF_ERROR(controller->PopulateMachineSpec(spec));
+  }
+  return Status::OK;
+}
+
 }  // namespace lmctfy
 }  // namespace containers

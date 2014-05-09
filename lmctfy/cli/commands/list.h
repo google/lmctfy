@@ -33,17 +33,17 @@ class OutputMap;
 // Command to list subcontainers.
 ::util::Status ListContainers(const ::std::vector<string> &argv,
                               const ContainerApi *lmctfy,
-                              ::std::vector<OutputMap> *output);
+                              OutputMap *output);
 
 // Command to list PIDs.
 ::util::Status ListPids(const ::std::vector<string> &argv,
                         const ContainerApi *lmctfy,
-                        ::std::vector<OutputMap> *output);
+                        OutputMap *output);
 
 // Command to list TIDs.
 ::util::Status ListTids(const ::std::vector<string> &argv,
                         const ContainerApi *lmctfy,
-                        ::std::vector<OutputMap> *output);
+                        OutputMap *output);
 
 void RegisterListCommands();
 

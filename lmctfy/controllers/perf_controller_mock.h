@@ -45,7 +45,7 @@ class MockPerfController : public PerfController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockPerfController()
-      : PerfController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+      : PerfController("", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
                        reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 };
 

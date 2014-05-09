@@ -17,12 +17,14 @@
 //
 #include "nscon/configurator/ns_configurator_factory.h"
 
-#include "nscon/configurator/ns_configurator.h"
-#include "nscon/ns_util.h"
+#include "nscon/configurator/filesystem_configurator.h"
+#include "nscon/configurator/machine_configurator.h"
 #include "nscon/configurator/mnt_ns_configurator.h"
 #include "nscon/configurator/net_ns_configurator.h"
+#include "nscon/configurator/ns_configurator.h"
 #include "nscon/configurator/user_ns_configurator.h"
 #include "nscon/configurator/uts_ns_configurator.h"
+#include "nscon/ns_util.h"
 #include "util/errors.h"
 #include "strings/substitute.h"
 #include "util/process/subprocess.h"
@@ -43,7 +45,7 @@ StatusOr<NsConfiguratorFactory *> NsConfiguratorFactory::New(NsUtil *ns_util) {
 
 static SubProcess *NewSubProcess() { return new SubProcess(); }
 
-StatusOr<NsConfigurator *> NsConfiguratorFactory::Get(int ns) {
+StatusOr<NsConfigurator *> NsConfiguratorFactory::Get(int ns) const {
   const char *ns_name = RETURN_IF_ERROR(ns_util_->NsCloneFlagToName(ns));
 
   switch (ns) {
@@ -65,6 +67,16 @@ StatusOr<NsConfigurator *> NsConfiguratorFactory::Get(int ns) {
           ::util::error::NOT_FOUND,
           Substitute("Configurator not found for namespace: $0", ns_name));
   }
+}
+
+StatusOr<NsConfigurator *>
+NsConfiguratorFactory::GetFilesystemConfigurator() const {
+  return new FilesystemConfigurator(ns_util_);
+}
+
+StatusOr<NsConfigurator *>
+NsConfiguratorFactory::GetMachineConfigurator() const {
+  return new MachineConfigurator(ns_util_);
 }
 
 }  // namespace nscon

@@ -109,24 +109,8 @@ StatusOr<vector<string>> CgroupTasksHandler::ListSubcontainers(
 
 StatusOr<vector<pid_t>> CgroupTasksHandler::ListProcesses(
     TasksHandler::ListType type) const {
-  // Get threads.
-  set<pid_t> tids;
-  {
-    vector<pid_t> tmp;
-    RETURN_IF_ERROR(ListProcessesOrThreads(type, PidsOrTids::TIDS, &tmp));
-    tids.insert(tmp.begin(), tmp.end());
-  }
-
-  // Do not add the PIDs of visitor threads. Visitor threads show up in
-  // GetThreads() and its correspoding PID shows up in GetProcesses() even
-  // though it is not actually in the container.
   vector<pid_t> pids;
   RETURN_IF_ERROR(ListProcessesOrThreads(type, PidsOrTids::PIDS, &pids));
-  auto it =
-      remove_if(pids.begin(), pids.end(),
-                [&tids](pid_t pid) { return tids.find(pid) == tids.end(); });
-  pids.erase(it, pids.end());
-
   return pids;
 }
 
@@ -177,6 +161,10 @@ Status CgroupTasksHandler::ListProcessesOrThreads(TasksHandler::ListType type,
   }
 
   return Status::OK;
+}
+
+Status CgroupTasksHandler::PopulateMachineSpec(MachineSpec *spec) const {
+  return cgroup_controller_->PopulateMachineSpec(spec);
 }
 
 }  // namespace lmctfy

@@ -19,6 +19,7 @@
 #include "lmctfy/namespace_handler.h"
 #include "lmctfy/resource_handler.h"
 #include "lmctfy/tasks_handler_mock.h"
+#include "lmctfy/util/console_util_test_util.h"
 #include "include/lmctfy.pb.h"
 #include "include/namespace_controller_mock.h"
 #include "include/namespaces.pb.h"
@@ -65,8 +66,11 @@ class NsconNamespaceHandlerFactoryTest : public ::testing::Test {
     mock_controller_factory_ =
         new nscon::StrictMockNamespaceControllerFactory();
     mock_tasks_handler_factory_.reset(new StrictMockTasksHandlerFactory());
+    mock_console_util_ = new StrictMock<MockConsoleUtil>();
     factory_.reset(new NsconNamespaceHandlerFactory(
-        mock_tasks_handler_factory_.get(), mock_controller_factory_));
+        mock_tasks_handler_factory_.get(),
+        mock_controller_factory_,
+        mock_console_util_));
   }
 
   // Expect the child to have the specified parent.
@@ -168,6 +172,7 @@ class NsconNamespaceHandlerFactoryTest : public ::testing::Test {
   }
 
  protected:
+  StrictMock<MockConsoleUtil> *mock_console_util_;
   nscon::MockNamespaceControllerFactory *mock_controller_factory_;
   unique_ptr<MockTasksHandlerFactory> mock_tasks_handler_factory_;
   unique_ptr<NsconNamespaceHandlerFactory> factory_;
@@ -254,6 +259,8 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerSuccess) {
   namespace_spec.mutable_pid();
   namespace_spec.mutable_ipc();
   namespace_spec.mutable_mnt();
+  namespace_spec.mutable_fs()->mutable_machine();
+  namespace_spec.mutable_run_spec()->set_inherit_fds(true);
   // controller ownership transferred to namespace handler.
   nscon::MockNamespaceController *mock_controller =
       new nscon::StrictMockNamespaceController();
@@ -264,7 +271,7 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerSuccess) {
       .WillRepeatedly(Return(kInit));
 
   StatusOr<NamespaceHandler *> statusor =
-      factory_->CreateNamespaceHandler(kContainerName, spec);
+      factory_->CreateNamespaceHandler(kContainerName, spec, {});
   ASSERT_TRUE(statusor.ok());
   EXPECT_NE(nullptr, statusor.ValueOrDie());
   unique_ptr<NamespaceHandler> handler(statusor.ValueOrDie());
@@ -275,7 +282,7 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerSuccess) {
 TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerInvalidSpec) {
   ContainerSpec spec;
   EXPECT_ERROR_CODE(INVALID_ARGUMENT,
-                    factory_->CreateNamespaceHandler(kContainerName, spec));
+                    factory_->CreateNamespaceHandler(kContainerName, spec, {}));
 }
 
 TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerNoController) {
@@ -284,7 +291,7 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerNoController) {
   EXPECT_CALL(*mock_controller_factory_, Create(_, IsEmpty()))
       .WillRepeatedly(Return(Status::CANCELLED));
   EXPECT_ERROR_CODE(::util::error::CANCELLED,
-                    factory_->CreateNamespaceHandler(kContainerName, spec));
+                    factory_->CreateNamespaceHandler(kContainerName, spec, {}));
 }
 
 TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerHierarchical) {
@@ -292,7 +299,7 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerHierarchical) {
   ContainerSpec spec;
   spec.mutable_virtual_host();
   EXPECT_ERROR_CODE(UNIMPLEMENTED,
-                    factory_->CreateNamespaceHandler(kChildName, spec));
+                    factory_->CreateNamespaceHandler(kChildName, spec, {}));
 }
 
 TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerCustomInit) {
@@ -314,7 +321,7 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerCustomInit) {
       .WillRepeatedly(Return(kInit));
 
   StatusOr<NamespaceHandler *> statusor =
-      factory_->CreateNamespaceHandler(kContainerName, spec);
+      factory_->CreateNamespaceHandler(kContainerName, spec, {});
   ASSERT_TRUE(statusor.ok());
   EXPECT_NE(nullptr, statusor.ValueOrDie());
   unique_ptr<NamespaceHandler> handler(statusor.ValueOrDie());
@@ -333,7 +340,9 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerWithConsole) {
   namespace_spec.mutable_pid();
   namespace_spec.mutable_ipc();
   namespace_spec.mutable_mnt();
+  namespace_spec.mutable_fs()->mutable_machine();
   namespace_spec.mutable_run_spec()->mutable_console()->set_slave_pty("10");
+  namespace_spec.mutable_run_spec()->set_inherit_fds(true);
   EXPECT_CALL(*mock_controller_factory_,
               Create(EqualsInitializedProto(namespace_spec), _))
       .WillRepeatedly(Return(mock_controller));
@@ -341,8 +350,112 @@ TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerWithConsole) {
       .WillRepeatedly(Return(kInit));
 
   StatusOr<NamespaceHandler *> statusor =
-      factory_->CreateNamespaceHandler(kContainerName, spec);
+      factory_->CreateNamespaceHandler(kContainerName, spec, {});
   ASSERT_OK(statusor);
+  EXPECT_NE(nullptr, statusor.ValueOrDie());
+  unique_ptr<NamespaceHandler> handler(statusor.ValueOrDie());
+  EXPECT_EQ(RESOURCE_VIRTUALHOST, handler->type());
+  EXPECT_EQ(kContainerName, handler->container_name());
+}
+
+TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerWithRootfs) {
+  ContainerSpec spec;
+  spec.mutable_virtual_host();
+  spec.mutable_filesystem()->set_rootfs("blah");
+  // controller ownership transferred to namespace handler.
+  nscon::MockNamespaceController *mock_controller =
+      new nscon::StrictMockNamespaceController();
+  nscon::NamespaceSpec namespace_spec;
+  namespace_spec.mutable_pid();
+  namespace_spec.mutable_ipc();
+  namespace_spec.mutable_mnt();
+  namespace_spec.mutable_fs()->mutable_machine();
+  namespace_spec.mutable_fs()->set_rootfs_path(spec.filesystem().rootfs());
+  namespace_spec.mutable_run_spec()->set_inherit_fds(true);
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(EqualsInitializedProto(namespace_spec), _))
+      .WillRepeatedly(Return(mock_controller));
+  EXPECT_CALL(*mock_controller, GetPid())
+      .WillRepeatedly(Return(kInit));
+
+  StatusOr<NamespaceHandler *> statusor =
+      factory_->CreateNamespaceHandler(kContainerName, spec, {});
+  ASSERT_OK(statusor);
+  EXPECT_NE(nullptr, statusor.ValueOrDie());
+  unique_ptr<NamespaceHandler> handler(statusor.ValueOrDie());
+  EXPECT_EQ(RESOURCE_VIRTUALHOST, handler->type());
+  EXPECT_EQ(kContainerName, handler->container_name());
+}
+
+TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandlerWithMounts) {
+  ContainerSpec spec;
+  spec.mutable_virtual_host();
+  auto mount = spec.mutable_filesystem()->mutable_mounts()->add_mount();
+  mount->set_source("/a");
+  mount->set_target("/b");
+  mount->set_private_(true);
+  mount = spec.mutable_filesystem()->mutable_mounts()->add_mount();
+  mount->set_source("/c");
+  mount->set_target("/d");
+  mount->set_read_only(true);
+
+  // controller ownership transferred to namespace handler.
+  nscon::MockNamespaceController *mock_controller =
+      new nscon::StrictMockNamespaceController();
+  nscon::NamespaceSpec namespace_spec;
+  namespace_spec.mutable_pid();
+  namespace_spec.mutable_ipc();
+  namespace_spec.mutable_mnt();
+  namespace_spec.mutable_fs()->mutable_machine();
+  namespace_spec.mutable_run_spec()->set_inherit_fds(true);
+  namespace_spec.mutable_fs()->mutable_external_mounts()->CopyFrom(
+      spec.filesystem().mounts());
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(EqualsInitializedProto(namespace_spec), _))
+      .WillRepeatedly(Return(mock_controller));
+  EXPECT_CALL(*mock_controller, GetPid())
+      .WillRepeatedly(Return(kInit));
+
+  StatusOr<NamespaceHandler *> statusor =
+      factory_->CreateNamespaceHandler(kContainerName, spec, {});
+  ASSERT_OK(statusor);
+  EXPECT_NE(nullptr, statusor.ValueOrDie());
+  unique_ptr<NamespaceHandler> handler(statusor.ValueOrDie());
+  EXPECT_EQ(RESOURCE_VIRTUALHOST, handler->type());
+  EXPECT_EQ(kContainerName, handler->container_name());
+}
+
+TEST_F(NsconNamespaceHandlerFactoryTest, CreateNamespaceHandler_MachineSpec) {
+  ContainerSpec spec;
+  spec.mutable_virtual_host();
+  nscon::NamespaceSpec namespace_spec;
+  namespace_spec.mutable_pid();
+  namespace_spec.mutable_ipc();
+  namespace_spec.mutable_mnt();
+  namespace_spec.mutable_run_spec()->set_inherit_fds(true);
+  MachineSpec machine_spec;
+  auto virt_root1 =
+      machine_spec.mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root1->set_root("/test_cpu");
+  virt_root1->set_hierarchy(CGROUP_CPU);
+  auto virt_root2 =
+      machine_spec.mutable_virtual_root()->add_cgroup_virtual_root();
+  virt_root2->set_root("/test_memory");
+  virt_root2->set_hierarchy(CGROUP_MEMORY);
+
+  namespace_spec.mutable_fs()->mutable_machine()->CopyFrom(machine_spec);
+  // controller ownership transferred to namespace handler.
+  nscon::MockNamespaceController *mock_controller =
+      new nscon::StrictMockNamespaceController();
+  EXPECT_CALL(*mock_controller_factory_,
+              Create(EqualsInitializedProto(namespace_spec), IsEmpty()))
+      .WillRepeatedly(Return(mock_controller));
+  EXPECT_CALL(*mock_controller, GetPid())
+      .WillRepeatedly(Return(kInit));
+
+  StatusOr<NamespaceHandler *> statusor =
+      factory_->CreateNamespaceHandler(kContainerName, spec, machine_spec);
+  ASSERT_TRUE(statusor.ok());
   EXPECT_NE(nullptr, statusor.ValueOrDie());
   unique_ptr<NamespaceHandler> handler(statusor.ValueOrDie());
   EXPECT_EQ(RESOURCE_VIRTUALHOST, handler->type());
@@ -789,8 +902,15 @@ TEST_F(DetectInitTest, GetNamespaceIdOfProcessFails) {
 // Tests for InitMachine().
 
 TEST_F(NsconNamespaceHandlerFactoryTest, InitMachineSuccess) {
-  InitSpec spec;
-  EXPECT_OK(factory_->InitMachine(spec));
+  EXPECT_CALL(*mock_console_util_, EnableDevPtsNamespaceSupport())
+      .WillOnce(Return(Status::OK));
+  EXPECT_OK(factory_->InitMachine({}));
+}
+
+TEST_F(NsconNamespaceHandlerFactoryTest, InitMachineFailure) {
+  EXPECT_CALL(*mock_console_util_, EnableDevPtsNamespaceSupport())
+      .WillOnce(Return(Status::CANCELLED));
+  EXPECT_NOT_OK(factory_->InitMachine({}));
 }
 
 class NsconNamespaceHandlerTest : public ::testing::Test {
@@ -879,7 +999,23 @@ TEST_F(NsconNamespaceHandlerTest, ExecExecFails) {
 TEST_F(NsconNamespaceHandlerTest, RunSuccess) {
   vector<string> command = { "ls", "-l"};
   RunSpec spec;
-  EXPECT_CALL(*mock_namespace_controller_, Run(command))
+  nscon::RunSpec nscon_run_spec;
+  EXPECT_CALL(*mock_namespace_controller_,
+              Run(command, EqualsInitializedProto(nscon_run_spec)))
+      .WillRepeatedly(Return(1));
+  StatusOr<pid_t> statusor = handler_->Run(command, spec);
+  ASSERT_TRUE(statusor.ok());
+  EXPECT_EQ(1, statusor.ValueOrDie());
+}
+
+TEST_F(NsconNamespaceHandlerTest, RunSuccessWithRunSpec) {
+  vector<string> command = { "ls", "-l"};
+  RunSpec spec;
+  spec.mutable_console()->set_slave_pty("10");
+  nscon::RunSpec nscon_run_spec;
+  nscon_run_spec.mutable_console()->set_slave_pty("10");
+  EXPECT_CALL(*mock_namespace_controller_,
+              Run(command, EqualsInitializedProto(nscon_run_spec)))
       .WillRepeatedly(Return(1));
   StatusOr<pid_t> statusor = handler_->Run(command, spec);
   ASSERT_TRUE(statusor.ok());
@@ -895,7 +1031,9 @@ TEST_F(NsconNamespaceHandlerTest, RunEmptyCommand) {
 TEST_F(NsconNamespaceHandlerTest, RunControllerFailure) {
   vector<string> command = { "ls", "-l"};
   RunSpec spec;
-  EXPECT_CALL(*mock_namespace_controller_, Run(command))
+  nscon::RunSpec nscon_run_spec;
+  EXPECT_CALL(*mock_namespace_controller_,
+              Run(command, EqualsInitializedProto(nscon_run_spec)))
       .WillRepeatedly(Return(Status::CANCELLED));
   EXPECT_ERROR_CODE(::util::error::CANCELLED,
                     handler_->Run(command, spec));

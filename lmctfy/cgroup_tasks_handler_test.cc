@@ -404,61 +404,27 @@ TEST_F(CgroupTasksHandlerPidsTidsTest, ListProcessesSelf_Success) {
   CheckPids(kExpected, statusor.ValueOrDie());
 }
 
-TEST_F(CgroupTasksHandlerPidsTidsTest, ListProcessesSelf_WithVisitorThreads) {
-  const vector<pid_t> kPids = {11, 12, 13};
-  const vector<pid_t> kTids = {11, 12, 14};
-  const vector<pid_t> kExpected = {11, 12};
-
-  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
-      .WillRepeatedly(Return(kTids));
-  EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
-      .WillRepeatedly(Return(kPids));
-
-  StatusOr<vector<pid_t>> statusor =
-      partial_handler_->ListProcesses(TasksHandler::ListType::SELF);
-  ASSERT_OK(statusor);
-  CheckPids(kExpected, statusor.ValueOrDie());
-}
-
-TEST_F(CgroupTasksHandlerPidsTidsTest,
-       ListProcessesRecursive_WithVisitorThreads) {
-  // The direct container has the same PIDs and TIDs.
-  EXPECT_CALL(*mock_cgroup_controller_, GetThreads())
-      .WillRepeatedly(Return(vector<pid_t>{1, 2}));
+TEST_F(CgroupTasksHandlerPidsTidsTest, ListProcessesRecursive_Success) {
   EXPECT_CALL(*mock_cgroup_controller_, GetProcesses())
       .WillRepeatedly(Return(vector<pid_t>{1, 2}));
 
-  // Expect 2 containers. Get() is called for both TIDs and PIDs.
+  // Expect 2 containers with 2 threads each.
   const string sub1 = JoinPath(kContainer, "s1");
   const string sub2 = JoinPath(kContainer, "s2");
   EXPECT_CALL(*partial_handler_,
               ListSubcontainers(TasksHandler::ListType::RECURSIVE))
       .WillRepeatedly(Return(vector<string>{sub1, sub2}));
-  MockTasksHandler *tid_handler1 = new StrictMockTasksHandler(sub1);
-  MockTasksHandler *pid_handler1 = new StrictMockTasksHandler(sub1);
-  MockTasksHandler *tid_handler2 = new StrictMockTasksHandler(sub2);
-  MockTasksHandler *pid_handler2 = new StrictMockTasksHandler(sub2);
-  EXPECT_CALL(*mock_tasks_handler_factory_, Get(sub1))
-      .WillOnce(Return(tid_handler1))
-      .WillOnce(Return(pid_handler1));
-  EXPECT_CALL(*mock_tasks_handler_factory_, Get(sub2))
-      .WillOnce(Return(tid_handler2))
-      .WillOnce(Return(pid_handler2));
-
-  // Threads have (3, 4, 5, 6) and processes have (3, 5).
-  EXPECT_CALL(*tid_handler1, ListThreads(TasksHandler::ListType::SELF))
+  MockTasksHandler *handler1 = ExpectGetTasksHandler(sub1);
+  MockTasksHandler *handler2 = ExpectGetTasksHandler(sub2);
+  EXPECT_CALL(*handler1, ListProcesses(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>{3, 4}));
-  EXPECT_CALL(*tid_handler2, ListThreads(TasksHandler::ListType::SELF))
+  EXPECT_CALL(*handler2, ListProcesses(TasksHandler::ListType::SELF))
       .WillRepeatedly(Return(vector<pid_t>{5, 6}));
-  EXPECT_CALL(*pid_handler1, ListProcesses(TasksHandler::ListType::SELF))
-      .WillRepeatedly(Return(vector<pid_t>{3}));
-  EXPECT_CALL(*pid_handler2, ListProcesses(TasksHandler::ListType::SELF))
-      .WillRepeatedly(Return(vector<pid_t>{5}));
 
   StatusOr<vector<pid_t>> statusor =
       partial_handler_->ListProcesses(TasksHandler::ListType::RECURSIVE);
   ASSERT_OK(statusor);
-  CheckPids({1, 2, 3, 5}, statusor.ValueOrDie());
+  CheckPids({1, 2, 3, 4, 5, 6}, statusor.ValueOrDie());
 }
 
 TEST_F(CgroupTasksHandlerPidsTidsTest, ListProcessesSelf_Empty) {

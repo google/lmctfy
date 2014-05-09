@@ -34,10 +34,16 @@ using ::strings::Substitute;
 using ::util::Status;
 using ::util::StatusOr;
 
+DEFINE_string(nscon_ovs_bin,
+              "/usr/local/bin/ovs-vsctl",
+              "Path of ovs-vsctl binary on the host. Must be specified when "
+              "using OVS bridge in the spec.");
+
 namespace containers {
 namespace nscon {
 
 static const char kIpCmd[] = "/sbin/ip";
+static const char kBrCtl[] = "/sbin/brctl";
 static const char kSysCtl[] = "/sbin/sysctl";
 
 Status NetNsConfigurator::RunCommand(const vector<string> &argv,
@@ -62,6 +68,24 @@ Status NetNsConfigurator::RunCommand(const vector<string> &argv,
   return Status::OK;
 }
 
+vector<string> NetNsConfigurator::GetEthBridgeAddInterfaceCommand(
+    const string &outside, const string &bridge) const {
+  return {string(kBrCtl), "addif", bridge, outside};
+}
+
+vector<string> NetNsConfigurator::GetOvsBridgeAddInterfaceCommand(
+    const string &outside, const string &bridge) const {
+  return {FLAGS_nscon_ovs_bin, "add-port", bridge, outside};
+}
+
+vector<string> NetNsConfigurator::GetBridgeAddInterfaceCommand(
+    const string &outside, const Network_Bridge &bridge) const {
+  if (bridge.has_type() && bridge.type() == Network::Bridge::OVS) {
+    return GetOvsBridgeAddInterfaceCommand(outside, bridge.name());
+  }
+  return GetEthBridgeAddInterfaceCommand(outside, bridge.name());
+}
+
 vector<string> NetNsConfigurator::GetCreateVethPairCommand(
     const string &outside, const string &inside, pid_t pid) const {
   return {string(kIpCmd), "link", "add", "name", outside, "type", "veth",
@@ -76,6 +100,11 @@ vector<string> NetNsConfigurator::GetMoveNetworkInterfaceToNsCommand(
 vector<string> NetNsConfigurator::GetActivateInterfaceCommand(
     const string &interface) const {
   return {string(kIpCmd), "link", "set", interface, "up"};
+}
+
+vector<string> NetNsConfigurator::GetSetMtuCommand(const string &interface,
+                                                   int32 mtu) const {
+  return {string(kIpCmd), "link", "set", interface, "mtu", SimpleItoa(mtu)};
 }
 
 vector<vector<string>> NetNsConfigurator::GetConfigureNetworkInterfaceCommands(
@@ -97,8 +126,7 @@ vector<vector<string>> NetNsConfigurator::GetConfigureNetworkInterfaceCommands(
   }
 
   if (virtual_ip.has_mtu()) {
-    commands.push_back({string(kIpCmd), "link", "set", interface, "mtu",
-                        SimpleItoa(virtual_ip.mtu())});
+    commands.push_back(GetSetMtuCommand(interface, virtual_ip.mtu()));
   }
 
   if (virtual_ip.has_ip_forward()) {
@@ -110,13 +138,18 @@ vector<vector<string>> NetNsConfigurator::GetConfigureNetworkInterfaceCommands(
 }
 
 Status NetNsConfigurator::SanityCheckNetSpec(const Network &net_spec) const {
-  if (net_spec.has_interface() && net_spec.has_veth_pair()) {
+  if (net_spec.has_interface() && net_spec.has_connection()) {
     return Status(::util::error::INVALID_ARGUMENT, "Exactly one of 'interface' "
                   "and 'veth_pair' must be specified.");
   }
 
-  if (net_spec.has_veth_pair()) {
-    const Network_VethPair &veth_pair = net_spec.veth_pair();
+  if (net_spec.has_connection()) {
+    const auto &connection = net_spec.connection();
+    if (!connection.has_veth_pair()) {
+      return Status(::util::error::INVALID_ARGUMENT,
+                    "Connection requires veth pair to be specified.");
+    }
+    const Network_VethPair &veth_pair = connection.veth_pair();
     if (!veth_pair.has_outside() || veth_pair.outside().empty()) {
       return Status(::util::error::INVALID_ARGUMENT,
                     "'outside' must be specified.");
@@ -124,6 +157,21 @@ Status NetNsConfigurator::SanityCheckNetSpec(const Network &net_spec) const {
     if (!veth_pair.has_inside() || veth_pair.inside().empty()) {
       return Status(::util::error::INVALID_ARGUMENT,
                     "'inside' must be specified.");
+    }
+    if (connection.has_bridge()) {
+      const auto &bridge = connection.bridge();
+      if (!bridge.has_name() || bridge.name().empty()) {
+        return Status(::util::error::INVALID_ARGUMENT,
+                      "When bridge is specified its name has to be specified "
+                      "too.");
+      }
+
+      if (bridge.has_type() && bridge.type() == Network::Bridge::OVS
+          && FLAGS_nscon_ovs_bin.empty()) {
+            return Status(::util::error::INVALID_ARGUMENT,
+                          "When OVS bridge is specified, the commandline flag "
+                          "--nscon_ovs_bin must be specified.");
+      }
     }
   }
 
@@ -153,13 +201,30 @@ Status NetNsConfigurator::SetupOutsideNamespace(const NamespaceSpec &spec,
   RETURN_IF_ERROR(SanityCheckNetSpec(net_spec));
 
   unique_ptr<SubProcess> sp(subprocess_factory_->Run());
-  if (net_spec.has_veth_pair()) {
+  if (net_spec.has_connection()) {
+    const auto &connection = net_spec.connection();
     // Create a new veth pair, and move one of the interfaces to the net ns.
-    const Network_VethPair &veth_pair = net_spec.veth_pair();
+    const Network_VethPair &veth_pair = connection.veth_pair();
     const vector<string> argv = GetCreateVethPairCommand(veth_pair.outside(),
                                                          veth_pair.inside(),
                                                          init_pid);
-    return RunCommand(argv, sp.get());
+    RETURN_IF_ERROR(RunCommand(argv, sp.get()));
+    if (connection.has_bridge()) {
+      RETURN_IF_ERROR(RunCommand(
+          GetBridgeAddInterfaceCommand(veth_pair.outside(),
+                                       connection.bridge()),
+          sp.get()));
+    }
+
+    if (net_spec.has_virtual_ip() && net_spec.virtual_ip().has_mtu()) {
+      RETURN_IF_ERROR(RunCommand(
+          GetSetMtuCommand(veth_pair.outside(), net_spec.virtual_ip().mtu()),
+          sp.get()));
+    }
+    RETURN_IF_ERROR(RunCommand(
+        GetActivateInterfaceCommand(veth_pair.outside()),
+        sp.get()));
+    return Status::OK;
   }
 
   if (net_spec.has_interface()) {
@@ -169,7 +234,7 @@ Status NetNsConfigurator::SetupOutsideNamespace(const NamespaceSpec &spec,
     return RunCommand(argv, sp.get());
   }
 
-  // Nothing to do if neither interface nor veth_pair are specified.
+  // Nothing to do if neither interface nor connection are specified.
   return Status::OK;
 }
 
@@ -190,8 +255,8 @@ NetNsConfigurator::SetupInsideNamespace(const NamespaceSpec &spec) const {
   string interface;
   if (net_spec.has_interface()) {
     interface = net_spec.interface();
-  } else if (net_spec.has_veth_pair()) {
-    interface = net_spec.veth_pair().inside();
+  } else if (net_spec.has_connection()) {
+    interface = net_spec.connection().veth_pair().inside();
   } else {
     return Status::OK;  // no interface inside namespace to configure.
   }

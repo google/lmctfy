@@ -36,7 +36,7 @@ namespace cli {
 // Command to pause a container.
 Status PauseContainer(const vector<string> &argv,
                       const ContainerApi *lmctfy,
-                      vector<OutputMap> *output) {
+                      OutputMap *output) {
   const string container_name = argv[1];
 
   // Ensure the container exists.

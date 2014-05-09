@@ -38,11 +38,12 @@ using ::util::StatusOr;
 namespace containers {
 namespace lmctfy {
 
-MemoryController::MemoryController(const string &cgroup_path, bool owns_cgroup,
+MemoryController::MemoryController(const string &hierarchy_path,
+                                   const string &cgroup_path, bool owns_cgroup,
                                    const KernelApi *kernel,
                                    EventFdNotifications *eventfd_notifications)
-    : CgroupController(CGROUP_MEMORY, cgroup_path, owns_cgroup, kernel,
-                       eventfd_notifications) {}
+    : CgroupController(CGROUP_MEMORY, hierarchy_path, cgroup_path, owns_cgroup,
+                       kernel, eventfd_notifications) {}
 
 // Cleanup on the input limits to be done.  For example, even though the kernel
 // reports a maxint limit for "infinite", it refuses to read one in and needs
@@ -459,6 +460,156 @@ Status MemoryController::GetNumaStats(MemoryStats_NumaStats *numa_stats) const {
     }
   }
   return Status::OK;
+}
+
+namespace {
+struct IdlePageData {
+  int64 clean = 0;
+  int64 dirty_file = 0;
+  int64 dirty_swap = 0;
+};
+
+Status ProcessIdlePageData(const string &line,
+                           map<int, IdlePageData> *idle_page_data) {
+  const vector<string> line_data = Split(line, " ", strings::SkipEmpty());
+  if (line_data.size() != 2) {
+    return Status(::util::error::FAILED_PRECONDITION,
+                  Substitute("Failed to parse idle page data from line \"$0\"",
+                             line));
+  }
+  const vector<string> key_data =
+      Split(line_data[0], "_", strings::SkipEmpty());
+  if (key_data.size() <= 1 || key_data[0] != "idle") {
+    return Status(::util::error::FAILED_PRECONDITION,
+                  Substitute("Failed to parse idle page data from line \"$0\"",
+                             line));
+  }
+  int age;
+  if (!SimpleAtoi(key_data[1], &age)) {
+    // Default to age == 0; this works for the idle_{clean,dirty*}, but also
+    // means idle_bad_data_clean will overwrite the idle_clean data.
+    age = 0;
+  }
+  int64 value;
+  if (!SimpleAtoi(line_data[1], &value)) {
+    return Status(::util::error::FAILED_PRECONDITION,
+                  Substitute("Failed to parse idle page data from line \"$0\"",
+                             line));
+  }
+  bool used = false;
+  if (key_data[key_data.size() - 1] == "clean") {
+    (*idle_page_data)[age].clean = value;
+    used = true;
+  } else if (key_data.size() > 2 && key_data[key_data.size() - 2] == "dirty") {
+    if (key_data[key_data.size() - 1] == "file") {
+      (*idle_page_data)[age].dirty_file = value;
+      used = true;
+    } else if (key_data[key_data.size() - 1] == "swap") {
+      (*idle_page_data)[age].dirty_swap = value;
+      used = true;
+    }
+  }
+  if (!used) {
+    return Status(::util::error::FAILED_PRECONDITION,
+                  Substitute("Failed to parse idle page data from line \"$0\"",
+                             line));
+  }
+  return Status::OK;
+}
+
+}  // namespace
+
+Status MemoryController::GetIdlePageStats(
+    MemoryStats_IdlePageStats *idle_page_stats) const {
+  idle_page_stats->Clear();
+  StatusOr<string> statusor =
+      GetParamString(KernelFiles::Memory::kIdlePageStats);
+  RETURN_IF_ERROR(statusor);
+  map<int, IdlePageData> idle_page_data_map;
+  for (const StringPiece &line_piece :
+           Split(statusor.ValueOrDie(), "\n", strings::SkipEmpty())) {
+    // Each line should be one of:
+    //   scans <count>
+    //   stale <count>
+    //   idle_[<age>_]{clean,dirty_file,dirty_swap} <count>
+    const string line = line_piece.ToString();
+    if (line.size() < 7) {
+      return Status(
+          ::util::error::FAILED_PRECONDITION,
+          Substitute("Failed to parse idle page data from line \"$0\"", line));
+    }
+    // Include 6 characters to be sure we have a ' '.
+    const string key = line.substr(0, 6);
+    const string value_string = line.substr(6, string::npos);
+    if (key == "scans ") {
+      int64 value;
+      if (!SimpleAtoi(value_string, &value)) {
+        return Status(
+            ::util::error::FAILED_PRECONDITION,
+            Substitute("Failed to parse idle page data from line \"$0\"",
+                       line));
+      }
+      idle_page_stats->set_scans(value);
+    } else if (key == "stale ") {
+      int64 value;
+      if (!SimpleAtoi(value_string, &value)) {
+        return Status(
+            ::util::error::FAILED_PRECONDITION,
+            Substitute("Failed to parse idle page data from line \"$0\"",
+                       line));
+      }
+      idle_page_stats->set_stale(value);
+    } else {
+      RETURN_IF_ERROR(ProcessIdlePageData(line, &idle_page_data_map));
+    }
+  }
+  for (const auto &idle_page_data : idle_page_data_map) {
+    MemoryStats_IdlePageStats_Stats *stats = idle_page_stats->add_stats();
+    stats->set_age_in_secs(idle_page_data.first);
+    stats->set_clean(idle_page_data.second.clean);
+    stats->set_dirty_file(idle_page_data.second.dirty_file);
+    stats->set_dirty_swap(idle_page_data.second.dirty_swap);
+  }
+  return Status::OK;
+}
+
+Status MemoryController::GetCompressionSamplingStats(
+    MemoryStats_CompressionSamplingStats *compression_sampling_stats) const {
+  compression_sampling_stats->Clear();
+  StatusOr<string> statusor =
+      GetParamString(KernelFiles::Memory::kCompressionSamplingStats);
+  RETURN_IF_ERROR(statusor);
+  for (const StringPiece &line_piece :
+           Split(statusor.ValueOrDie(), "\n", strings::SkipEmpty())) {
+    // Each line should be of the form "<field> <count>"
+    const string line = line_piece.ToString();
+    vector<string> parts = Split(line, " ", strings::SkipEmpty());
+    if (parts.size() != 2) {
+      return Status(
+          ::util::error::FAILED_PRECONDITION,
+          Substitute("Failed to parse idle page data from line \"$0\"",
+                     line));
+    }
+    int64 value;
+    if (!SimpleAtoi(parts[1], &value)) {
+      return Status(
+          ::util::error::FAILED_PRECONDITION,
+          Substitute("Failed to parse idle page data from line \"$0\"",
+                     line));
+    }
+    if (parts[0] == "raw_size") {
+      compression_sampling_stats->set_raw_size(value);
+    } else if (parts[0] == "compressed_size") {
+      compression_sampling_stats->set_compressed_size(value);
+    } else if (parts[0] == "fifo_overflow") {
+      compression_sampling_stats->set_fifo_overflow(value);
+    }
+  }
+  return Status::OK;
+}
+
+StatusOr<int64> MemoryController::GetFailCount() const {
+  return GetParamInt(KernelFiles::Memory::kFailCount);
 }
 
 StatusOr<int64> MemoryController::GetValueFromStats(

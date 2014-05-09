@@ -48,7 +48,7 @@ typedef ::std::vector<Command> CommandVector;
 // A command action.
 typedef ::util::Status (*CommandFunction)(const ::std::vector<string> &argv,
                                           const ContainerApi *lmctfy,
-                                          ::std::vector<OutputMap> *output);
+                                          OutputMap *output);
 
 // Differentiate commands from sub-menus.
 enum CommandType {
@@ -140,7 +140,8 @@ typedef ResultCallback< ::util::StatusOr<ContainerApi *>> ContainerApiFactory;
 // lmctfy_factory which must be a repeatable callback.
 ::util::Status RunCommand(const ::std::vector<string> &args,
                           OutputMap::Style output_style,
-                          ContainerApiFactory *lmctfy_factory);
+                          ContainerApiFactory *lmctfy_factory,
+                          FILE *out);
 
 // Looks up and print usage help (if any) for the given command string or root
 // command tree if no part of the command tree matches.

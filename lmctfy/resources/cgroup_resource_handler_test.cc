@@ -51,6 +51,7 @@ using ::testing::StrictMock;
 using ::testing::_;
 using ::util::Status;
 using ::util::StatusOr;
+using ::util::error::INTERNAL;
 using ::util::error::INVALID_ARGUMENT;
 using ::util::error::NOT_FOUND;
 
@@ -351,6 +352,30 @@ TEST_F(CgroupResourceHandlerTest, CreateSetsChildrenLimits) {
   spec.set_children_limit(12);
 
   EXPECT_OK(handler_->CreateResource(spec));
+}
+
+// Test for PopulateMachineSpec().
+
+TEST_F(CgroupResourceHandlerTest, PopulateMachineSpecSuccess) {
+  MachineSpec test_spec;
+
+  EXPECT_CALL(*mock_controller1_, PopulateMachineSpec(&test_spec))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_controller2_, PopulateMachineSpec(&test_spec))
+      .WillOnce(Return(Status::OK));
+
+  EXPECT_OK(handler_->PopulateMachineSpec(&test_spec));
+}
+
+TEST_F(CgroupResourceHandlerTest, PopulateMachineSpecFailure) {
+  MachineSpec test_spec;
+
+  EXPECT_CALL(*mock_controller1_, PopulateMachineSpec(&test_spec))
+      .WillOnce(Return(Status::OK));
+  EXPECT_CALL(*mock_controller2_, PopulateMachineSpec(&test_spec))
+      .WillOnce(Return(Status(INTERNAL, "Something somehow went wrong.")));
+
+  EXPECT_ERROR_CODE(INTERNAL, handler_->PopulateMachineSpec(&test_spec));
 }
 
 class UpdateTemplateTestHelperMock : public CgroupResourceHandler {

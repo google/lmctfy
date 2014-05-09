@@ -12,6 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "file/base/file.h"
 
 #include "file/base/path.h"
@@ -47,4 +52,13 @@ string File::StripBasename(const string &fname) {
   }
 
   return fname.substr(0, last_slash);
+}
+
+bool File::Exists(const string &path) {
+  struct stat buf;
+  return stat(path.c_str(), &buf) == 0;
+}
+
+bool File::Delete(const string &path) {
+  return remove(path.c_str()) == 0;
 }

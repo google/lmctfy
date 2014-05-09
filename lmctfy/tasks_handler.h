@@ -85,6 +85,9 @@ class TasksHandler {
   virtual ::util::Status Delegate(::util::UnixUid uid,
                                   ::util::UnixGid gid) = 0;
 
+  // TasksHandlers can populate the machine spec with relavent information.
+  virtual ::util::Status PopulateMachineSpec(MachineSpec *spec) const = 0;
+
   // Whether to list only the current handler, or recursively for all child
   // handlers.
   enum class ListType {

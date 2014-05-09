@@ -24,7 +24,7 @@ class FreezerControllerStub : public FreezerController {
  public:
   explicit FreezerControllerStub(const string &cgroup_path)
       : FreezerController(
-            cgroup_path, false,
+            "", cgroup_path, false,
             reinterpret_cast<KernelApi *>(0xABABABAB),
             reinterpret_cast<EventFdNotifications *>(0xABABABAB)) {}
 

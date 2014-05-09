@@ -42,7 +42,7 @@ namespace cli {
 
 // Command to destroy a container.
 Status DestroyContainer(const vector<string> &argv, const ContainerApi *lmctfy,
-                        vector<OutputMap> *output) {
+                        OutputMap *output) {
   // Args: destroy <container name>
   if (argv.size() != 2) {
     return Status(::util::error::INVALID_ARGUMENT,

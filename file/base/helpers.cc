@@ -15,6 +15,7 @@
 #include "file/base/helpers.h"
 
 #include <fcntl.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -49,6 +50,31 @@ Status GetContents(StringPiece filename,
   }
 
   delete[] buf;
+  close(fd);
+  return Status::OK;
+}
+
+Status SetContents(StringPiece filename,
+                   StringPiece content,
+                   const Options& ignored) {
+  // Remove the file if it exists.
+  remove(filename.ToString().c_str());
+  int fd = open(filename.ToString().c_str(), O_WRONLY | O_CREAT, S_IRWXU);
+  if (fd < 0) {
+    return Status(::util::error::INTERNAL, "Failed to recreate file");
+  }
+
+  const char *buf = content.data();
+  int64 numToWrite = content.size();
+  int64 numWritten = 0;
+
+  // Write until there are no more bytes.
+  while ((numWritten = write(fd, buf, numToWrite)) > 0) {
+    numToWrite -= numWritten;
+    if (numToWrite <= 0) break;
+    buf += numWritten;
+  }
+
   close(fd);
   return Status::OK;
 }

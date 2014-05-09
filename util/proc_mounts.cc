@@ -22,6 +22,7 @@
 #include "strings/numbers.h"
 #include "strings/split.h"
 #include "strings/substitute.h"
+#include "strings/strip.h"
 #include "util/file_lines.h"
 
 using ::strings::SkipEmpty;
@@ -41,7 +42,8 @@ bool ProcMountsParseLine(const char *line, ProcMountsData *data) {
 
   // Fill in information about this mount point.
   data->device = elements[0];
-  data->mountpoint = elements[1];
+  // Strip off deleted suffix.
+  data->mountpoint = StripSuffixString(elements[1], R"(\040(deleted))");
   data->type = elements[2];
   data->options = Split(elements[3], ",", SkipEmpty());
   if (!SimpleAtoi(elements[4], &(data->fs_freq))) {

@@ -68,20 +68,47 @@ class IpcAgentFactory {
 //
 class IpcAgent {
  public:
-  virtual ~IpcAgent() {}
+  virtual ~IpcAgent();
 
   // WriteData is safe to be called between fork() and exec().
-  virtual ::util::Status WriteData(const string &data) = 0;
+  virtual ::util::Status WriteData(const string &data);
   // Returns the data read and PID of the sender.
-  virtual ::util::StatusOr<::std::pair<string, pid_t>> ReadData() = 0;
+  virtual ::util::StatusOr<::std::pair<string, pid_t>> ReadData();
+  // Wait for a signal from child process.
+  // Note that only the parent process (creator of this IpcAgent instance)
+  // should invoke this call.
+  // Returns: Status::OK iff signal was received.
+  //          Status::CANCELLED if the remote closed the connection without
+  //          sending any signal.
+  virtual ::util::Status WaitForChild();
+  // Notifies the parent. This function does not verify if the remote indeed
+  // received it.
+  // Note that only the child process (inheritor of this IpcAgent instance)
+  // should invoke this call.
+  virtual ::util::Status SignalParent();
   // Takes ownership of this object and releases it. The object is in undefined
   // state if this function returns error.
-  virtual ::util::Status Destroy() = 0;
+  virtual ::util::Status Destroy();
 
  protected:
-  IpcAgent() {}
+  IpcAgent(int sock_fd, const string &uds_path, const int pipefd[2])
+      : sock_fd_(sock_fd), uds_path_(uds_path),
+        pipefd_read_(pipefd[0]), pipefd_write_(pipefd[1]) {}
 
  private:
+  // Unix-Domain Socket FD used for listening and accepting a connection by
+  // receiver (during ReadData()).
+  const int sock_fd_;
+  // Unix-Domain Socket path used for connection by sender (during WriteData()).
+  const string uds_path_;
+  // Pipe to support Wait()/Signal(). These allows us to detect process
+  // termination.
+  int pipefd_read_;
+  int pipefd_write_;
+
+  friend class IpcAgentFactory;
+  friend class IpcAgentTest;
+
   DISALLOW_COPY_AND_ASSIGN(IpcAgent);
 };
 

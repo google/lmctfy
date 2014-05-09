@@ -29,6 +29,7 @@ class MockSubProcess : public SubProcess {
   MOCK_METHOD2(SetChannelAction, void(Channel chan, ChannelAction action));
   MOCK_METHOD1(SetArgv, void(const ::std::vector<::std::string> &argv));
   MOCK_METHOD0(Start, bool());
+  MOCK_METHOD0(Wait, bool());
   MOCK_METHOD2(Communicate, int(string* stdout_output, string* stderr_output));
 };
 

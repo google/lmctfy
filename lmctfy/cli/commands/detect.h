@@ -33,7 +33,7 @@ class OutputMap;
 // Command to detect container of a TID.
 ::util::Status DetectContainer(const ::std::vector<string> &argv,
                                const ContainerApi *lmctfy,
-                               ::std::vector<OutputMap> *output);
+                               OutputMap *output);
 void RegisterDetectCommand();
 
 }  // namespace cli

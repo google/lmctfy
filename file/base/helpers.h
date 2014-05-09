@@ -32,6 +32,10 @@ const Options &Defaults();
                            ::std::string* output,
                            const Options& options);
 
+::util::Status SetContents(StringPiece filename,
+                           StringPiece content,
+                           const Options& options);
+
 }  // namespace file
 
 #endif  // FILE_BASE_HELPERS_H__

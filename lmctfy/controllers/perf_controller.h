@@ -47,8 +47,8 @@ class PerfControllerFactory
 class PerfController : public CgroupController {
  public:
   // Does not take ownership of kernel.
-  PerfController(const string &cgroup_path, bool owns_cgroup,
-                 const KernelApi *kernel,
+  PerfController(const string &hierarchy_path, const string &cgroup_path,
+                 bool owns_cgroup, const KernelApi *kernel,
                  EventFdNotifications *eventfd_notifications);
   virtual ~PerfController() {}
 

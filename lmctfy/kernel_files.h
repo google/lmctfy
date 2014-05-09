@@ -114,7 +114,7 @@ struct KernelFiles {
     static const char kThrottledIoServiceBytes[];
   };
 
-  
+
   // Files related to CPU accounting
   struct CPUAcct {
    public:
@@ -141,6 +141,7 @@ struct KernelFiles {
     static const char kDirtyBackgroundRatio[];
     static const char kDirtyBackgroundLimitInBytes[];
     static const char kDirtyLimitInBytes[];
+    static const char kFailCount[];
     static const char kIdlePageStats[];
     static const char kLimitInBytes[];
     static const char kMaxUsageInBytes[];

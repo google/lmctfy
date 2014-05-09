@@ -23,6 +23,7 @@ using ::std::string;
 #include "base/callback.h"
 #include "base/macros.h"
 #include "lmctfy/general_resource_handler.h"
+#include "include/config.pb.h"
 #include "include/lmctfy.h"
 #include "include/lmctfy.pb.h"
 #include "util/safe_types/unix_gid.h"
@@ -95,6 +96,9 @@ class ResourceHandler : public GeneralResourceHandler {
 
   // Enters the specified TIDs into this Resource Handler.
   virtual ::util::Status Enter(const ::std::vector<pid_t> &tids) = 0;
+
+  // Populates this resource's portion of the MachineSpec.
+  virtual ::util::Status PopulateMachineSpec(MachineSpec *spec) const = 0;
 
  protected:
   ResourceHandler(const string &container_name, ResourceType type)

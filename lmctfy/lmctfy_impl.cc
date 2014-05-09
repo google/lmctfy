@@ -66,6 +66,7 @@ DEFINE_bool(lmctfy_use_namespaces,
             "Whether lmctfy uses namespaces.");
 
 using ::util::EventfdListener;
+using ::containers::InitSpec;
 using ::util::UnixGid;
 using ::util::UnixGidValue;
 using ::util::UnixUid;
@@ -253,8 +254,7 @@ static StatusOr<TasksHandlerFactory *> CreateTasksHandler(
 
 // Takes ownership of cgroup_factory.
 StatusOr<ContainerApiImpl *> ContainerApiImpl::NewContainerApiImpl(
-    CgroupFactory *cgroup_factory, const KernelApi *kernel) {
-  unique_ptr<CgroupFactory> cgroup_factory_deleter(cgroup_factory);
+    unique_ptr<CgroupFactory> cgroup_factory, const KernelApi *kernel) {
 
   // Create the notifications subsystem.
   unique_ptr<ActiveNotifications> active_notifications(
@@ -269,13 +269,13 @@ StatusOr<ContainerApiImpl *> ContainerApiImpl::NewContainerApiImpl(
   vector<ResourceHandlerFactory *> resource_factories;
   ElementDeleter d(&resource_factories);
   resource_factories =
-      RETURN_IF_ERROR(CreateSupportedResources(cgroup_factory, kernel,
+      RETURN_IF_ERROR(CreateSupportedResources(cgroup_factory.get(), kernel,
                                               eventfd_notifications.get()));
 
   // Create the TasksHandlerFactory.
   unique_ptr<TasksHandlerFactory> tasks_handler_factory(
       RETURN_IF_ERROR(
-          CreateTasksHandler(cgroup_factory, kernel,
+          CreateTasksHandler(cgroup_factory.get(), kernel,
                              eventfd_notifications.get())));
 
   // TODO(vishnuk): Pass in a real FreezerControllerFactory once Creation,
@@ -288,7 +288,7 @@ StatusOr<ContainerApiImpl *> ContainerApiImpl::NewContainerApiImpl(
     freezer_controller_factory.reset(new FreezerControllerFactoryStub());
   } else {
     freezer_controller_factory.reset(
-        new FreezerControllerFactory(cgroup_factory, kernel,
+        new FreezerControllerFactory(cgroup_factory.get(), kernel,
                                      eventfd_notifications.get()));
   }
 
@@ -302,12 +302,12 @@ StatusOr<ContainerApiImpl *> ContainerApiImpl::NewContainerApiImpl(
   }
 
   // Release all deleters and create the ContainerApi instance.
-  cgroup_factory_deleter.release();
   vector<ResourceHandlerFactory *> resources_to_use;
   resources_to_use.swap(resource_factories);
   return new ContainerApiImpl(
-      tasks_handler_factory.release(), cgroup_factory, resources_to_use, kernel,
-      active_notifications.release(), namespace_handler_factory.release(),
+      tasks_handler_factory.release(), move(cgroup_factory), resources_to_use,
+      kernel, active_notifications.release(),
+      namespace_handler_factory.release(),
       eventfd_notifications.release(), move(freezer_controller_factory));
 }
 
@@ -319,30 +319,30 @@ StatusOr<ContainerApi *> ContainerApi::New() {
   // TODO(vmarmol): Check that the machine has been initialized.
 
   // Auto-detect mount points for the cgroup hierarchies.
-  CgroupFactory *cgroup_factory = RETURN_IF_ERROR(CgroupFactory::New(kernel));
+  unique_ptr<CgroupFactory> cgroup_factory(
+      RETURN_IF_ERROR(CgroupFactory::New(kernel)));
 
-  return ContainerApiImpl::NewContainerApiImpl(cgroup_factory, kernel);
+  return ContainerApiImpl::NewContainerApiImpl(move(cgroup_factory), kernel);
 }
 
 // InitMachine() is called at machine boot to mount all hierarchies needed by
 // lmctfy.
 Status ContainerApi::InitMachine(const InitSpec &spec) {
-  return ContainerApiImpl::InitMachineImpl(::system_api::GlobalKernelApi(), spec);
+  // Mount all the specified cgroups.
+  unique_ptr<const KernelApi> kernel_api(::system_api::GlobalKernelApi());
+  unique_ptr<CgroupFactory> cgroup_factory(
+      RETURN_IF_ERROR(CgroupFactory::New(kernel_api.get())));
+  return ContainerApiImpl::InitMachineImpl(kernel_api.release(),
+                                       move(cgroup_factory), spec);
 }
 
 // Does not take ownership of kernel.
 Status ContainerApiImpl::InitMachineImpl(const KernelApi *kernel,
+                                     unique_ptr<CgroupFactory> cgroup_factory,
                                      const InitSpec &spec) {
-  // Mount all the specified cgroups.
-  unique_ptr<CgroupFactory> cgroup_factory(
-      RETURN_IF_ERROR(CgroupFactory::New(kernel)));
-  for (auto &mount : spec.cgroup_mount()) {
-    RETURN_IF_ERROR(cgroup_factory->Mount(mount));
-  }
-
   unique_ptr<ContainerApiImpl> lmctfy(
       RETURN_IF_ERROR(
-          ContainerApiImpl::NewContainerApiImpl(cgroup_factory.release(), kernel)));
+          ContainerApiImpl::NewContainerApiImpl(move(cgroup_factory), kernel)));
 
   // Init the machine. This initializes all the handlers.
   return lmctfy->InitMachine(spec);
@@ -350,7 +350,7 @@ Status ContainerApiImpl::InitMachineImpl(const KernelApi *kernel,
 
 ContainerApiImpl::ContainerApiImpl(
     TasksHandlerFactory *tasks_handler_factory,
-    const CgroupFactory *cgroup_factory,
+    unique_ptr<CgroupFactory> cgroup_factory,
     const vector<ResourceHandlerFactory *> &resource_factories,
     const KernelApi *kernel, ActiveNotifications *active_notifications,
     NamespaceHandlerFactory *namespace_handler_factory,
@@ -358,7 +358,7 @@ ContainerApiImpl::ContainerApiImpl(
     unique_ptr<FreezerControllerFactory> freezer_controller_factory)
     : tasks_handler_factory_(CHECK_NOTNULL(tasks_handler_factory)),
       kernel_(CHECK_NOTNULL(kernel)),
-      cgroup_factory_(CHECK_NOTNULL(cgroup_factory)),
+      cgroup_factory_(move(cgroup_factory)),
       active_notifications_(CHECK_NOTNULL(active_notifications)),
       namespace_handler_factory_(CHECK_NOTNULL(namespace_handler_factory)),
       eventfd_notifications_(CHECK_NOTNULL(eventfd_notifications)),
@@ -417,9 +417,11 @@ template<typename T> using UniqueDestroyPtr = unique_ptr<T, DestroyDeleter<T>>;
 StatusOr<NamespaceHandler *> CreateNamespaceHandlerWrapper(
     NamespaceHandlerFactory *namespace_handler_factory,
     const string *resolved_name,
-    const ContainerSpec *spec) {
+    const ContainerSpec *spec,
+    const MachineSpec *machine_spec) {
   return namespace_handler_factory->CreateNamespaceHandler(*resolved_name,
-                                                           *spec);
+                                                           *spec,
+                                                           *machine_spec);
 }
 
 }  // namespace
@@ -457,7 +459,7 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
       RETURN_IF_ERROR(tasks_handler_factory_->Create(resolved_name, spec)));
 
   // We will locally create the resource handlers we need.
-  vector<UniqueDestroyPtr<ResourceHandler>> resource_handlers;
+  vector<UniqueDestroyPtr<ResourceHandler>> specified_resource_handlers;
 
   // Create resource handlers for this container.
   const string kParentName = file::Dirname(resolved_name).ToString();
@@ -469,7 +471,7 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
       continue;
     }
 
-    resource_handlers.emplace_back(
+    specified_resource_handlers.emplace_back(
         RETURN_IF_ERROR(type_handler_pair.second->Create(resolved_name, spec)));
   }
 
@@ -482,7 +484,7 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
     // Delegate freezer controller, tasks handler and each of the resources.
     RETURN_IF_ERROR(freezer_controller->Delegate(uid, gid));
     RETURN_IF_ERROR(tasks_handler->Delegate(uid, gid));
-    for (const auto &handler : resource_handlers) {
+    for (const auto &handler : specified_resource_handlers) {
       RETURN_IF_ERROR(handler->Delegate(uid, gid));
     }
   }
@@ -493,11 +495,22 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
                                                resource_factories_));
     ElementDeleter d(&all_resource_handlers);
 
+    // Setup the correct machine spec
+    MachineSpec machine_spec;
+    for (const auto &handler : all_resource_handlers) {
+      RETURN_IF_ERROR(handler->PopulateMachineSpec(&machine_spec));
+    }
+    RETURN_IF_ERROR(freezer_controller->PopulateMachineSpec(&machine_spec));
+    RETURN_IF_ERROR(tasks_handler->PopulateMachineSpec(&machine_spec));
+    RETURN_IF_ERROR(cgroup_factory_->PopulateMachineSpec(&machine_spec));
+
+    const MachineSpec *machine_spec_ptr = &machine_spec;
     unique_ptr<ResultCallback<StatusOr<NamespaceHandler *>>> action(
         NewPermanentCallback(&CreateNamespaceHandlerWrapper,
                              namespace_handler_factory_.get(),
                              &resolved_name,
-                             &spec));
+                             &spec,
+                             machine_spec_ptr));
     unique_ptr<NamespaceHandler> namespace_handler(
         RETURN_IF_ERROR(
             EnterThreadAndDo(
@@ -507,10 +520,10 @@ StatusOr<Container *> ContainerApiImpl::Create(StringPiece container_name,
                 action.get())));
   }
 
-  for (auto &handler : resource_handlers) {
+  for (auto &handler : specified_resource_handlers) {
     delete handler.release();
   }
-  resource_handlers.clear();
+  specified_resource_handlers.clear();
 
   return StatusOr<Container *>(new ContainerImpl(
       resolved_name, tasks_handler.release(), resource_factories_, this,
@@ -557,11 +570,15 @@ StatusOr<string> ContainerApiImpl::Detect(pid_t tid) const {
 }
 
 Status ContainerApiImpl::InitMachine(const InitSpec &spec) const {
+  for (auto &mount : spec.cgroup_mount()) {
+    RETURN_IF_ERROR(cgroup_factory_->Mount(mount));
+  }
+
   // Initialize the resource handlers.
   for (auto type_handler_pair : resource_factories_) {
     RETURN_IF_ERROR(type_handler_pair.second->InitMachine(spec));
   }
-
+  RETURN_IF_ERROR(namespace_handler_factory_->InitMachine(spec));
   return Status::OK;
 }
 

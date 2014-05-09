@@ -43,9 +43,42 @@ message Network {
     optional string inside = 2;
   }
 
-  // If specified, creates a veth pair.
+  // Describes a Linux bridge.
+  message Bridge {
+    // Name of a linux bridge.
+    // Required.
+    // Example: "br0"
+    optional string name = 1;
+
+    enum Type {
+      ETH = 0;  // a regular ethernet bridge
+      OVS = 1;  // an OpenVSwitch bridge
+    }
+
+    // Type of the bridge. If the type is not specified, the bridge is
+    // considered to be of standard ethernet bridge type.
+    // Optional.
+    // Note: If an OVS bridge is specified, it retains reference to the veth
+    // device even after the container is destroyed.
+    // TODO(ameyd): Investigate if the deletion can be handled natively.
+    optional Type type = 2;
+  }
+
+  message Connection {
+    // Veth pair which will be created for a virtual host. See VethPair
+    // description for more details.
+    // Required.
+    optional VethPair veth_pair = 1;
+
+    // Bridge to which outside veth from |veth_pair| will be added.
+    // Optional.
+    optional Bridge bridge = 2;
+  }
+
+  // Creates a connection between virtual host and outside using veth pair and
+  // optionally connecting it to a bridge.
   // TODO(ameyd): We should be able to make this a repeated field.
-  optional VethPair veth_pair = 3;
+  optional Connection connection = 3;
 
   // Specification for configuring IP inside the Virtual Host.
   // TODO(ameyd): Verify if this configuration is sufficient for IPv6.
@@ -62,7 +95,7 @@ message Network {
     optional string gateway = 3;
 
     // Maximum transmission unit for the network interface in network namespace.
-    // TODO(ameyd): Units?
+    // Unit: bytes
     optional int32 mtu = 4;
 
     // Whether to enable IP forwarding within the namespace.
@@ -75,4 +108,22 @@ message Network {
   optional VirtualIp virtual_ip = 2;
 
   // Next tag: 4
+}
+
+message Mounts {
+  message Mount {
+    // Absolute path to a filesystem entity in the current Container.
+    optional string source = 1;
+    // Path relative to the root filesystem path of the new Container.
+    // source will be mounted recursively at the target.
+    optional string target = 2;
+    // If true, the target is marked as read-only.
+    optional bool read_only = 3;
+    // If true, the target will be marked private. The target is marked as
+    // a slave mount otherwise.
+    optional bool private = 4;
+  }
+  // If the rootfs path is '/', mounts will not be supported.
+  // By default, the target is mounted with no-suid option.
+  repeated Mount mount = 1;
 }

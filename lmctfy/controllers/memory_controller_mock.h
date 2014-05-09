@@ -45,8 +45,9 @@ class MockMemoryController : public MemoryController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockMemoryController()
-      : MemoryController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
-                         reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
+      : MemoryController(
+          "", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+          reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {
   }
 
   MOCK_METHOD1(SetLimit, ::util::Status(::util::Bytes limit));
@@ -98,6 +99,13 @@ class MockMemoryController : public MemoryController {
   MOCK_CONST_METHOD1(GetMemoryStats, ::util::Status(MemoryStats *stats));
   MOCK_CONST_METHOD1(GetNumaStats,
                      ::util::Status(MemoryStats_NumaStats *numa_stats));
+  MOCK_CONST_METHOD1(GetIdlePageStats,
+                     ::util::Status(MemoryStats_IdlePageStats
+                                        *idle_page_stats));
+  MOCK_CONST_METHOD1(GetCompressionSamplingStats,
+                     ::util::Status(MemoryStats_CompressionSamplingStats
+                                        *compression_sampling_stats));
+  MOCK_CONST_METHOD0(GetFailCount, ::util::StatusOr<int64>());
 };
 
 typedef ::testing::StrictMock<MockMemoryController> StrictMockMemoryController;

@@ -48,54 +48,38 @@ TEST_F(OutputMapTest, Add) {
   ASSERT_EQ(1, output_map.NumPairs());
   EXPECT_EQ("k0", output_map.GetKey(0));
   EXPECT_EQ("v0", output_map.GetValue(0));
-  EXPECT_EQ("v0", output_map.GetValueByKey("k0"));
-  EXPECT_EQ("", output_map.GetValueByKey("does-not-exist"));
 
   // Add another pair.
   output_map.Add("k1", "v1");
   ASSERT_EQ(2, output_map.NumPairs());
   EXPECT_EQ("k0", output_map.GetKey(0));
   EXPECT_EQ("v0", output_map.GetValue(0));
-  EXPECT_EQ("v0", output_map.GetValueByKey("k0"));
   EXPECT_EQ("k1", output_map.GetKey(1));
   EXPECT_EQ("v1", output_map.GetValue(1));
-  EXPECT_EQ("v1", output_map.GetValueByKey("k1"));
 
   // Add a few more pairs.
   output_map.AddBool("k2", true).Add("k3", "v3");
   ASSERT_EQ(4, output_map.NumPairs());
   EXPECT_EQ("k0", output_map.GetKey(0));
   EXPECT_EQ("v0", output_map.GetValue(0));
-  EXPECT_EQ("v0", output_map.GetValueByKey("k0"));
   EXPECT_EQ("k1", output_map.GetKey(1));
   EXPECT_EQ("v1", output_map.GetValue(1));
-  EXPECT_EQ("v1", output_map.GetValueByKey("k1"));
   EXPECT_EQ("k2", output_map.GetKey(2));
   EXPECT_EQ("yes", output_map.GetValue(2));
-  EXPECT_EQ("yes", output_map.GetValueByKey("k2"));
   EXPECT_EQ("k3", output_map.GetKey(3));
   EXPECT_EQ("v3", output_map.GetValue(3));
-  EXPECT_EQ("v3", output_map.GetValueByKey("k3"));
 
-  // Add a duplicate key. Ignored in opt mode
-  if (DEBUG_MODE) {
-    EXPECT_DEATH(output_map.Add("k1", "v4"), "");
-  } else {
-    output_map.Add("k1", "v4");
-    ASSERT_EQ(4, output_map.NumPairs());
-    EXPECT_EQ("k0", output_map.GetKey(0));
-    EXPECT_EQ("v0", output_map.GetValue(0));
-    EXPECT_EQ("v0", output_map.GetValueByKey("k0"));
-    EXPECT_EQ("k1", output_map.GetKey(1));
-    EXPECT_EQ("v1", output_map.GetValue(1));
-    EXPECT_EQ("v1", output_map.GetValueByKey("k1"));
-    EXPECT_EQ("k2", output_map.GetKey(2));
-    EXPECT_EQ("yes", output_map.GetValue(2));
-    EXPECT_EQ("yes", output_map.GetValueByKey("k2"));
-    EXPECT_EQ("k3", output_map.GetKey(3));
-    EXPECT_EQ("v3", output_map.GetValue(3));
-    EXPECT_EQ("v3", output_map.GetValueByKey("k3"));
-  }
+  // Add a duplicate key.
+  output_map.Add("k1", "v4");
+  ASSERT_EQ(5, output_map.NumPairs());
+  EXPECT_EQ("k0", output_map.GetKey(0));
+  EXPECT_EQ("v0", output_map.GetValue(0));
+  EXPECT_EQ("k1", output_map.GetKey(1));
+  EXPECT_EQ("v1", output_map.GetValue(1));
+  EXPECT_EQ("k2", output_map.GetKey(2));
+  EXPECT_EQ("yes", output_map.GetValue(2));
+  EXPECT_EQ("k3", output_map.GetKey(3));
+  EXPECT_EQ("v3", output_map.GetValue(3));
 
   // Test the key regex.
   OutputMap output_mapregex1;
@@ -126,11 +110,11 @@ TEST_F(OutputMapTest, PrintValues) {
 
   output_map.Add("k1", "v1");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_VALUES);
-  EXPECT_EQ("v0 | v1\n", pf.GetContents());
+  EXPECT_EQ("v0\nv1\n", pf.GetContents());
 
   output_map.Add("k2", "v2");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_VALUES);
-  EXPECT_EQ("v0 | v1 | v2\n", pf.GetContents());
+  EXPECT_EQ("v0\nv1\nv2\n", pf.GetContents());
 }
 
 TEST_F(OutputMapTest, PrintLong) {
@@ -140,21 +124,18 @@ TEST_F(OutputMapTest, PrintLong) {
 
   output_map.Add("k0", "v0");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_LONG);
-  EXPECT_EQ("k0                   | v0\n"
-            "\n", pf.GetContents());
+  EXPECT_EQ("k0                   | v0\n\n", pf.GetContents());
 
   output_map.Add("k1", "v1");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_LONG);
-  EXPECT_EQ("k0                   | v0\n"
-            "k1                   | v1\n"
-            "\n", pf.GetContents());
+  EXPECT_EQ("k0                   | v0\n\n"
+            "k1                   | v1\n\n", pf.GetContents());
 
   output_map.Add("k2", "v2");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_LONG);
-  EXPECT_EQ("k0                   | v0\n"
-            "k1                   | v1\n"
-            "k2                   | v2\n"
-            "\n", pf.GetContents());
+  EXPECT_EQ("k0                   | v0\n\n"
+            "k1                   | v1\n\n"
+            "k2                   | v2\n\n", pf.GetContents());
 }
 
 TEST_F(OutputMapTest, PrintPairs) {
@@ -168,15 +149,15 @@ TEST_F(OutputMapTest, PrintPairs) {
 
   output_map.Add("k1", "v1");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_PAIRS);
-  EXPECT_EQ("k0=\"v0\" k1=\"v1\"\n", pf.GetContents());
+  EXPECT_EQ("k0=\"v0\"\nk1=\"v1\"\n", pf.GetContents());
 
   output_map.Add("k2", "v2");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_PAIRS);
-  EXPECT_EQ("k0=\"v0\" k1=\"v1\" k2=\"v2\"\n", pf.GetContents());
+  EXPECT_EQ("k0=\"v0\"\nk1=\"v1\"\nk2=\"v2\"\n", pf.GetContents());
 
   output_map.Add("k3", "v\"3\"");
   output_map.Print(pf.GetWriteFile(), OutputMap::STYLE_PAIRS);
-  EXPECT_EQ("k0=\"v0\" k1=\"v1\" k2=\"v2\" k3=\"v\\\"3\\\"\"\n",
+  EXPECT_EQ("k0=\"v0\"\nk1=\"v1\"\nk2=\"v2\"\nk3=\"v\\\"3\\\"\"\n",
             pf.GetContents());
 }
 

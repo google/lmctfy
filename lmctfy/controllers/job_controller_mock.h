@@ -48,7 +48,7 @@ class MockJobController : public JobController {
  public:
   // The mock won't use the additional parameters so it is okay to fake them.
   MockJobController()
-      : JobController("", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
+      : JobController("", "", false, reinterpret_cast<KernelApi *>(0xFFFFFFFF),
                       reinterpret_cast<EventFdNotifications *>(0xFFFFFFFF)) {}
 
   MOCK_METHOD0(Destroy, ::util::Status());

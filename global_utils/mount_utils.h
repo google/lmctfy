@@ -21,6 +21,7 @@
 #ifndef GLOBAL_UTILS_MOUNT_UTILS_H_
 #define GLOBAL_UTILS_MOUNT_UTILS_H_
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -44,12 +45,26 @@ class MountUtils {
 
   // The following methods are marked 'virtual' so that tests can override them.
 
+  enum BindMountOpts {
+    RECURSIVE,
+    READONLY,
+    // Either PRIVATE or SLAVE can be specified.
+    PRIVATE,
+    SLAVE,
+  };
   // Bind Mounts 'source' at 'target'. 'source' and 'target' must be of the same
-  // file type - directory or file. Returns INTERNAL on bind mount failure.
-  // TODO(vishnuk): Support read-only bind mounts if necessary. As of now source
-  // file or dir permissions will be replicated at the bind mount target.
-  virtual ::util::Status BindMount(const string &source,
-                                   const string &target) const = 0;
+  // file type - directory or file. If 'opts' cointains,
+  // READONLY, the 'target' is made readonly;
+  // PRIVATE, the 'target' is made a private bind mount; Otherwise it is left as
+  // is.
+  // RECURSIVE, 'source' is bind mounted recursively at 'target', thereby bring
+  // all the sub-mounts under 'source' to 'target'.
+  // By default, all the mounts are marked no-suid and no-dev.
+  // Returns INTERNAL on any syscall failure.
+  virtual ::util::Status BindMount(
+      const string &source,
+      const string &target,
+      const ::std::set<BindMountOpts> &opts) const = 0;
 
   // Returns a MountObject that represents the most recent mount at
   // 'mountpoint'. Returns NOT_FOUND if no mount is found. Returns INTERNAL if

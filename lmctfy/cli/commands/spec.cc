@@ -41,7 +41,7 @@ namespace cli {
 // Command to get the ContainerSpec for a container.
 Status SpecContainer(const vector<string> &argv,
                             const ContainerApi *lmctfy,
-                            vector<OutputMap> *output) {
+                            OutputMap *output) {
   // Args: spec [<container name>]
   if (argv.size() < 1 || argv.size() > 2) {
     return Status(::util::error::INVALID_ARGUMENT,
@@ -71,7 +71,7 @@ Status SpecContainer(const vector<string> &argv,
   } else {
     ::google::protobuf::TextFormat::PrintToString(spec, &spec_output);
   }
-  printf("%s", spec_output.c_str());
+  output->AddRaw(spec_output);
 
   return Status::OK;
 }

@@ -24,8 +24,8 @@ namespace containers {
 namespace nscon {
 
 class NamespaceSpec;
-class Unmount;
-class Mount;
+class MntNsSpec_MountAction_Unmount;
+class MntNsSpec_MountAction_Mount;
 
 // MntNsConfigurator
 //
@@ -33,6 +33,9 @@ class Mount;
 //
 class MntNsConfigurator : public NsConfigurator {
  public:
+  typedef MntNsSpec_MountAction_Unmount Unmount;
+  typedef MntNsSpec_MountAction_Mount Mount;
+
   explicit MntNsConfigurator(NsUtil* ns_util)
       : NsConfigurator(CLONE_NEWNS, ns_util) {}
 

@@ -15,7 +15,9 @@
 #ifndef PRODUCTION_CONTAINERS_NSCON_CLI_NSCON_RUNNER_H__
 #define PRODUCTION_CONTAINERS_NSCON_CLI_NSCON_RUNNER_H__
 
-#include "util/task/status.h"
+#include <vector>
+
+#include "util/task/statusor.h"
 
 namespace containers {
 namespace nscon {
@@ -34,12 +36,21 @@ class NsconRunner {
   // Input:
   //   Unmodified command line arguments 'argv' and 'argc'.
   // Returns:
-  //   INVALID_ARGUMENT if the user input is invalid.
-  //   Result of the user requested operation otherwise.
-  ::util::Status Run(int argc, char **argv) const;
+  //   0 on success and appropriate ::util::error::Code on failure.
+  int Run(int argc, char **argv);
 
  private:
   void SetDefaultFlags() const;
+  ::util::Status SetupOutput();
+  ::util::StatusOr<string> InternalRun(
+       int argc, char **argv, const ::std::vector<string> &user_command) const;
+
+  // Closing either of these fds will possibly make the other one useless. Hence
+  // if either is being passed anywhere outside of this class, then consider
+  // dupping fds.
+  FILE *nscon_stdout_;
+  FILE *nscon_stderr_;
+
 
   DISALLOW_COPY_AND_ASSIGN(NsconRunner);
 };

@@ -123,14 +123,41 @@ class NsUtil {
   //   INVALID_ARGUMENT: If 'path' does not exist or does not point to a
   //                     character device file.
   //   INTERNAL: If any syscall fails.
+  // MODE:begin_strip
+  // TODO(vishnuk): Delete this method and use
+  // util::FsUtils::FileExists once it can support checking of
+  // specific file types.
+  // MODE:end_strip
   virtual ::util::Status CharacterDeviceFileExists(
       const string &path) const;
+
+  // Dups stdin, stdout and stderr to fd and closes fd on success.
+  // Arguments:
+  //   console_fd: The fd that points to the console.
+  // Returns:
+  //   OK: Iff successful.
+  virtual ::util::Status AttachToConsoleFd(const int console_fd) const;
+
+  // Opens slave pty device represented by slave_pty and returns the fd on
+  // success.
+  // Arguments:
+  //     slave_pty: Slave pty device number.
+  // Returns:
+  //     fd iff successful.
+  virtual ::util::StatusOr<int> OpenSlavePtyDevice(
+      const string &slave_pty) const;
+
+  // Returns the list of currently open FDs. This function opens
+  // '/proc/self/fd/' directory and parses the FDs from it.
+  virtual ::util::StatusOr<::std::vector<int>> GetOpenFDs() const;
 
  protected:
   explicit NsUtil(::std::set<int> supported_namespaces)
       : supported_namespaces_(supported_namespaces) {}
 
  private:
+  ::util::Status DupToFd(int oldfd, int newfd) const;
+
   // Namespaces supported by the kernel we are running on.
   ::std::set<int> supported_namespaces_;
 

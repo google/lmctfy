@@ -34,10 +34,12 @@ class MockIpcAgentFactory : public IpcAgentFactory {
 
 class MockIpcAgent : public IpcAgent {
  public:
-  MockIpcAgent() {}
+  MockIpcAgent() : IpcAgent(-1, "", (const int[2]){-1, -1}) {}
 
   MOCK_METHOD1(WriteData, ::util::Status(const string &data));
   MOCK_METHOD0(ReadData, ::util::StatusOr<::std::pair<string, pid_t>>());
+  MOCK_METHOD0(WaitForChild, ::util::Status());
+  MOCK_METHOD0(SignalParent, ::util::Status());
   MOCK_METHOD0(Destroy, ::util::Status());
 
  private:

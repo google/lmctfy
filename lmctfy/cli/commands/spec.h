@@ -19,6 +19,7 @@
 using ::std::string;
 #include <vector>
 
+#include "lmctfy/cli/output_map.h"
 #include "util/task/status.h"
 
 namespace containers {
@@ -33,7 +34,7 @@ class OutputMap;
 // Command to get the ContainerSpec for a container.
 ::util::Status SpecContainer(const ::std::vector<string> &argv,
                              const ContainerApi *lmctfy,
-                             ::std::vector<OutputMap> *output);
+                             OutputMap *output);
 
 void RegisterSpecCommand();
 

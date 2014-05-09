@@ -45,6 +45,7 @@ namespace containers {
 namespace lmctfy {
 
 static const char kCgroupPath[] = "/dev/cgroup/device/test";
+static const char kHierarchyPath[] = "/test";
 
 #define EXPECT_PROTOBUF_EQ(b1, b2) EXPECT_THAT(b2, EqualsInitializedProto(b1))
 
@@ -54,7 +55,8 @@ class DeviceControllerTest : public ::testing::Test {
     mock_kernel_.reset(new ::testing::StrictMock<KernelAPIMock>());
     mock_eventfd_notifications_.reset(MockEventFdNotifications::NewStrict());
     controller_.reset(
-        new DeviceController(kCgroupPath, false, mock_kernel_.get(),
+        new DeviceController(kHierarchyPath, kCgroupPath, false,
+                             mock_kernel_.get(),
                              mock_eventfd_notifications_.get()));
   }
 

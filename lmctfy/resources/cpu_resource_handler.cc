@@ -36,6 +36,7 @@ using ::std::string;
 #include "util/task/codes.pb.h"
 
 using ::file::JoinPath;
+using ::containers::InitSpec;
 using ::util::CpuMask;
 using ::std::unique_ptr;
 using ::std::vector;
