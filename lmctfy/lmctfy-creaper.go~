@@ -1,0 +1,94 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"regexp"
+	"strconv"
+	"syscall"
+)
+
+func printUsageAndExit() {
+	log.Fatal("Usage: creaper <container_name> <container_spec>")
+}
+
+func destroyContainer(container_name *string) error {
+	cmd := exec.Command("/usr/local/bin/gcontain", "destroy",
+		*container_name, "-f")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		print(string(out))
+		return err
+	}
+	return nil
+}
+
+func runGcontain(container_name *string, container_spec *string) (int, error) {
+	cmd := exec.Command("/usr/local/bin/gcontain", "create",
+		*container_name, *container_spec, "--gcontain_use_namespaces")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		print(string(out))
+		return 0, err
+	}
+	re := regexp.MustCompile("[0-9]+")
+	init_pid_str := re.FindString(string(out))
+	if len(init_pid_str) == 0 {
+		return 0, errors.New(
+			fmt.Sprint("Gcontain output invalid %s. Maybe virtual"+
+				" host was not set", out))
+	}
+	return strconv.Atoi(init_pid_str)
+}
+
+func setChildSubreaper() error {
+	var PR_SET_CHILD_SUBREAPER int = 36
+	if _, _, errno := syscall.Syscall6(syscall.SYS_PRCTL, uintptr(PR_SET_CHILD_SUBREAPER),
+		uintptr(1), uintptr(0), uintptr(0), uintptr(0), uintptr(0)); errno != 0 {
+			return errors.New(
+				fmt.Sprintf("Failed to make current process" +
+					" parent of all child processes that might be " +
+					"abandoned in the future. errno: %d\n", errno))
+	}
+	return nil
+}
+
+func waitPid(wpid int) error {
+	var wstatus syscall.WaitStatus
+	fmt.Printf("Waiting for pid %d to exit", wpid)
+	out, err := syscall.Wait4(wpid, &wstatus, 0, nil)
+	if out != wpid {
+		return errors.New(fmt.Sprintf(
+			"Failed while waiting for pid %d to exit. Error: %d",
+			wpid, err))
+	}
+	fmt.Printf("process %d ended with status %d\n", wpid, wstatus)
+	return nil
+}
+
+func main() {
+	if len(os.Args) != 3 {
+		printUsageAndExit()
+	}
+	container_name := os.Args[1]
+	container_spec := os.Args[2]
+	if err := setChildSubreaper(); err != nil {
+		log.Fatal(err)
+	}
+	init_pid, err := runGcontain(&container_name, &container_spec)
+	if err != nil {
+		destroyContainer(&container_name)
+		log.Fatal(err)
+	}
+	if err := waitPid(init_pid); err != nil {
+		log.Print(err)
+	}
+	if err = destroyContainer(&container_name); err != nil {
+		log.Fatal("Failed to destroy container %s. %s", container_name,
+			err)
+	}
+
+}
