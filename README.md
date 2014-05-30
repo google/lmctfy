@@ -14,13 +14,19 @@ lmctfy is beta software under heavy development and may change as it evolves. Th
 ## Getting Started
 This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#cli-commands) section provides some examples of CLI operations and [C++ Library](#c-library) describes the use of the underlying library.
 ### Dependencies
-The build system is targeted for use with `make` and `g++-4.7`. lmctfy makes use of `C++11` and as such needs a compiler that supports it. We've tested the setup on **Ubuntu 12.04+**. We are happy to accept patches that add support for other setups.
-
 lmctfy depends on the following libraries and expects them to be available on the system:
 * [Protocol Buffers](https://code.google.com/p/protobuf/)
-* [gflags](https://code.google.com/p/gflags/)
+* [gflags](https://code.google.com/p/gflags/) (version >= 2.1.1)
 * [RE2](https://code.google.com/p/re2/)
 * [AppArmor](http://packages.ubuntu.com/precise/libapparmor-dev)
+* glibc (version >= 2.14)
+
+Addtionally to build lmctfy you also need:
+* make
+* go compiler
+* g++ or clang version with C++11 support (tested with g++-4.7 and clang-3.2)
+
+We've tested the setup on **Ubuntu 12.04+**. We are happy to accept patches that add support for other setups.
 
 ### Building the CLI
 To build the `lmctfy` CLI:
