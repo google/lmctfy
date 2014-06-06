@@ -323,8 +323,8 @@ Status MemoryResourceHandler::Stats(Container::StatsType type,
   SAVE_IF_ERROR(IgnoreNotFound(
       memory_controller_->GetIdlePageStats(stats->mutable_idle_page())),
       any_failure);
-  SAVE_IF_ERROR(memory_controller_->GetCompressionSamplingStats(
-                    stats->mutable_compression_sampling()),
+  SAVE_IF_ERROR(IgnoreNotFound(memory_controller_->GetCompressionSamplingStats(
+                    stats->mutable_compression_sampling())),
                 any_failure);
 
   return any_failure;
