@@ -38,6 +38,21 @@ using ::util::StatusOr;
 namespace containers {
 namespace lmctfy {
 
+StatusOr<int64> ParseWithSaturation(const string &text) {
+  uint64 value;
+  if (!SimpleAtoi(text, &value)) {
+    int64 signed_value;
+    if (!SimpleAtoi(text, &signed_value)) {
+      return Status(::util::error::FAILED_PRECONDITION,
+                    Substitute("Failed to parse int from \"$0\"", text));
+    }
+    return signed_value;
+  }
+  int64 saturated = ::std::min<uint64>(value,
+                                       ::std::numeric_limits<int64>::max());
+  return saturated;
+}
+
 MemoryController::MemoryController(const string &hierarchy_path,
                                    const string &cgroup_path, bool owns_cgroup,
                                    const KernelApi *kernel,
@@ -331,12 +346,7 @@ StatusOr<map<string, int64>> MemoryController::GetStats(
     }
 
     // Parse the value as an int.
-    int64 value = 0;
-    if (!SimpleAtoi(line_parts[1], &value)) {
-      return Status(
-          ::util::error::FAILED_PRECONDITION,
-          Substitute("Failed to parse int from \"$0\"", line_parts[1]));
-    }
+    int64 value = RETURN_IF_ERROR(ParseWithSaturation(line_parts[1]));
     output[line_parts[0]] = value;
   }
 
@@ -362,26 +372,14 @@ Status PopulateNumaStat(const vector<string> &node_levels,
                                    "in NUMA stats",
                                level_data));
     }
-    int level = 0;
-    if (!SimpleAtoi(level_parts[0].substr(1, string::npos), &level)) {
-      return Status(::util::error::FAILED_PRECONDITION,
-                    Substitute("Failed to parse int from \"$0\" "
-                                   "for NUMA stats",
-                               level_parts[0]));
-    }
+    int level = RETURN_IF_ERROR(ParseWithSaturation(level_parts[0].substr(1, string::npos)));
     if (seen_levels.find(level) != seen_levels.end()) {
       return Status(::util::error::FAILED_PRECONDITION,
                     Substitute("Saw level $0 twice in line \"$1\" "
                                    "for NUMA stats",
                                level, level_data));
     }
-    int64 page_count = 0;
-    if (!SimpleAtoi(level_parts[1], &page_count)) {
-      return Status(::util::error::FAILED_PRECONDITION,
-                    Substitute("Failed to parse int from \"$0\" "
-                                   "for NUMA stats",
-                               level_parts[1]));
-    }
+    int64 page_count = RETURN_IF_ERROR(ParseWithSaturation(level_parts[1]));
     MemoryStats_NumaStats_NumaData_Stat_Node *node = stat->add_node();
     node->set_level(level);
     node->set_page_count(page_count);
@@ -413,11 +411,7 @@ Status ProcessNumaLevelData(const string &level_data,
     *hierarchical = false;
     *type = level_parts[0];
   }
-  if (!SimpleAtoi(level_parts[1], total_page_count)) {
-    return Status(::util::error::FAILED_PRECONDITION,
-                  Substitute("Failed to parse int from \"$0\" for NUMA stats",
-                             level_parts[1]));
-  }
+  *total_page_count = RETURN_IF_ERROR(ParseWithSaturation(level_parts[1]));
   return Status::OK;
 }
 
@@ -484,18 +478,13 @@ Status ProcessIdlePageData(const string &line,
                   Substitute("Failed to parse idle page data from line \"$0\"",
                              line));
   }
-  int age;
+  int age = 0;
   if (!SimpleAtoi(key_data[1], &age)) {
     // Default to age == 0; this works for the idle_{clean,dirty*}, but also
     // means idle_bad_data_clean will overwrite the idle_clean data.
     age = 0;
   }
-  int64 value;
-  if (!SimpleAtoi(line_data[1], &value)) {
-    return Status(::util::error::FAILED_PRECONDITION,
-                  Substitute("Failed to parse idle page data from line \"$0\"",
-                             line));
-  }
+  int64 value = RETURN_IF_ERROR(ParseWithSaturation(line_data[1]));
   bool used = false;
   if (key_data[key_data.size() - 1] == "clean") {
     (*idle_page_data)[age].clean = value;
@@ -542,22 +531,10 @@ Status MemoryController::GetIdlePageStats(
     const string key = line.substr(0, 6);
     const string value_string = line.substr(6, string::npos);
     if (key == "scans ") {
-      int64 value;
-      if (!SimpleAtoi(value_string, &value)) {
-        return Status(
-            ::util::error::FAILED_PRECONDITION,
-            Substitute("Failed to parse idle page data from line \"$0\"",
-                       line));
-      }
+      int64 value = RETURN_IF_ERROR(ParseWithSaturation(value_string));
       idle_page_stats->set_scans(value);
     } else if (key == "stale ") {
-      int64 value;
-      if (!SimpleAtoi(value_string, &value)) {
-        return Status(
-            ::util::error::FAILED_PRECONDITION,
-            Substitute("Failed to parse idle page data from line \"$0\"",
-                       line));
-      }
+      int64 value = RETURN_IF_ERROR(ParseWithSaturation(value_string));
       idle_page_stats->set_stale(value);
     } else {
       RETURN_IF_ERROR(ProcessIdlePageData(line, &idle_page_data_map));
@@ -590,13 +567,7 @@ Status MemoryController::GetCompressionSamplingStats(
           Substitute("Failed to parse idle page data from line \"$0\"",
                      line));
     }
-    int64 value;
-    if (!SimpleAtoi(parts[1], &value)) {
-      return Status(
-          ::util::error::FAILED_PRECONDITION,
-          Substitute("Failed to parse idle page data from line \"$0\"",
-                     line));
-    }
+    int64 value = RETURN_IF_ERROR(ParseWithSaturation(parts[1]));
     if (parts[0] == "raw_size") {
       compression_sampling_stats->set_raw_size(value);
     } else if (parts[0] == "compressed_size") {

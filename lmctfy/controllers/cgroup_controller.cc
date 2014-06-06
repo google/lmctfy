@@ -189,14 +189,18 @@ StatusOr<int64> CgroupController::GetParamInt(
     return statusor.status();
   }
 
-  int64 output;
+  uint64 output;
   if (!SimpleAtoi(statusor.ValueOrDie().c_str(), &output)) {
-    return Status(::util::error::FAILED_PRECONDITION,
-                  Substitute("Failed to parse int from string \"$0\"",
-                             statusor.ValueOrDie()));
+    int64 signed_output;
+    if (!SimpleAtoi(statusor.ValueOrDie().c_str(), &signed_output)) {
+      return Status(::util::error::FAILED_PRECONDITION,
+                    Substitute("Failed to parse int from string \"$0\"",
+                               statusor.ValueOrDie()));
+    }
+    return signed_output;
   }
-
-  return output;
+  int64 result = std::min<uint64>(output, std::numeric_limits<int64>::max());
+  return result;
 }
 
 StatusOr<string> CgroupController::GetParamString(
