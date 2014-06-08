@@ -58,7 +58,7 @@ func parseDockerVersion(full_version_string string) ([]int, error) {
 	version_string_array := matches[0][1:]
 	version_array := make([]int, 3)
 	for index, version_string := range version_string_array {
-		version, err := strconv.Atoi(version_string);
+		version, err := strconv.Atoi(version_string)
 		if err != nil {
 			return nil, fmt.Errorf("Error while parsing \"%v\" in \"%v\"", version_string, full_version_string)
 		}
@@ -76,14 +76,16 @@ func Register(factory info.MachineInfoFactory, paths ...string) error {
 	if version, err := client.Version(); err != nil {
 		return fmt.Errorf("unable to communicate with docker daemon: %v", err)
 	} else {
-		expected_version := []int{0, 11, 1};
+		expected_version := []int{0, 11, 1}
 		version_string := version.Get("Version")
 		version, err := parseDockerVersion(version_string)
 		if err != nil {
 			return fmt.Errorf("Couldn't parse docker version: %v", err)
 		}
 		for index, number := range version {
-			if number < expected_version[index] {
+			if number > expected_version[index] {
+				break
+			} else if number < expected_version[index] {
 				return fmt.Errorf("cAdvisor requires docker version above %v but we have found version %v reported as \"%v\"", expected_version, version, version_string)
 			}
 		}
