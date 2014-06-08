@@ -206,7 +206,7 @@ func TestGetContainerInfo(t *testing.T) {
 	`
 	containerName := "/some/container"
 	respStr = fmt.Sprintf(respStr, containerName, containerName, containerName)
-	client, server, err := cadvisorTestClient(fmt.Sprintf("/api/v1.0/container%v", containerName), respStr)
+	client, server, err := cadvisorTestClient(fmt.Sprintf("/api/v1.0/containers%v", containerName), respStr)
 	if err != nil {
 		t.Fatalf("unable to get a client %v", err)
 	}

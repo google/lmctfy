@@ -17,6 +17,7 @@ package cadvisor
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -60,7 +61,7 @@ func (self *Client) containerInfoUrl(name string) string {
 	if name[0] == '/' {
 		name = name[1:]
 	}
-	return strings.Join([]string{self.baseUrl, "container", name}, "/")
+	return strings.Join([]string{self.baseUrl, "containers", name}, "/")
 }
 
 func (self *Client) httpGetJsonData(data interface{}, url, infoName string) error {
@@ -70,10 +71,14 @@ func (self *Client) httpGetJsonData(data interface{}, url, infoName string) erro
 		return err
 	}
 	defer resp.Body.Close()
-	decoder := json.NewDecoder(resp.Body)
-	err = decoder.Decode(data)
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		err = fmt.Errorf("unable to decode %v: %v", infoName, err)
+		err = fmt.Errorf("unable to read all %v: %v", infoName, err)
+		return err
+	}
+	err = json.Unmarshal(body, data)
+	if err != nil {
+		err = fmt.Errorf("unable to unmarshal %v (%v): %v", infoName, string(body), err)
 		return err
 	}
 	return nil
