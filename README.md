@@ -185,6 +185,8 @@ The most basic CL2 would use a container policy that ensures the fair sharing of
 * Admission control and feasibility checks.
 * Quality of Service guarantees and enforcement.
 
+We have started work on CL2 under the [cAdvisor](https://github.com/google/cadvisor/) project
+
 ## Kernel Support
 
 lmctfy was originally designed and implemented around a custom kernel with a set of patches on top of a vanilla Linux kernel. As such, some features work best in conjunction with those kernel patches. However, lmctfy should work without them. It should detect available kernel support and adapt accordingly. We’ve tested lmctfy in vanilla **Ubuntu 3.3*** and **3.8** kernels. Please report any issues you find with other kernel versions.
