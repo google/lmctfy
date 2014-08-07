@@ -37,7 +37,9 @@ LIBLMCTFY_SOURCES =$(shell find lmctfy/ -name \*.cc -a ! -name \*_test.cc \
 		   -a ! -path \*cli/\* | tr "\n" " ")
 CLI_SOURCES = $(call get_srcs,lmctfy/cli/)
 NSINIT_SOURCES = nscon/init.cc nscon/init_impl.cc
+NSCLI_SOURCES = $(call get_srcs,nscon/cli/)
 NSCON_SOURCES = $(filter-out $(NSINIT_SOURCES),$(call get_srcs,nscon/))
+NSCON_SOURCES_NO_CLI = $(filter-out $(NSCLI_SOURCES),$(NSCON_SOURCES))
 
 # The objects for the system API (both release and test versions).
 SYSTEM_API_OBJS = global_utils/fs_utils.o \
@@ -172,7 +174,7 @@ COMMON_SOURCES = $(INCLUDE_SOURCES) $(BASE_SOURCES) $(STRINGS_SOURCES) \
 		 $(FILE_SOURCES) $(THREAD_SOURCES) $(UTIL_SOURCES)
 
 # All sources needed by the library (minus the system API).
-LIBRARY_SOURCES = $(COMMON_SOURCES) $(LIBLMCTFY_SOURCES) $(NSCON_SOURCES)
+LIBRARY_SOURCES = $(COMMON_SOURCES) $(LIBLMCTFY_SOURCES) $(NSCON_SOURCES_NO_CLI)
 
 
 # The lmctfy library without the system API. This is primarily an internal
