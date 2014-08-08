@@ -166,17 +166,6 @@ class ContainerApiImplTest : public ::testing::Test {
                 mock_freezer_controller_factory_)));
   }
 
-  void ExpectCgroupFactoryMountCall(const CgroupMount &cgroup) {
-    EXPECT_CALL(*mock_cgroup_factory_, Mount(EqualsInitializedProto(cgroup)))
-        .WillOnce(Return(Status::OK));
-  }
-
-  void ExpectCgroupFactoryMountFailure(const CgroupMount &cgroup,
-                                       const Status &error) {
-    EXPECT_CALL(*mock_cgroup_factory_, Mount(EqualsInitializedProto(cgroup)))
-        .WillOnce(Return(error));
-  }
-
   void ExpectResourceFactoriesInitMachineCall(const InitSpec &init_spec) {
     for (const auto rfactory : resource_factories_) {
       EXPECT_CALL(
@@ -308,42 +297,23 @@ TEST_F(ContainerApiImplTest, InitMachineSuccess) {
 
   InitSpec spec;
   spec.add_cgroup_mount()->CopyFrom(mount1);
-  ExpectCgroupFactoryMountCall(mount1);
 
   spec.add_cgroup_mount()->CopyFrom(mount2);
-  ExpectCgroupFactoryMountCall(mount2);
 
   spec.add_cgroup_mount()->CopyFrom(mount3);
-  ExpectCgroupFactoryMountCall(mount3);
 
   spec.add_cgroup_mount()->CopyFrom(mount4);
-  ExpectCgroupFactoryMountCall(mount4);
 
   spec.add_cgroup_mount()->CopyFrom(mount5);
-  ExpectCgroupFactoryMountCall(mount5);
 
   spec.add_cgroup_mount()->CopyFrom(mount6);
-  ExpectCgroupFactoryMountCall(mount6);
 
   spec.add_cgroup_mount()->CopyFrom(mount7);
-  ExpectCgroupFactoryMountCall(mount7);
 
   ExpectResourceFactoriesInitMachineCall(spec);
   ExpectNamespaceHandlerFactoryInitMachine(spec);
 
   EXPECT_OK(lmctfy_->InitMachine(spec));
-}
-
-TEST_F(ContainerApiImplTest, InitMachineMountFails) {
-  CgroupMount mount1;
-  mount1.set_mount_path("/dev/cgroup/memory");
-  mount1.add_hierarchy(CGROUP_MEMORY);
-
-  InitSpec spec;
-  spec.add_cgroup_mount()->CopyFrom(mount1);
-  ExpectCgroupFactoryMountFailure(mount1, Status(INTERNAL, "blah"));
-
-  EXPECT_NOT_OK(lmctfy_->InitMachine(spec));
 }
 
 TEST_F(ContainerApiImplTest, InitMachineResourceInitFails) {
@@ -353,7 +323,6 @@ TEST_F(ContainerApiImplTest, InitMachineResourceInitFails) {
 
   InitSpec spec;
   spec.add_cgroup_mount()->CopyFrom(mount1);
-  ExpectCgroupFactoryMountCall(mount1);
 
   EXPECT_CALL(
       *reinterpret_cast<MockResourceHandlerFactory *>(resource_factories_[0]),
@@ -370,7 +339,7 @@ TEST_F(ContainerApiImplTest, InitMachineNamespaceFactoryInitMachineFails) {
 
   InitSpec spec;
   spec.add_cgroup_mount()->CopyFrom(mount1);
-  ExpectCgroupFactoryMountCall(mount1);
+
   ExpectResourceFactoriesInitMachineCall(spec);
   ExpectNamespaceHandlerFactoryInitMachineFails(spec);
 
