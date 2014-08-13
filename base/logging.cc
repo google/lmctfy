@@ -60,9 +60,6 @@ Mutex *InitLogSilencerMutex() {
 void InitLogSilencerCount() {
   log_silencer_count_mutex_ = InitLogSilencerMutex();
 }
-void InitLogSilencerCountOnce() {
-  log_silencer_count_mutex_ = new Mutex();
-}
 
 LogMessage& LogMessage::operator<<(const string& value) {
   message_ += value;
@@ -109,7 +106,7 @@ void LogMessage::Finish() {
   bool suppress = false;
 
   if (level_ != LOGLEVEL_FATAL) {
-    InitLogSilencerCountOnce();
+    InitLogSilencerCount();
     MutexLock lock(log_silencer_count_mutex_);
     suppress = log_silencer_count_ > 0;
   }
@@ -147,13 +144,13 @@ LogHandler* SetLogHandler(LogHandler* new_func) {
 }
 
 LogSilencer::LogSilencer() {
-  internal::InitLogSilencerCountOnce();
+  internal::InitLogSilencerCount();
   MutexLock lock(internal::log_silencer_count_mutex_);
   ++internal::log_silencer_count_;
 };
 
 LogSilencer::~LogSilencer() {
-  internal::InitLogSilencerCountOnce();
+  internal::InitLogSilencerCount();
   MutexLock lock(internal::log_silencer_count_mutex_);
   --internal::log_silencer_count_;
 };
