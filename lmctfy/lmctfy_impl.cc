@@ -340,6 +340,10 @@ Status ContainerApi::InitMachine(const InitSpec &spec) {
 Status ContainerApiImpl::InitMachineImpl(const KernelApi *kernel,
                                      unique_ptr<CgroupFactory> cgroup_factory,
                                      const InitSpec &spec) {
+  for (auto &mount : spec.cgroup_mount()) {
+    RETURN_IF_ERROR(cgroup_factory->Mount(mount));
+  }
+
   unique_ptr<ContainerApiImpl> lmctfy(
       RETURN_IF_ERROR(
           ContainerApiImpl::NewContainerApiImpl(move(cgroup_factory), kernel)));
@@ -570,10 +574,6 @@ StatusOr<string> ContainerApiImpl::Detect(pid_t tid) const {
 }
 
 Status ContainerApiImpl::InitMachine(const InitSpec &spec) const {
-  for (auto &mount : spec.cgroup_mount()) {
-    RETURN_IF_ERROR(cgroup_factory_->Mount(mount));
-  }
-
   // Initialize the resource handlers.
   for (auto type_handler_pair : resource_factories_) {
     RETURN_IF_ERROR(type_handler_pair.second->InitMachine(spec));
