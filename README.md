@@ -9,7 +9,7 @@ lmctfy was designed and implemented with specific use-cases and configurations i
 lmctfy is released as both a C++ library and a CLI.
 
 ## Current Status
-lmctfy is beta software under heavy development and may change as it evolves. The latest release version is `0.5.0`. It currently provides isolation for CPU, memory, and devices. It also allows for the creation of Virtual Hosts which are more heavily isolated containers giving the impression of running as an independent host.Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
+lmctfy is beta software under heavy development and may change as it evolves. The latest release version is `0.5.0`. It currently provides isolation for CPU, memory, and devices. It also allows for the creation of Virtual Hosts which are more heavily isolated containers giving the impression of running as an independent host. Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
 
 ## Getting Started
 This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#cli-commands) section provides some examples of CLI operations and [C++ Library](#c-library) describes the use of the underlying library.
