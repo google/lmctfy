@@ -1,5 +1,9 @@
 # lmctfy - Let Me Contain That For You
 
+## Note
+We have been collaborating with [Docker](http://docker.com) over libcontainer and are in process of porting the core lmctfy concepts and abstractions to [libcontainer](http://github.com/docker/libcontainer). We are not actively developing lmctfy further and have moved our efforts to libcontainer. In future, we hope to replace the core of lmctfy with libcontainer.
+
+## Introduction
 lmctfy (pronounced *l-m-c-t-fi*, IPA: /ɛlɛmsitifаɪ/) is the open source version of [Google](http://google.com)’s container stack, which provides Linux application containers. These containers allow for the isolation of resources used by multiple applications running on a single machine. This gives the applications the impression of running exclusively on a machine. The applications may be container-aware and thus be able to create and manage their own subcontainers.
 
 The project aims to provide the container abstraction through a high-level API built around user intent. The containers created are themselves container-aware within the hierarchy and can be delegated to be managed by other user agents.
@@ -9,7 +13,9 @@ lmctfy was designed and implemented with specific use-cases and configurations i
 lmctfy is released as both a C++ library and a CLI.
 
 ## Current Status
-lmctfy is beta software under heavy development and may change as it evolves. The latest release version is `0.5.0`. It currently provides isolation for CPU, memory, and devices. It also allows for the creation of Virtual Hosts which are more heavily isolated containers giving the impression of running as an independent host. Take a look at our [roadmap](#roadmap) for areas of development and possible [contributions](#contributing).
+lmctfy is currently stalled as we migrate the core concepts to libcontainer and build a standard container management library that can be used by many projects.
+
+lmctfy is beta software and may change as it evolves. The latest release version is `0.5.0`. It currently provides isolation for CPU, memory, and devices. It also allows for the creation of Virtual Hosts which are more heavily isolated containers giving the impression of running as an independent host. 
 
 ## Getting Started
 This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#cli-commands) section provides some examples of CLI operations and [C++ Library](#c-library) describes the use of the underlying library.
