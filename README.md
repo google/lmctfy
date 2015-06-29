@@ -21,9 +21,9 @@ lmctfy is beta software and may change as it evolves. The latest release version
 This section describes building the CLI, running all unit tests, and initializing the machine. The [CLI Commands](#cli-commands) section provides some examples of CLI operations and [C++ Library](#c-library) describes the use of the underlying library.
 ### Dependencies
 lmctfy depends on the following libraries and expects them to be available on the system:
-* [Protocol Buffers](https://code.google.com/p/protobuf/)
-* [gflags](https://code.google.com/p/gflags/) (version >= 2.1.1)
-* [RE2](https://code.google.com/p/re2/)
+* [Protocol Buffers](https://github.com/google/protobuf)
+* [gflags](https://gflags.github.io/gflags/) (version >= 2.1.1)
+* [RE2](https://github.com/google/re2)
 * [AppArmor](http://packages.ubuntu.com/precise/libapparmor-dev)
 * glibc (version >= 2.14)
 
